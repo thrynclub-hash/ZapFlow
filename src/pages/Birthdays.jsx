@@ -1,94 +1,98 @@
-import { useEffect, useState } from 'react'
-import { Cake, Send, Settings } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Cake, Send, Settings, Image, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { sendTextMessage, formatPhone, sleep } from '../lib/zapi'
+import { sendImageMessage, sendTextMessage, formatPhone, sleep } from '../lib/zapi'
 
 export default function Birthdays() {
   const { profile } = useAuth()
   const [contacts, setContacts] = useState([])
   const [numbers, setNumbers] = useState([])
   const [config, setConfig] = useState({ message: '', enabled: false })
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
+  const [savedImageUrl, setSavedImageUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
-  const [tab, setTab] = useState('today') // today | week | month
-
+  const [saving, setSaving] = useState(false)
+  const [tab, setTab] = useState('today')
+  const fileRef = useRef()
   const clientId = profile?.client_id
 
-  useEffect(() => {
-    if (!clientId) return
-    fetchData()
-  }, [clientId])
+  useEffect(() => { if (clientId) fetchData() }, [clientId])
+  useEffect(() => { if (clientId) fetchBirthdays() }, [tab, clientId])
 
   async function fetchData() {
     const { data: nums } = await supabase.from('client_numbers').select('*').eq('client_id', clientId)
     setNumbers(nums || [])
-
     const { data: cfg } = await supabase.from('birthday_configs').select('*').eq('client_id', clientId).single()
-    if (cfg) setConfig({ message: cfg.message || '', enabled: cfg.enabled })
-
+    if (cfg) { setConfig({ message: cfg.message || '', enabled: cfg.enabled }); setSavedImageUrl(cfg.image_url || null) }
     await fetchBirthdays()
     setLoading(false)
   }
 
   async function fetchBirthdays() {
     const today = new Date()
-    let filters = []
-
     if (tab === 'today') {
       const mmdd = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-      filters = [{ column: 'birth_date', op: 'like', value: `%-${mmdd}` }]
+      const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).like('birth_date', `%-${mmdd}`)
+      setContacts(data || [])
     } else if (tab === 'week') {
       const days = Array.from({ length: 7 }, (_, i) => {
         const d = new Date(today); d.setDate(d.getDate() + i)
         return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       })
-      // Fetch all and filter client-side for simplicity
       const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).not('birth_date', 'is', null)
-      const filtered = (data || []).filter(c => {
-        if (!c.birth_date) return false
-        const parts = c.birth_date.split('-')
-        const mmdd = `${parts[1]}-${parts[2]}`
-        return days.includes(mmdd)
-      })
-      setContacts(filtered)
-      return
+      setContacts((data || []).filter(c => { if (!c.birth_date) return false; const p = c.birth_date.split('-'); return days.includes(`${p[1]}-${p[2]}`) }))
     } else {
       const month = String(today.getMonth() + 1).padStart(2, '0')
       const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).like('birth_date', `%-${month}-%`)
       setContacts(data || [])
-      return
     }
-
-    const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).like('birth_date', `%-${filters[0].value}`)
-    setContacts(data || [])
   }
 
-  useEffect(() => { if (clientId) fetchBirthdays() }, [tab, clientId])
+  function handleImageSelect(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+  }
 
   async function saveConfig() {
-    await supabase.from('birthday_configs').upsert({ client_id: clientId, ...config })
+    setSaving(true)
+    let imageUrl = savedImageUrl
+    if (imageFile) {
+      const ext = imageFile.name.split('.').pop()
+      const path = `birthday/${clientId}/aniversario.${ext}`
+      await supabase.storage.from('creatives').upload(path, imageFile, { upsert: true })
+      const { data } = supabase.storage.from('creatives').getPublicUrl(path)
+      imageUrl = data.publicUrl
+      setSavedImageUrl(imageUrl)
+    }
+    await supabase.from('birthday_configs').upsert({ client_id: clientId, message: config.message, enabled: config.enabled, image_url: imageUrl })
+    setSaving(false)
     alert('Configuração salva!')
   }
 
   async function sendToAll() {
     if (!config.message) return alert('Configure a mensagem de aniversário primeiro.')
-    const ok = confirm(`Enviar mensagem de aniversário para ${contacts.length} contatos?`)
-    if (!ok) return
+    if (!confirm(`Enviar para ${contacts.length} aniversariantes?`)) return
     setSending(true)
-
     for (const contact of contacts) {
       const number = numbers.find(n => n.id === contact.number_id)
       if (!number?.zapi_instance_id) continue
       try {
         const msg = config.message.replace('{nome}', contact.name?.split(' ')[0] || 'amigo(a)')
-        await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), msg)
-        await supabase.from('message_logs').insert({ client_id: clientId, contact_id: contact.id, status: 'sent', sent_at: new Date().toISOString() })
+        if (savedImageUrl) {
+          await sendImageMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), savedImageUrl, msg)
+        } else {
+          await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), msg)
+        }
       } catch {}
       await sleep(3500)
     }
     setSending(false)
-    alert('Mensagens de aniversário enviadas!')
+    alert('Mensagens enviadas!')
   }
 
   return (
@@ -110,14 +114,45 @@ export default function Birthdays() {
             </div>
           </label>
         </div>
+
+        {/* Imagem de aniversário */}
+        <div>
+          <label className="block text-xs text-muted font-body mb-2">Imagem (opcional — será enviada junto com a mensagem)</label>
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
+          {(imagePreview || savedImageUrl) ? (
+            <div className="flex items-center gap-4">
+              <img src={imagePreview || savedImageUrl} alt="preview" className="h-20 w-20 rounded-xl object-cover border border-border" />
+              <div className="space-y-2">
+                <p className="text-xs text-muted font-body">{imageFile ? imageFile.name : 'Imagem salva'}</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => fileRef.current.click()}
+                    className="text-xs text-accent border border-accent/30 px-3 py-1.5 rounded-lg font-body hover:bg-accent/10 transition-colors">
+                    Trocar imagem
+                  </button>
+                  <button type="button" onClick={() => { setImageFile(null); setImagePreview(null); setSavedImageUrl(null) }}
+                    className="text-xs text-red-400 border border-red-400/30 px-3 py-1.5 rounded-lg font-body hover:bg-red-400/10 transition-colors">
+                    Remover
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => fileRef.current.click()}
+              className="flex items-center gap-2 border border-dashed border-border rounded-xl px-4 py-3 text-muted hover:border-accent hover:text-accent transition-colors text-sm font-body">
+              <Image size={16} /> Adicionar imagem de aniversário
+            </button>
+          )}
+        </div>
+
         <div>
           <label className="block text-xs text-muted font-body mb-1.5">Mensagem (use {'{nome}'} para personalizar)</label>
           <textarea value={config.message} onChange={e => setConfig(c => ({ ...c, message: e.target.value }))} rows={3}
-            placeholder={`🎂 Feliz aniversário, {nome}! Que seu dia seja especial. Aproveite nossa promoção exclusiva para você: 10% OFF em qualquer produto hoje!`}
+            placeholder={`🎂 Feliz aniversário, {nome}! Que seu dia seja especial. Aproveite: 10% OFF em qualquer produto hoje! 🎉`}
             className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/40 focus:outline-none focus:border-accent transition-colors resize-none" />
         </div>
-        <button onClick={saveConfig} className="bg-accent hover:bg-accent-dim text-bg px-4 py-2 rounded-lg text-sm font-display font-bold transition-colors">
-          Salvar configuração
+        <button onClick={saveConfig} disabled={saving}
+          className="bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2 rounded-lg text-sm font-display font-bold transition-colors">
+          {saving ? 'Salvando...' : 'Salvar configuração'}
         </button>
       </div>
 
@@ -131,7 +166,6 @@ export default function Birthdays() {
         ))}
       </div>
 
-      {/* List */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <p className="text-muted text-sm font-body">{contacts.length} aniversariante{contacts.length !== 1 ? 's' : ''}</p>
@@ -142,7 +176,6 @@ export default function Birthdays() {
             </button>
           )}
         </div>
-
         {contacts.length === 0 ? (
           <div className="bg-card border border-border rounded-xl p-16 text-center">
             <Cake size={40} className="text-muted mx-auto mb-4" />
@@ -158,7 +191,7 @@ export default function Birthdays() {
                 </div>
                 <div className="flex-1">
                   <p className="text-white font-body font-medium">{c.name}</p>
-                  <p className="text-muted text-xs font-body">{c.phone} · {c.number?.label}</p>
+                  <p className="text-muted text-xs font-body">{c.phone} · {c.number?.label || 'Sem loja'}</p>
                 </div>
                 <p className="text-accent text-sm font-body font-medium">
                   {c.birth_date ? new Date(c.birth_date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' }) : ''}

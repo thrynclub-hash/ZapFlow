@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, Plus, Search, Trash2, Download, Users, Filter } from 'lucide-react'
+import { Upload, Plus, Search, Trash2, Download, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import * as XLSX from 'xlsx'
@@ -13,6 +13,8 @@ export default function Contacts() {
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
   const [form, setForm] = useState({ name: '', phone: '', birth_date: '', number_id: '', tags: '' })
   const fileRef = useRef()
 
@@ -26,8 +28,7 @@ export default function Contacts() {
   }
 
   async function fetchContacts() {
-    let q = supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).order('created_at', { ascending: false })
-    const { data } = await q
+    const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).order('created_at', { ascending: false })
     setContacts(data || [])
     setLoading(false)
   }
@@ -40,12 +41,24 @@ export default function Contacts() {
 
   async function handleAdd(e) {
     e.preventDefault()
+    setSaving(true)
+    setErrorMsg('')
     const { error } = await supabase.from('contacts').insert({
-      ...form, client_id: clientId,
+      name: form.name,
       phone: form.phone.replace(/\D/g, ''),
+      birth_date: form.birth_date || null,
+      number_id: form.number_id || null,
       tags: form.tags ? form.tags.split(',').map(t => t.trim()) : [],
+      client_id: clientId,
     })
-    if (!error) { setShowAdd(false); setForm({ name: '', phone: '', birth_date: '', number_id: '', tags: '' }); fetchContacts() }
+    if (error) {
+      setErrorMsg(error.message)
+    } else {
+      setShowAdd(false)
+      setForm({ name: '', phone: '', birth_date: '', number_id: '', tags: '' })
+      fetchContacts()
+    }
+    setSaving(false)
   }
 
   async function handleDelete(id) {
@@ -64,22 +77,19 @@ export default function Contacts() {
         const wb = XLSX.read(ev.target.result, { type: 'binary' })
         const ws = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json(ws)
-
         const toInsert = rows.map(r => ({
           client_id: clientId,
           number_id: numbers[0]?.id || null,
-          name: r.nome || r.name || r.Nome || '',
-          phone: String(r.telefone || r.phone || r.Telefone || r.celular || '').replace(/\D/g, ''),
+          name: String(r.nome || r.name || r.Nome || r.NOME || ''),
+          phone: String(r.telefone || r.phone || r.Telefone || r.celular || r.Celular || '').replace(/\D/g, ''),
           birth_date: r.nascimento || r.birth_date || r.aniversario || null,
           tags: [],
-        })).filter(c => c.phone.length >= 10)
-
-        // Upsert em lotes de 100
+        })).filter(c => c.phone.length >= 10 && c.name)
         for (let i = 0; i < toInsert.length; i += 100) {
           await supabase.from('contacts').upsert(toInsert.slice(i, i + 100), { onConflict: 'client_id,phone' })
         }
         fetchContacts()
-        alert(`${toInsert.length} contatos importados com sucesso!`)
+        alert(`${toInsert.length} contatos importados!`)
       } catch (err) {
         alert('Erro ao importar: ' + err.message)
       }
@@ -91,8 +101,7 @@ export default function Contacts() {
 
   function exportExcel() {
     const data = filtered.map(c => ({
-      Nome: c.name,
-      Telefone: c.phone,
+      Nome: c.name, Telefone: c.phone,
       Loja: c.number?.label || '',
       Nascimento: c.birth_date || '',
       Tags: Array.isArray(c.tags) ? c.tags.join(', ') : '',
@@ -106,7 +115,6 @@ export default function Contacts() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display font-bold text-3xl text-white">Contatos</h1>
@@ -121,14 +129,13 @@ export default function Contacts() {
             className="flex items-center gap-2 border border-accent/50 text-accent hover:bg-accent hover:text-bg px-4 py-2 rounded-lg text-sm font-body transition-colors disabled:opacity-50">
             <Upload size={14} /> {importing ? 'Importando...' : 'Importar CSV/Excel'}
           </button>
-          <button onClick={() => setShowAdd(true)}
+          <button onClick={() => { setShowAdd(true); setErrorMsg('') }}
             className="flex items-center gap-2 bg-accent hover:bg-accent-dim text-bg px-4 py-2 rounded-lg text-sm font-display font-bold transition-colors">
             <Plus size={14} /> Adicionar
           </button>
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex gap-3">
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -144,14 +151,12 @@ export default function Contacts() {
         )}
       </div>
 
-      {/* Hint CSV */}
       <div className="bg-card border border-border rounded-xl p-4">
         <p className="text-xs text-muted font-body">
-          <strong className="text-white">Como importar:</strong> Seu arquivo CSV/Excel deve ter as colunas: <code className="text-accent">nome</code>, <code className="text-accent">telefone</code>, <code className="text-accent">nascimento</code> (opcional, formato AAAA-MM-DD ou DD/MM/AAAA).
+          <strong className="text-white">Como importar:</strong> Seu arquivo CSV/Excel deve ter colunas: <code className="text-accent">nome</code>, <code className="text-accent">telefone</code>, <code className="text-accent">nascimento</code> (opcional, formato DD/MM/AAAA).
         </p>
       </div>
 
-      {/* Table */}
       {loading ? (
         <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>
       ) : filtered.length === 0 ? (
@@ -193,29 +198,35 @@ export default function Contacts() {
         </div>
       )}
 
-      {/* Add Modal */}
       {showAdd && (
         <div className="fixed inset-0 bg-bg/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein my-auto">
             <h3 className="font-display font-bold text-xl text-white mb-6">Adicionar contato</h3>
             <form onSubmit={handleAdd} className="space-y-4">
-              <Field label="Nome completo" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} required />
-              <Field label="Telefone (com DDD)" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="11999999999" required />
+              <Field label="Nome completo *" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} required />
+              <Field label="Telefone (com DDD) *" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="19999999999" required />
               <Field label="Data de nascimento" type="date" value={form.birth_date} onChange={v => setForm(f => ({ ...f, birth_date: v }))} />
               {numbers.length > 0 && (
                 <div>
                   <label className="block text-xs text-muted font-body mb-1.5">Loja</label>
                   <select value={form.number_id} onChange={e => setForm(f => ({ ...f, number_id: e.target.value }))}
                     className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent">
-                    <option value="">Selecionar loja</option>
+                    <option value="">Sem loja específica</option>
                     {numbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
                   </select>
                 </div>
               )}
               <Field label="Tags (separadas por vírgula)" value={form.tags} onChange={v => setForm(f => ({ ...f, tags: v }))} placeholder="vip, cliente antigo" />
+              {errorMsg && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
+                  <p className="text-red-400 text-xs font-body">{errorMsg}</p>
+                </div>
+              )}
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowAdd(false)} className="flex-1 border border-border text-muted py-2.5 rounded-lg text-sm font-body hover:text-white transition-colors">Cancelar</button>
-                <button type="submit" className="flex-1 bg-accent hover:bg-accent-dim text-bg py-2.5 rounded-lg text-sm font-display font-bold transition-colors">Salvar</button>
+                <button type="submit" disabled={saving} className="flex-1 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg py-2.5 rounded-lg text-sm font-display font-bold transition-colors">
+                  {saving ? 'Salvando...' : 'Salvar'}
+                </button>
               </div>
             </form>
           </div>
