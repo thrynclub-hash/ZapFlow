@@ -88,8 +88,8 @@ export default function AdminClients() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-bg/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein">
+        <div className="fixed inset-0 bg-bg/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein my-auto">
             <h3 className="font-display font-bold text-xl text-white mb-6">{editing ? 'Editar cliente' : 'Novo cliente'}</h3>
             <form onSubmit={handleSave} className="space-y-4">
               <Field label="Nome da empresa *" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} required />

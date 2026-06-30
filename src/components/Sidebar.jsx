@@ -63,14 +63,14 @@ export default function Sidebar({ isAdmin }) {
       )}
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {nav.map(({ to, icon: Icon, label, highlight }) => (
           <NavLink
             key={to}
             to={to}
             end={to === '/admin'}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-body transition-all ${
+              `flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-body transition-all ${
                 highlight
                   ? isActive
                     ? 'bg-accent text-bg font-semibold'
