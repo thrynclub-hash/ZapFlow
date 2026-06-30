@@ -80,16 +80,17 @@ export default function Contacts() {
         const toInsert = rows.map(r => ({
           client_id: clientId,
           number_id: numbers[0]?.id || null,
-          name: String(r.nome || r.name || r.Nome || r.NOME || ''),
-          phone: String(r.telefone || r.phone || r.Telefone || r.celular || r.Celular || '').replace(/\D/g, ''),
+          name: String(r.Nome || r.nome || r.name || r.NOME || r.CONTATO || r.Contato || ''),
+          phone: String(r.Número || r.numero || r.Numero || r.telefone || r.phone || r.Telefone || r.celular || r.Celular || r.TELEFONE || r.NUMERO || '').replace(/\D/g, ''),
           birth_date: r.nascimento || r.birth_date || r.aniversario || null,
           tags: [],
-        })).filter(c => c.phone.length >= 10 && c.name)
+        })).filter(c => c.phone.length >= 8 && c.name)
         for (let i = 0; i < toInsert.length; i += 100) {
           await supabase.from('contacts').upsert(toInsert.slice(i, i + 100), { onConflict: 'client_id,phone' })
         }
         fetchContacts()
-        alert(`${toInsert.length} contatos importados!`)
+        const skipped = rows.length - toInsert.length
+        alert(`✅ ${toInsert.length} contatos importados!${skipped > 0 ? ` (${skipped} ignorados por telefone inválido)` : ''}`)
       } catch (err) {
         alert('Erro ao importar: ' + err.message)
       }
