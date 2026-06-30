@@ -8,6 +8,7 @@ export default function AdminNumbers() {
   const [clients, setClients] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [saving, setSaving] = useState(false)
   const [statuses, setStatuses] = useState({})
   const [form, setForm] = useState({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true })
 
@@ -22,13 +23,23 @@ export default function AdminNumbers() {
     setClients(cls || [])
   }
 
-  function openNew() { setEditing(null); setForm({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true }); setShowModal(true) }
-  function openEdit(n) { setEditing(n); setForm({ client_id: n.client_id, label: n.label, phone: n.phone || '', zapi_instance_id: n.zapi_instance_id, zapi_token: n.zapi_token, active: n.active }); setShowModal(true) }
+  function openNew() {
+    setEditing(null)
+    setForm({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true })
+    setShowModal(true)
+  }
+  function openEdit(n) {
+    setEditing(n)
+    setForm({ client_id: n.client_id, label: n.label, phone: n.phone || '', zapi_instance_id: n.zapi_instance_id, zapi_token: n.zapi_token, active: n.active })
+    setShowModal(true)
+  }
 
   async function handleSave(e) {
     e.preventDefault()
+    setSaving(true)
     if (editing) await supabase.from('client_numbers').update(form).eq('id', editing.id)
     else await supabase.from('client_numbers').insert(form)
+    setSaving(false)
     setShowModal(false)
     fetchAll()
   }
@@ -55,60 +66,80 @@ export default function AdminNumbers() {
         </button>
       </div>
 
-      <div className="space-y-3">
-        {numbers.map(n => {
-          const st = statuses[n.id]
-          return (
-            <div key={n.id} className="bg-card border border-border rounded-xl p-5 flex items-center gap-4">
-              <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center shrink-0">
-                <Smartphone size={18} className="text-accent" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-white font-body font-medium">{n.label}</p>
-                  {!n.active && <span className="text-xs text-muted bg-muted/10 px-2 py-0.5 rounded font-body">Inativo</span>}
+      {numbers.length === 0 ? (
+        <div className="bg-card border border-border rounded-xl p-16 text-center">
+          <Smartphone size={40} className="text-muted mx-auto mb-4" />
+          <p className="text-white font-body font-medium mb-1">Nenhum número configurado</p>
+          <p className="text-muted text-sm font-body mb-4">Primeiro crie um cliente, depois adicione os números dele</p>
+          <button onClick={openNew} className="text-accent text-sm font-display font-bold hover:underline">Adicionar número →</button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {numbers.map(n => {
+            const st = statuses[n.id]
+            return (
+              <div key={n.id} className="bg-card border border-border rounded-xl p-5 flex items-center gap-4">
+                <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center shrink-0">
+                  <Smartphone size={18} className="text-accent" />
                 </div>
-                <p className="text-muted text-xs font-body mt-0.5">{n.client?.name} · {n.phone || 'Número não informado'}</p>
-                <p className="text-muted/60 text-xs font-body mt-0.5 truncate">Instance: {n.zapi_instance_id}</p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-white font-body font-medium">{n.label}</p>
+                    {!n.active && <span className="text-xs text-muted bg-muted/10 px-2 py-0.5 rounded font-body">Inativo</span>}
+                  </div>
+                  <p className="text-muted text-xs font-body mt-0.5">{n.client?.name} · {n.phone || 'Número não informado'}</p>
+                  <p className="text-muted/50 text-xs font-body mt-0.5 truncate">ID: {n.zapi_instance_id || 'não configurado'}</p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  {st === 'checking' && <RefreshCw size={14} className="text-accent animate-spin" />}
+                  {st === 'connected' && <span className="flex items-center gap-1 text-green-400 text-xs font-body"><CheckCircle size={12} /> Online</span>}
+                  {st === 'disconnected' && <span className="flex items-center gap-1 text-red-400 text-xs font-body"><XCircle size={12} /> Offline</span>}
+                  <button onClick={() => checkStatus(n)} className="text-xs text-muted hover:text-accent font-body transition-colors">Testar</button>
+                  <button onClick={() => openEdit(n)} className="text-muted hover:text-white transition-colors p-1"><Edit2 size={14} /></button>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                {st === 'checking' && <RefreshCw size={14} className="text-accent animate-spin" />}
-                {st === 'connected' && <span className="flex items-center gap-1 text-green-400 text-xs font-body"><CheckCircle size={12} /> Online</span>}
-                {st === 'disconnected' && <span className="flex items-center gap-1 text-red-400 text-xs font-body"><XCircle size={12} /> Offline</span>}
-                <button onClick={() => checkStatus(n)} className="text-xs text-muted hover:text-accent font-body transition-colors">Testar</button>
-                <button onClick={() => openEdit(n)} className="text-muted hover:text-white transition-colors p-1"><Edit2 size={14} /></button>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
 
+      {/* MODAL */}
       {showModal && (
-        <div className="fixed inset-0 bg-bg/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein my-auto">
-            <h3 className="font-display font-bold text-xl text-white mb-6">{editing ? 'Editar número' : 'Novo número WPP'}</h3>
-            <form onSubmit={handleSave} className="space-y-4">
-              <div>
-                <label className="block text-xs text-muted font-body mb-1.5">Cliente *</label>
-                <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))} required
-                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent">
-                  <option value="">Selecionar cliente</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <F label="Nome / Loja *" value={form.label} onChange={v => setForm(f => ({ ...f, label: v }))} placeholder="Loja 1 / Centro" required />
-              <F label="Telefone (ex: 5511999999999)" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="5511999999999" />
-              <F label="Z-API Instance ID *" value={form.zapi_instance_id} onChange={v => setForm(f => ({ ...f, zapi_instance_id: v }))} required />
-              <F label="Z-API Token *" value={form.zapi_token} onChange={v => setForm(f => ({ ...f, zapi_token: v }))} required />
-              <div className="flex items-center gap-3">
-                <input type="checkbox" id="active" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} className="accent-yellow-400" />
-                <label htmlFor="active" className="text-sm text-white font-body cursor-pointer">Número ativo</label>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 border border-border text-muted py-2.5 rounded-lg text-sm font-body hover:text-white transition-colors">Cancelar</button>
-                <button type="submit" className="flex-1 bg-accent hover:bg-accent-dim text-bg py-2.5 rounded-lg text-sm font-display font-bold transition-colors">Salvar</button>
-              </div>
-            </form>
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-bg/80 backdrop-blur-sm">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein">
+              <h3 className="font-display font-bold text-xl text-white mb-6">{editing ? 'Editar número' : 'Novo número WPP'}</h3>
+              <form onSubmit={handleSave} className="space-y-4">
+                <div>
+                  <label className="block text-xs text-muted font-body mb-1.5">Cliente *</label>
+                  {clients.length === 0 ? (
+                    <div className="bg-surface border border-border rounded-lg px-4 py-3">
+                      <p className="text-amber-400 text-sm font-body">⚠ Nenhum cliente cadastrado. Crie um cliente primeiro.</p>
+                    </div>
+                  ) : (
+                    <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))} required
+                      className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body focus:outline-none focus:border-accent">
+                      <option value="">Selecionar cliente</option>
+                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  )}
+                </div>
+                <F label="Nome / Loja *" value={form.label} onChange={v => setForm(f => ({ ...f, label: v }))} placeholder="Loja 1 / Centro" required />
+                <F label="Telefone (ex: 5519999999999)" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="5519999999999" />
+                <F label="Z-API Instance ID *" value={form.zapi_instance_id} onChange={v => setForm(f => ({ ...f, zapi_instance_id: v }))} required />
+                <F label="Z-API Token *" value={form.zapi_token} onChange={v => setForm(f => ({ ...f, zapi_token: v }))} required />
+                <div className="flex items-center gap-3">
+                  <input type="checkbox" id="active" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} className="accent-yellow-400 w-4 h-4" />
+                  <label htmlFor="active" className="text-sm text-white font-body cursor-pointer">Número ativo</label>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={() => setShowModal(false)} className="flex-1 border border-border text-muted py-3 rounded-lg text-sm font-body hover:text-white transition-colors">Cancelar</button>
+                  <button type="submit" disabled={saving || clients.length === 0} className="flex-1 bg-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed text-bg py-3 rounded-lg text-sm font-display font-bold transition-colors">
+                    {saving ? 'Salvando...' : 'Salvar'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -121,7 +152,7 @@ function F({ label, value, onChange, placeholder, required }) {
     <div>
       <label className="block text-xs text-muted font-body mb-1.5">{label}</label>
       <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required}
-        className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
+        className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
     </div>
   )
 }
