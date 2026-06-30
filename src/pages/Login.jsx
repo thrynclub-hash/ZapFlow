@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
 import { Zap, Key } from 'lucide-react'
 
 export default function Login() {
@@ -8,47 +8,24 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
+  const { loginWithKey } = useAuth()
 
   async function handleLogin(e) {
     e.preventDefault()
     setLoading(true)
     setError('')
-
-    const key = accessKey.trim().toLowerCase()
-
-    // Busca o cliente pela chave de acesso
-    const { data: client, error: clientErr } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('access_key', key)
-      .eq('status', 'active')
-      .single()
-
-    if (clientErr || !client) {
-      setError('Chave de acesso inválida ou expirada.')
-      setLoading(false)
-      return
+    try {
+      await loginWithKey(accessKey)
+      navigate('/dashboard')
+    } catch (err) {
+      setError(err.message)
     }
-
-    // Faz login com o email/senha gerado automaticamente para esse cliente
-    const { error: authErr } = await supabase.auth.signInWithPassword({
-      email: client.auth_email,
-      password: client.auth_password,
-    })
-
-    if (authErr) {
-      setError('Erro ao autenticar. Contate o administrador.')
-      setLoading(false)
-      return
-    }
-
-    navigate('/dashboard')
+    setLoading(false)
   }
 
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center">
             <Zap size={20} className="text-bg" fill="currentColor" />
@@ -60,7 +37,7 @@ export default function Login() {
         </div>
 
         <h2 className="font-display font-bold text-2xl text-white mb-1">Acessar painel</h2>
-        <p className="text-muted text-sm font-body mb-8">Digite sua chave de acesso fornecida pelo administrador</p>
+        <p className="text-muted text-sm font-body mb-8">Digite sua chave de acesso</p>
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
@@ -86,17 +63,14 @@ export default function Login() {
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading || !accessKey.trim()}
-            className="w-full bg-accent hover:bg-accent-dim text-bg font-display font-bold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          <button type="submit" disabled={loading || !accessKey.trim()}
+            className="w-full bg-accent hover:bg-accent-dim text-bg font-display font-bold py-3 rounded-lg transition-colors disabled:opacity-50">
             {loading ? 'Verificando...' : 'Entrar'}
           </button>
         </form>
 
         <p className="text-center text-xs text-muted font-body mt-8">
-          Não tem sua chave? Entre em contato com o administrador.
+          Não tem sua chave? Fale com o administrador.
         </p>
       </div>
     </div>

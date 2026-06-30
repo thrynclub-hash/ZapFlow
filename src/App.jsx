@@ -3,6 +3,7 @@ import { useAuth } from './contexts/AuthContext'
 import Layout from './components/Layout'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
+import AdminLogin from './pages/AdminLogin'
 import Dashboard from './pages/Dashboard'
 import Contacts from './pages/Contacts'
 import NewCampaign from './pages/NewCampaign'
@@ -13,21 +14,19 @@ import Settings from './pages/Settings'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminClients from './pages/admin/AdminClients'
 import AdminPricing from './pages/admin/AdminPricing'
-import AdminLogin from "./pages/AdminLogin"
 import AdminNumbers from './pages/admin/AdminNumbers'
 
 function PrivateRoute({ children }) {
-  const { user, loading } = useAuth()
+  const { isAuthenticated, loading } = useAuth()
   if (loading) return <LoadingScreen />
-  if (!user) return <Navigate to="/login" replace />
+  if (!isAuthenticated) return <Navigate to="/login" replace />
   return children
 }
 
 function AdminRoute({ children }) {
-  const { user, profile, loading } = useAuth()
+  const { isAdmin, loading } = useAuth()
   if (loading) return <LoadingScreen />
-  if (!user) return <Navigate to="/login" replace />
-  if (profile?.role !== 'admin') return <Navigate to="/dashboard" replace />
+  if (!isAdmin) return <Navigate to="/admin/login" replace />
   return children
 }
 
@@ -43,16 +42,16 @@ function LoadingScreen() {
 }
 
 export default function App() {
-  const { user, profile } = useAuth()
+  const { isAuthenticated, isAdmin } = useAuth()
 
   return (
     <Routes>
       {/* Public */}
       <Route path="/" element={<Landing />} />
-      <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
-      <Route path="/admin/login" element={<AdminLogin />} />
+      <Route path="/login" element={isAuthenticated && !isAdmin ? <Navigate to="/dashboard" /> : <Login />} />
+      <Route path="/admin/login" element={isAdmin ? <Navigate to="/admin" /> : <AdminLogin />} />
 
-      {/* App autenticado */}
+      {/* App cliente */}
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="contacts" element={<Contacts />} />

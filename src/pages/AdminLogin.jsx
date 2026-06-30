@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
 import { Zap, Shield } from 'lucide-react'
 
 export default function AdminLogin() {
@@ -9,30 +9,19 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
+  const { loginAdmin } = useAuth()
 
   async function handleLogin(e) {
     e.preventDefault()
     setLoading(true)
     setError('')
-
-    const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password })
-    if (authErr) { setError('Credenciais inválidas.'); setLoading(false); return }
-
-    // Verifica se é admin
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', data.user.id)
-      .single()
-
-    if (profile?.role !== 'admin') {
-      await supabase.auth.signOut()
-      setError('Acesso restrito a administradores.')
-      setLoading(false)
-      return
+    try {
+      await loginAdmin(email, password)
+      navigate('/admin')
+    } catch (err) {
+      setError(err.message)
     }
-
-    navigate('/admin')
+    setLoading(false)
   }
 
   return (

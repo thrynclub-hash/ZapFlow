@@ -24,13 +24,13 @@ const adminNav = [
 ]
 
 export default function Sidebar({ isAdmin }) {
-  const { profile } = useAuth()
+  const { profile, logout } = useAuth()
   const navigate = useNavigate()
   const nav = isAdmin ? adminNav : clientNav
 
   async function handleLogout() {
-    await supabase.auth.signOut()
-    navigate('/login')
+    await logout()
+    navigate("/login")
   }
 
   return (
