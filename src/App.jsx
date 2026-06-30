@@ -13,6 +13,7 @@ import Settings from './pages/Settings'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminClients from './pages/admin/AdminClients'
 import AdminPricing from './pages/admin/AdminPricing'
+import AdminLogin from "./pages/AdminLogin"
 import AdminNumbers from './pages/admin/AdminNumbers'
 
 function PrivateRoute({ children }) {
@@ -49,6 +50,7 @@ export default function App() {
       {/* Public */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
+      <Route path="/admin/login" element={<AdminLogin />} />
 
       {/* App autenticado */}
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
