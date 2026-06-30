@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Smartphone, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
+import { Plus, Edit2, Smartphone, CheckCircle, XCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { checkInstanceStatus } from '../../lib/zapi'
 
@@ -28,10 +28,17 @@ export default function AdminNumbers() {
     setForm({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true })
     setShowModal(true)
   }
+
   function openEdit(n) {
     setEditing(n)
-    setForm({ client_id: n.client_id, label: n.label, phone: n.phone || '', zapi_instance_id: n.zapi_instance_id, zapi_token: n.zapi_token, active: n.active })
+    setForm({ client_id: n.client_id, label: n.label, phone: n.phone || '', zapi_instance_id: n.zapi_instance_id || '', zapi_token: n.zapi_token || '', active: n.active })
     setShowModal(true)
+  }
+
+  async function handleDelete(number) {
+    if (!confirm(`Excluir "${number.label}"?`)) return
+    await supabase.from('client_numbers').delete().eq('id', number.id)
+    fetchAll()
   }
 
   async function handleSave(e) {
@@ -39,9 +46,7 @@ export default function AdminNumbers() {
     setSaving(true)
     if (editing) await supabase.from('client_numbers').update(form).eq('id', editing.id)
     else await supabase.from('client_numbers').insert(form)
-    setSaving(false)
-    setShowModal(false)
-    fetchAll()
+    setSaving(false); setShowModal(false); fetchAll()
   }
 
   async function checkStatus(n) {
@@ -70,8 +75,7 @@ export default function AdminNumbers() {
         <div className="bg-card border border-border rounded-xl p-16 text-center">
           <Smartphone size={40} className="text-muted mx-auto mb-4" />
           <p className="text-white font-body font-medium mb-1">Nenhum número configurado</p>
-          <p className="text-muted text-sm font-body mb-4">Primeiro crie um cliente, depois adicione os números dele</p>
-          <button onClick={openNew} className="text-accent text-sm font-display font-bold hover:underline">Adicionar número →</button>
+          <button onClick={openNew} className="text-accent text-sm font-display font-bold hover:underline mt-2">Adicionar número →</button>
         </div>
       ) : (
         <div className="space-y-3">
@@ -87,7 +91,7 @@ export default function AdminNumbers() {
                     <p className="text-white font-body font-medium">{n.label}</p>
                     {!n.active && <span className="text-xs text-muted bg-muted/10 px-2 py-0.5 rounded font-body">Inativo</span>}
                   </div>
-                  <p className="text-muted text-xs font-body mt-0.5">{n.client?.name} · {n.phone || 'Número não informado'}</p>
+                  <p className="text-muted text-xs font-body mt-0.5">{n.client?.name} · {n.phone || 'Sem telefone'}</p>
                   <p className="text-muted/50 text-xs font-body mt-0.5 truncate">ID: {n.zapi_instance_id || 'não configurado'}</p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
@@ -96,6 +100,7 @@ export default function AdminNumbers() {
                   {st === 'disconnected' && <span className="flex items-center gap-1 text-red-400 text-xs font-body"><XCircle size={12} /> Offline</span>}
                   <button onClick={() => checkStatus(n)} className="text-xs text-muted hover:text-accent font-body transition-colors">Testar</button>
                   <button onClick={() => openEdit(n)} className="text-muted hover:text-white transition-colors p-1"><Edit2 size={14} /></button>
+                  <button onClick={() => handleDelete(n)} className="text-muted hover:text-red-400 transition-colors p-1"><Trash2 size={14} /></button>
                 </div>
               </div>
             )
@@ -103,7 +108,6 @@ export default function AdminNumbers() {
         </div>
       )}
 
-      {/* MODAL */}
       {showModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-bg/80 backdrop-blur-sm">
           <div className="flex min-h-full items-center justify-center p-4">
@@ -114,7 +118,7 @@ export default function AdminNumbers() {
                   <label className="block text-xs text-muted font-body mb-1.5">Cliente *</label>
                   {clients.length === 0 ? (
                     <div className="bg-surface border border-border rounded-lg px-4 py-3">
-                      <p className="text-amber-400 text-sm font-body">⚠ Nenhum cliente cadastrado. Crie um cliente primeiro.</p>
+                      <p className="text-amber-400 text-sm font-body">⚠ Crie um cliente primeiro.</p>
                     </div>
                   ) : (
                     <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))} required
@@ -124,7 +128,7 @@ export default function AdminNumbers() {
                     </select>
                   )}
                 </div>
-                <F label="Nome / Loja *" value={form.label} onChange={v => setForm(f => ({ ...f, label: v }))} placeholder="Loja 1 / Centro" required />
+                <F label="Nome / Loja *" value={form.label} onChange={v => setForm(f => ({ ...f, label: v }))} placeholder="Loja 1 / Consultório" required />
                 <F label="Telefone (ex: 5519999999999)" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="5519999999999" />
                 <F label="Z-API Instance ID *" value={form.zapi_instance_id} onChange={v => setForm(f => ({ ...f, zapi_instance_id: v }))} required />
                 <F label="Z-API Token *" value={form.zapi_token} onChange={v => setForm(f => ({ ...f, zapi_token: v }))} required />
@@ -134,9 +138,7 @@ export default function AdminNumbers() {
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => setShowModal(false)} className="flex-1 border border-border text-muted py-3 rounded-lg text-sm font-body hover:text-white transition-colors">Cancelar</button>
-                  <button type="submit" disabled={saving || clients.length === 0} className="flex-1 bg-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed text-bg py-3 rounded-lg text-sm font-display font-bold transition-colors">
-                    {saving ? 'Salvando...' : 'Salvar'}
-                  </button>
+                  <button type="submit" disabled={saving || clients.length === 0} className="flex-1 bg-accent hover:bg-accent-dim disabled:opacity-40 text-bg py-3 rounded-lg text-sm font-display font-bold transition-colors">{saving ? 'Salvando...' : 'Salvar'}</button>
                 </div>
               </form>
             </div>

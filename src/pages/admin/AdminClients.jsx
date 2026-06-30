@@ -1,37 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Building2, Copy, Check, RefreshCw } from 'lucide-react'
+import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 const PLANS = ['Starter', 'Basic', 'Pro', 'Business', 'Enterprise']
 const SEGMENTS = ['Alimentação', 'Saúde/Clínica', 'Beleza', 'Educação', 'Varejo', 'Serviços', 'Outro']
 
-// Gera chave no formato xxxx-xxxx-xxxx-xxxx
 function generateKey() {
-  return Array.from({ length: 4 }, () =>
-    Math.random().toString(36).substring(2, 6)
-  ).join('-')
-}
-
-// Gera email e senha internos (invisíveis ao cliente)
-function generateAuthCredentials(clientName) {
-  const slug = clientName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '').substring(0, 12)
-  const rand = Math.random().toString(36).substring(2, 8)
-  return {
-    auth_email: `${slug}-${rand}@zapflow.internal`,
-    auth_password: Math.random().toString(36).substring(2) + 'Zf1!',
-  }
+  return Array.from({ length: 4 }, () => Math.random().toString(36).substring(2, 6)).join('-')
 }
 
 export default function AdminClients() {
   const [clients, setClients] = useState([])
   const [showModal, setShowModal] = useState(false)
-  const [showKey, setShowKey] = useState(null) // mostra chave após criação
+  const [showKey, setShowKey] = useState(null)
   const [editing, setEditing] = useState(null)
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [form, setForm] = useState({
-    name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: ''
-  })
+  const [form, setForm] = useState({ name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: '' })
 
   useEffect(() => { fetchClients() }, [])
 
@@ -52,58 +37,27 @@ export default function AdminClients() {
     setShowModal(true)
   }
 
-  function regenerateKey() {
-    setForm(f => ({ ...f, access_key: generateKey() }))
+  async function handleDelete(client) {
+    if (!confirm(`Excluir "${client.name}"? Isso remove também os números e contatos vinculados.`)) return
+    await supabase.from('message_logs').delete().eq('client_id', client.id)
+    await supabase.from('campaigns').delete().eq('client_id', client.id)
+    await supabase.from('contacts').delete().eq('client_id', client.id)
+    await supabase.from('client_numbers').delete().eq('client_id', client.id)
+    await supabase.from('profiles').delete().eq('client_id', client.id)
+    await supabase.from('clients').delete().eq('id', client.id)
+    fetchClients()
   }
 
   async function handleSave(e) {
     e.preventDefault()
     setSaving(true)
-
     if (editing) {
-      await supabase.from('clients').update({
-        name: form.name, plan: form.plan, segment: form.segment,
-        status: form.status, access_key: form.access_key,
-      }).eq('id', editing.id)
-      setSaving(false)
-      setShowModal(false)
-      fetchClients()
+      await supabase.from('clients').update({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key }).eq('id', editing.id)
+      setSaving(false); setShowModal(false); fetchClients()
     } else {
-      // Cria o client no banco
-      const { data: client, error } = await supabase.from('clients').insert({
-        name: form.name, plan: form.plan, segment: form.segment,
-        status: form.status, access_key: form.access_key,
-      }).select().single()
-
-      if (error || !client) {
-        alert('Erro ao criar cliente: ' + error?.message)
-        setSaving(false)
-        return
-      }
-
-      // Cria usuário no Supabase Auth com credenciais internas
-      const { auth_email, auth_password } = generateAuthCredentials(form.name)
-      const { data: authData } = await supabase.auth.admin.createUser({
-        email: auth_email,
-        password: auth_password,
-        email_confirm: true,
-      })
-
-      if (authData?.user) {
-        // Salva credenciais internas no client (pra login pela chave funcionar)
-        await supabase.from('clients').update({ auth_email, auth_password }).eq('id', client.id)
-        // Cria profile
-        await supabase.from('profiles').insert({
-          id: authData.user.id,
-          client_id: client.id,
-          role: 'client',
-          full_name: form.name,
-          email: auth_email,
-        })
-      }
-
-      setSaving(false)
-      setShowModal(false)
+      const { data: client, error } = await supabase.from('clients').insert({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key }).select().single()
+      if (error) { alert('Erro: ' + error.message); setSaving(false); return }
+      setSaving(false); setShowModal(false)
       setShowKey({ name: form.name, key: form.access_key })
       fetchClients()
     }
@@ -162,14 +116,8 @@ export default function AdminClients() {
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-2">
                       <code className="text-xs text-accent bg-accent/10 px-2 py-1 rounded font-body tracking-wider">{c.access_key || '—'}</code>
-                      {c.access_key && (
-                        <button onClick={() => copyKey(c.access_key)} className="text-muted hover:text-accent transition-colors">
-                          <Copy size={12} />
-                        </button>
-                      )}
-                      <button onClick={() => regenerateClientKey(c)} className="text-muted hover:text-accent transition-colors" title="Gerar nova chave">
-                        <RefreshCw size={12} />
-                      </button>
+                      {c.access_key && <button onClick={() => copyKey(c.access_key)} className="text-muted hover:text-accent transition-colors"><Copy size={12} /></button>}
+                      <button onClick={() => regenerateClientKey(c)} className="text-muted hover:text-accent transition-colors"><RefreshCw size={12} /></button>
                     </div>
                   </td>
                   <td className="px-5 py-4">
@@ -177,8 +125,9 @@ export default function AdminClients() {
                       {c.status === 'active' ? 'Ativo' : 'Inativo'}
                     </span>
                   </td>
-                  <td className="px-5 py-4 text-right">
+                  <td className="px-5 py-4 text-right flex items-center justify-end gap-2">
                     <button onClick={() => openEdit(c)} className="text-muted hover:text-white transition-colors p-1"><Edit2 size={14} /></button>
+                    <button onClick={() => handleDelete(c)} className="text-muted hover:text-red-400 transition-colors p-1"><Trash2 size={14} /></button>
                   </td>
                 </tr>
               ))}
@@ -187,7 +136,6 @@ export default function AdminClients() {
         </div>
       )}
 
-      {/* MODAL NOVO/EDITAR */}
       {showModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-bg/80 backdrop-blur-sm">
           <div className="flex min-h-full items-center justify-center p-4">
@@ -200,31 +148,21 @@ export default function AdminClients() {
                   <Sel label="Segmento" value={form.segment} onChange={v => setForm(f => ({ ...f, segment: v }))} options={SEGMENTS} />
                 </div>
                 <Sel label="Status" value={form.status} onChange={v => setForm(f => ({ ...f, status: v }))} options={['active', 'inactive']} labels={['Ativo', 'Inativo']} />
-
-                {/* Chave de acesso */}
                 <div>
-                  <label className="block text-xs text-muted font-body mb-1.5">Chave de acesso (gerada automaticamente)</label>
+                  <label className="block text-xs text-muted font-body mb-1.5">Chave de acesso</label>
                   <div className="flex gap-2">
-                    <div className="flex-1 bg-surface border border-accent/30 rounded-lg px-4 py-3 flex items-center">
-                      <code className="text-accent text-sm font-body tracking-widest flex-1">{form.access_key}</code>
+                    <div className="flex-1 bg-surface border border-accent/30 rounded-lg px-4 py-3">
+                      <code className="text-accent text-sm font-body tracking-widest">{form.access_key}</code>
                     </div>
-                    <button type="button" onClick={regenerateKey}
-                      className="border border-border text-muted hover:text-accent px-3 rounded-lg transition-colors" title="Gerar nova chave">
-                      <RefreshCw size={14} />
-                    </button>
-                    <button type="button" onClick={() => copyKey(form.access_key)}
-                      className="border border-border text-muted hover:text-accent px-3 rounded-lg transition-colors">
+                    <button type="button" onClick={() => setForm(f => ({ ...f, access_key: generateKey() }))} className="border border-border text-muted hover:text-accent px-3 rounded-lg transition-colors"><RefreshCw size={14} /></button>
+                    <button type="button" onClick={() => copyKey(form.access_key)} className="border border-border text-muted hover:text-accent px-3 rounded-lg transition-colors">
                       {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
                     </button>
                   </div>
-                  <p className="text-xs text-muted font-body mt-1.5">Esta é a chave que o cliente usará para entrar. Guarde e envie para ele.</p>
                 </div>
-
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => setShowModal(false)} className="flex-1 border border-border text-muted py-3 rounded-lg text-sm font-body hover:text-white transition-colors">Cancelar</button>
-                  <button type="submit" disabled={saving} className="flex-1 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg py-3 rounded-lg text-sm font-display font-bold transition-colors">
-                    {saving ? 'Criando...' : editing ? 'Salvar' : 'Criar cliente'}
-                  </button>
+                  <button type="submit" disabled={saving} className="flex-1 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg py-3 rounded-lg text-sm font-display font-bold transition-colors">{saving ? 'Salvando...' : editing ? 'Salvar' : 'Criar'}</button>
                 </div>
               </form>
             </div>
@@ -232,7 +170,6 @@ export default function AdminClients() {
         </div>
       )}
 
-      {/* MODAL CHAVE GERADA */}
       {showKey && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-bg/80 backdrop-blur-sm">
           <div className="flex min-h-full items-center justify-center p-4">
@@ -241,26 +178,16 @@ export default function AdminClients() {
                 <Check size={24} className="text-accent" />
               </div>
               <h3 className="font-display font-bold text-xl text-white mb-2">Cliente criado!</h3>
-              <p className="text-muted text-sm font-body mb-6">Envie essa chave de acesso para <strong className="text-white">{showKey.name}</strong>:</p>
-
+              <p className="text-muted text-sm font-body mb-6">Chave de acesso de <strong className="text-white">{showKey.name}</strong>:</p>
               <div className="bg-surface border border-accent/20 rounded-xl p-4 mb-6">
                 <code className="text-accent text-xl font-body tracking-widest">{showKey.key}</code>
               </div>
-
               <div className="flex gap-3">
-                <button onClick={() => copyKey(showKey.key)}
-                  className="flex-1 border border-border text-muted py-3 rounded-lg text-sm font-body hover:text-white flex items-center justify-center gap-2 transition-colors">
-                  {copied ? <><Check size={14} className="text-green-400" /> Copiado!</> : <><Copy size={14} /> Copiar chave</>}
+                <button onClick={() => copyKey(showKey.key)} className="flex-1 border border-border text-muted py-3 rounded-lg text-sm font-body hover:text-white flex items-center justify-center gap-2 transition-colors">
+                  {copied ? <><Check size={14} className="text-green-400" /> Copiado!</> : <><Copy size={14} /> Copiar</>}
                 </button>
-                <button onClick={() => setShowKey(null)}
-                  className="flex-1 bg-accent hover:bg-accent-dim text-bg py-3 rounded-lg text-sm font-display font-bold transition-colors">
-                  Fechar
-                </button>
+                <button onClick={() => setShowKey(null)} className="flex-1 bg-accent hover:bg-accent-dim text-bg py-3 rounded-lg text-sm font-display font-bold transition-colors">Fechar</button>
               </div>
-
-              <p className="text-xs text-muted font-body mt-4">
-                O cliente acessa: <span className="text-white">zap-flow-smoky.vercel.app</span>
-              </p>
             </div>
           </div>
         </div>
@@ -269,11 +196,11 @@ export default function AdminClients() {
   )
 }
 
-function F({ label, value, onChange, type = 'text', placeholder, required }) {
+function F({ label, value, onChange, required }) {
   return (
     <div>
       <label className="block text-xs text-muted font-body mb-1.5">{label}</label>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required}
+      <input value={value} onChange={e => onChange(e.target.value)} required={required}
         className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
     </div>
   )
@@ -282,8 +209,7 @@ function Sel({ label, value, onChange, options, labels }) {
   return (
     <div>
       <label className="block text-xs text-muted font-body mb-1.5">{label}</label>
-      <select value={value} onChange={e => onChange(e.target.value)}
-        className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body focus:outline-none focus:border-accent">
+      <select value={value} onChange={e => onChange(e.target.value)} className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body focus:outline-none focus:border-accent">
         {options.map((o, i) => <option key={o} value={o}>{labels ? labels[i] : o}</option>)}
       </select>
     </div>
