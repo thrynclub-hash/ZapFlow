@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { Eye, EyeOff, Zap } from 'lucide-react'
+import { Zap, Key } from 'lucide-react'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [show, setShow] = useState(false)
+  const [accessKey, setAccessKey] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
@@ -15,9 +13,36 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) { setError('E-mail ou senha incorretos.'); setLoading(false) }
-    else navigate('/dashboard')
+
+    const key = accessKey.trim().toLowerCase()
+
+    // Busca o cliente pela chave de acesso
+    const { data: client, error: clientErr } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('access_key', key)
+      .eq('status', 'active')
+      .single()
+
+    if (clientErr || !client) {
+      setError('Chave de acesso inválida ou expirada.')
+      setLoading(false)
+      return
+    }
+
+    // Faz login com o email/senha gerado automaticamente para esse cliente
+    const { error: authErr } = await supabase.auth.signInWithPassword({
+      email: client.auth_email,
+      password: client.auth_password,
+    })
+
+    if (authErr) {
+      setError('Erro ao autenticar. Contate o administrador.')
+      setLoading(false)
+      return
+    }
+
+    navigate('/dashboard')
   }
 
   return (
@@ -34,40 +59,24 @@ export default function Login() {
           </div>
         </div>
 
-        <h2 className="font-display font-bold text-2xl text-white mb-1">Entrar na plataforma</h2>
-        <p className="text-muted text-sm font-body mb-8">Acesse seu painel de automações</p>
+        <h2 className="font-display font-bold text-2xl text-white mb-1">Acessar painel</h2>
+        <p className="text-muted text-sm font-body mb-8">Digite sua chave de acesso fornecida pelo administrador</p>
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-xs text-muted font-body mb-1.5">E-mail</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              placeholder="seu@email.com"
-              className="w-full bg-card border border-border rounded-lg px-4 py-3 text-white text-sm font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-muted font-body mb-1.5">Senha</label>
+            <label className="block text-xs text-muted font-body mb-1.5">Chave de acesso</label>
             <div className="relative">
+              <Key size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
               <input
-                type={show ? 'text' : 'password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
+                type="text"
+                value={accessKey}
+                onChange={e => setAccessKey(e.target.value)}
                 required
-                placeholder="••••••••"
-                className="w-full bg-card border border-border rounded-lg px-4 py-3 text-white text-sm font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors pr-12"
+                placeholder="xxxx-xxxx-xxxx-xxxx"
+                autoComplete="off"
+                spellCheck={false}
+                className="w-full bg-card border border-border rounded-lg pl-11 pr-4 py-3 text-white text-sm font-body placeholder-muted/40 focus:outline-none focus:border-accent transition-colors tracking-widest"
               />
-              <button
-                type="button"
-                onClick={() => setShow(!show)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-white transition-colors"
-              >
-                {show ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
             </div>
           </div>
 
@@ -79,15 +88,15 @@ export default function Login() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !accessKey.trim()}
             className="w-full bg-accent hover:bg-accent-dim text-bg font-display font-bold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Entrando...' : 'Entrar'}
+            {loading ? 'Verificando...' : 'Entrar'}
           </button>
         </form>
 
         <p className="text-center text-xs text-muted font-body mt-8">
-          Não tem acesso? Entre em contato com seu administrador.
+          Não tem sua chave? Entre em contato com o administrador.
         </p>
       </div>
     </div>
