@@ -25,6 +25,19 @@ export default function NewCampaign() {
   const [imageUrlInput, setImageUrlInput] = useState('')
   const [saving, setSaving] = useState(false)
   const fileRef = useRef()
+
+  // Follow-up automático — pedido do Leonardo pra ficar embutido aqui
+  // direto (não depender da tela de Automations, que ainda não está clara
+  // pra ele). Dispara sozinho N dias depois de cada envio individual desta
+  // campanha, pra quem não respondeu nada nesse meio tempo (mesmo motor que
+  // já existia pra follow-up, só que agora configurável na hora de criar).
+  const [wantsFollowUp, setWantsFollowUp] = useState(false)
+  const [fuDelayDays, setFuDelayDays] = useState(2)
+  const [fuCaption, setFuCaption] = useState('')
+  const [fuImageFile, setFuImageFile] = useState(null)
+  const [fuImagePreview, setFuImagePreview] = useState(null)
+  const [fuImageUrlInput, setFuImageUrlInput] = useState('')
+  const fuFileRef = useRef()
   const clientId = profile?.client_id
 
   useEffect(() => { if (clientId) fetchNumbers() }, [clientId])
@@ -51,6 +64,14 @@ export default function NewCampaign() {
     setImageUrlInput('')
   }
 
+  function handleFuImage(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setFuImageFile(file)
+    setFuImagePreview(URL.createObjectURL(file))
+    setFuImageUrlInput('')
+  }
+
   async function uploadImage(campaignId) {
     const ext = imageFile.name.split('.').pop()
     const path = `campaigns/${clientId}/${campaignId}.${ext}`
@@ -65,6 +86,7 @@ export default function NewCampaign() {
     if (contacts.length === 0) return alert('Nenhum contato nesta loja.')
     if (!form.caption.trim()) return alert('Escreva a mensagem.')
     if (form.send_mode === 'scheduled' && !form.scheduled_date) return alert('Escolha a data e hora do disparo (ou deixe como rascunho e agende depois pelo Histórico).')
+    if (wantsFollowUp && !fuCaption.trim()) return alert('Escreva a mensagem do follow-up (ou desative o follow-up).')
 
     setSaving(true)
 
@@ -93,10 +115,40 @@ export default function NewCampaign() {
       await supabase.from('campaigns').update({ image_url: imageUrlInput.trim() }).eq('id', campaign.id)
     }
 
+    // Follow-up automático (opcional) — mesma campanha-mãe, dispara sozinho
+    // N dias depois de cada envio individual pra quem não respondeu nada.
+    if (wantsFollowUp && fuCaption.trim()) {
+      const { data: followUp, error: fuErr } = await supabase.from('campaigns').insert({
+        client_id: clientId, number_id: form.number_id,
+        name: `${form.name || 'Disparo'} - Follow-up (${fuDelayDays} dias)`,
+        caption: fuCaption, type: 'followup', status: 'scheduled',
+        follow_up_of: campaign.id, follow_up_delay_days: Number(fuDelayDays) || 2,
+      }).select().single()
+
+      if (fuErr) {
+        alert('Campanha principal criada, mas o follow-up deu erro: ' + fuErr.message + '. Você pode criar depois editando esta campanha no Histórico.')
+      } else if (followUp) {
+        if (fuImageFile) {
+          try {
+            const ext = fuImageFile.name.split('.').pop()
+            const path = `campaigns/${clientId}/${followUp.id}.${ext}`
+            await supabase.storage.from('creatives').upload(path, fuImageFile, { upsert: true })
+            const { data } = supabase.storage.from('creatives').getPublicUrl(path)
+            await supabase.from('campaigns').update({ image_url: data.publicUrl }).eq('id', followUp.id)
+          } catch (err) {
+            alert('Follow-up criado, mas a imagem dele não subiu: ' + err.message + '. Você pode adicionar depois pelo Histórico.')
+          }
+        } else if (fuImageUrlInput.trim()) {
+          await supabase.from('campaigns').update({ image_url: fuImageUrlInput.trim() }).eq('id', followUp.id)
+        }
+      }
+    }
+
     setSaving(false)
-    alert(form.send_mode === 'scheduled'
+    const fuNote = wantsFollowUp && fuCaption.trim() ? ` Follow-up configurado pra ${fuDelayDays} dia(s) depois, pra quem não responder.` : ''
+    alert((form.send_mode === 'scheduled'
       ? `✅ Campanha agendada! Dispara automaticamente a partir de ${new Date(form.scheduled_date).toLocaleString('pt-BR')}, no máximo ${DAILY_CAP}/dia.`
-      : `✅ Campanha configurada! Envia até ${Math.min(DAILY_CAP, form.daily_limit)} contatos/dia a partir de amanhã.`)
+      : `✅ Campanha configurada! Envia até ${Math.min(DAILY_CAP, form.daily_limit)} contatos/dia a partir de amanhã.`) + fuNote)
     navigate('/campaigns')
   }
 
@@ -242,13 +294,76 @@ export default function NewCampaign() {
           )}
         </div>
 
+        {/* Follow-up automático (opcional) */}
+        <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display font-semibold text-white text-sm uppercase tracking-wide">4. Follow-up automático (opcional)</h3>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <span className="text-xs text-muted font-body">{wantsFollowUp ? 'Sim' : 'Não'}</span>
+              <div onClick={() => setWantsFollowUp(v => !v)}
+                className={`w-10 h-6 rounded-full transition-colors relative cursor-pointer ${wantsFollowUp ? 'bg-accent' : 'bg-border'}`}>
+                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${wantsFollowUp ? 'left-5' : 'left-1'}`} />
+              </div>
+            </label>
+          </div>
+          <p className="text-xs text-muted font-body -mt-2">Manda uma segunda mensagem sozinho, alguns dias depois, só pra quem <strong className="text-white">não respondeu nada</strong> desde o disparo principal. (A tela de Automations ainda vai passar por uma revisão — por enquanto, configure o follow-up direto por aqui.)</p>
+
+          {wantsFollowUp && (
+            <div className="space-y-4 pt-2 border-t border-border">
+              <div>
+                <label className="block text-xs text-muted font-body mb-1.5">Quantos dias depois do envio principal</label>
+                <input type="number" min={1} max={30} value={fuDelayDays} onChange={e => setFuDelayDays(e.target.value)}
+                  className="w-32 bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+              </div>
+
+              <div>
+                <label className="block text-xs text-muted font-body mb-1.5">Mensagem do follow-up *</label>
+                <textarea value={fuCaption} onChange={e => setFuCaption(e.target.value)}
+                  rows={4} placeholder="Ex: Oi, {{nome}}! Passando rapidinho pra saber se ainda tem interesse..."
+                  className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors resize-none" />
+              </div>
+
+              <div>
+                <label className="block text-xs text-muted font-body mb-2">Imagem do follow-up (opcional, pode ser diferente da principal)</label>
+                <input ref={fuFileRef} type="file" accept="image/*" onChange={handleFuImage} className="hidden" />
+                {fuImagePreview ? (
+                  <div className="relative inline-block">
+                    <img src={fuImagePreview} alt="preview" className="rounded-xl max-h-40 border border-border object-contain bg-black/20" />
+                    <button type="button" onClick={() => { setFuImageFile(null); setFuImagePreview(null) }}
+                      className="absolute top-2 right-2 bg-bg/80 rounded-full p-1 text-white hover:bg-red-500 transition-colors"><X size={14} /></button>
+                  </div>
+                ) : fuImageUrlInput.trim() ? (
+                  <div className="relative inline-block">
+                    <img src={fuImageUrlInput.trim()} alt="preview" className="rounded-xl max-h-40 border border-border object-contain bg-black/20" onError={e => { e.target.style.display = 'none' }} />
+                    <button type="button" onClick={() => setFuImageUrlInput('')}
+                      className="absolute top-2 right-2 bg-bg/80 rounded-full p-1 text-white hover:bg-red-500 transition-colors"><X size={14} /></button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => fuFileRef.current.click()}
+                    className="w-full h-24 border-2 border-dashed border-border rounded-xl flex flex-col items-center justify-center gap-1 text-muted hover:border-accent hover:text-accent transition-colors">
+                    <Image size={20} />
+                    <p className="text-xs font-body">Adicionar imagem</p>
+                  </button>
+                )}
+                <div className="flex items-center gap-2 my-1">
+                  <div className="flex-1 h-px bg-border" /><span className="text-xs text-muted font-body">ou</span><div className="flex-1 h-px bg-border" />
+                </div>
+                <input type="url" value={fuImageUrlInput} onChange={e => { setFuImageUrlInput(e.target.value); if (e.target.value) { setFuImageFile(null); setFuImagePreview(null) } }}
+                  placeholder="Cola aqui o link de uma imagem"
+                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Confirmar */}
         <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-          <h3 className="font-display font-semibold text-white text-sm uppercase tracking-wide">4. Confirmar</h3>
+          <h3 className="font-display font-semibold text-white text-sm uppercase tracking-wide">5. Confirmar</h3>
           <div className="bg-surface rounded-xl p-4 space-y-2">
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Loja</span><span className="text-white">{selectedNumber?.label || '—'}</span></div>
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Total de contatos</span><span className="text-accent font-medium">{contacts.length}</span></div>
             {form.send_mode === 'daily' && <div className="flex justify-between text-sm font-body"><span className="text-muted">Por dia</span><span className="text-white">{form.daily_limit} contatos/dia</span></div>}
+            {wantsFollowUp && <div className="flex justify-between text-sm font-body"><span className="text-muted">Follow-up</span><span className="text-white">{fuDelayDays} dia(s) depois, se não responder</span></div>}
           </div>
 
           <button type="submit" disabled={!form.number_id || contacts.length === 0 || saving}
