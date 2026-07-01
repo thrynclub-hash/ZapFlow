@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, Plus, Search, Trash2, Download, Users, MessageCircle } from 'lucide-react'
+import { Upload, Plus, Search, Trash2, Download, Users, MessageCircle, Tag, Pencil } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import * as XLSX from 'xlsx'
@@ -21,6 +21,8 @@ export default function Contacts() {
   const [numbers, setNumbers] = useState([])
   const [search, setSearch] = useState('')
   const [filterNumber, setFilterNumber] = useState('')
+  const [filterTag, setFilterTag] = useState('')
+  const [importTag, setImportTag] = useState('Novo')
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
@@ -64,8 +66,15 @@ export default function Contacts() {
   const filtered = contacts.filter(c => {
     const matchSearch = !search || c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search)
     const matchNumber = !filterNumber || c.number_id === filterNumber
-    return matchSearch && matchNumber
+    const matchTag = !filterTag || (Array.isArray(c.tags) && c.tags.includes(filterTag))
+    return matchSearch && matchNumber && matchTag
   })
+
+  // Lista de tags únicas já em uso, pro filtro — "Antigo"/"Novo" sempre
+  // aparecem primeiro (são as tags do fluxo combinado com o Leonardo),
+  // o resto (tags livres que o cliente cria) vem depois em ordem alfabética.
+  const allTags = Array.from(new Set(contacts.flatMap(c => Array.isArray(c.tags) ? c.tags : [])))
+  const tagOptions = [...['Antigo', 'Novo'].filter(t => allTags.includes(t)), ...allTags.filter(t => t !== 'Antigo' && t !== 'Novo').sort()]
 
   async function handleAdd(e) {
     e.preventDefault()
@@ -97,6 +106,25 @@ export default function Contacts() {
     if (!confirm('Remover este contato?')) return
     await supabase.from('contacts').delete().eq('id', id)
     setContacts(c => c.filter(x => x.id !== id))
+  }
+
+  // Toggle rápido Ativo/Inativo — pra quando o Leonardo/cliente perceber
+  // que um contato específico faz tempo que não aparece/não responde.
+  async function toggleStatus(contact) {
+    const next = contact.status === 'Ativo' ? 'Inativo' : 'Ativo'
+    setContacts(cs => cs.map(x => x.id === contact.id ? { ...x, status: next } : x))
+    await supabase.from('contacts').update({ status: next }).eq('id', contact.id)
+  }
+
+  // Edição rápida de tags direto na lista (ex: trocar "Novo" por "Antigo"
+  // depois de um tempo, ou adicionar uma tag livre).
+  async function editTags(contact) {
+    const current = Array.isArray(contact.tags) ? contact.tags.join(', ') : ''
+    const input = prompt('Tags deste contato (separadas por vírgula):', current)
+    if (input === null) return
+    const tags = input.split(',').map(t => t.trim()).filter(Boolean)
+    setContacts(cs => cs.map(x => x.id === contact.id ? { ...x, tags } : x))
+    await supabase.from('contacts').update({ tags }).eq('id', contact.id)
   }
 
   // Normaliza cabeçalho de coluna: minúsculas, sem acento, sem espaço/pontuação —
@@ -199,7 +227,16 @@ export default function Contacts() {
             allowedNew = toCreate.slice(0, remaining)
           }
         }
-        const toUpsert = [...toUpdate, ...allowedNew]
+        // A tag do lote (ex: "Novo") só vai pros contatos REALMENTE novos.
+        // Importante: o upsert em lote do PostgREST exige que TODAS as linhas
+        // tenham exatamente as mesmas colunas — por isso toda linha leva um
+        // campo "tags" explícito; contato que já existia (toUpdate) recebe de
+        // volta a MESMA tag que já tinha (nunca fica sem, nunca é sobrescrito
+        // pela tag do lote), e só quem é novo de fato ganha a tag do import.
+        const existingTagsByPhone = new Map(contacts.map(c => [c.phone, Array.isArray(c.tags) ? c.tags : []]))
+        const toUpdateTagged = toUpdate.map(c => ({ ...c, tags: existingTagsByPhone.get(c.phone) || [] }))
+        const allowedNewTagged = allowedNew.map(c => ({ ...c, tags: importTag ? [importTag] : [] }))
+        const toUpsert = [...toUpdateTagged, ...allowedNewTagged]
 
         // upsert com onConflict client_id+phone: contato existente é ATUALIZADO
         // (nome/loja/nascimento/imported_at), não duplicado — a linha nunca é
@@ -263,6 +300,10 @@ export default function Contacts() {
               {numbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
             </select>
           )}
+          <input value={importTag} onChange={e => setImportTag(e.target.value)}
+            title='Tag aplicada só nos contatos NOVOS deste import (contato que já existia mantém a tag que já tinha)'
+            placeholder="Tag do import (ex: Novo)"
+            className="w-40 bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent" />
           <button onClick={exportExcel} className="flex items-center gap-2 border border-border text-muted hover:text-white px-4 py-2 rounded-lg text-sm font-body transition-colors">
             <Download size={14} /> Exportar
           </button>
@@ -311,11 +352,18 @@ export default function Contacts() {
             {numbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
           </select>
         )}
+        {tagOptions.length > 0 && (
+          <select value={filterTag} onChange={e => setFilterTag(e.target.value)}
+            className="bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent">
+            <option value="">Todas as tags</option>
+            {tagOptions.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
       </div>
 
       <div className="bg-card border border-border rounded-xl p-4">
         <p className="text-xs text-muted font-body">
-          <strong className="text-white">Como importar:</strong> qualquer planilha com uma coluna de nome (ex: "Nome", "Cliente", "Paciente") e uma de telefone (ex: "Telefone", "WhatsApp", "Celular") funciona — não precisa ser sempre o mesmo formato. Nascimento é opcional (DD/MM/AAAA ou AAAA-MM-DD). Contatos com o mesmo telefone de um já existente são <strong className="text-white">atualizados</strong>, nunca duplicados.
+          <strong className="text-white">Como importar:</strong> qualquer planilha com uma coluna de nome (ex: "Nome", "Cliente", "Paciente") e uma de telefone (ex: "Telefone", "WhatsApp", "Celular") funciona — não precisa ser sempre o mesmo formato. Nascimento é opcional (DD/MM/AAAA ou AAAA-MM-DD). Contatos com o mesmo telefone de um já existente são <strong className="text-white">atualizados</strong>, nunca duplicados — e mantêm as tags que já tinham. A "Tag do import" (campo ao lado do botão) só é aplicada em quem é <strong className="text-white">realmente novo</strong> nesta planilha.
         </p>
       </div>
 
@@ -335,6 +383,8 @@ export default function Contacts() {
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Nome</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Telefone</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Loja</th>
+                <th className="text-left px-5 py-3 text-xs text-muted font-body">Tags</th>
+                <th className="text-left px-5 py-3 text-xs text-muted font-body">Status</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Nascimento</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Importado em</th>
                 <th className="px-5 py-3" />
@@ -346,6 +396,20 @@ export default function Contacts() {
                   <td className="px-5 py-3.5 text-sm text-white font-body font-medium">{c.name}</td>
                   <td className="px-5 py-3.5 text-sm text-muted font-body">{c.phone}</td>
                   <td className="px-5 py-3.5 text-sm text-muted font-body">{c.number?.label || '—'}</td>
+                  <td className="px-5 py-3.5">
+                    <div className="flex flex-wrap gap-1 items-center">
+                      {(Array.isArray(c.tags) ? c.tags : []).map(t => (
+                        <span key={t} className={`px-2 py-0.5 rounded text-xs font-body ${t === 'Novo' ? 'bg-blue-400/10 text-blue-300' : t === 'Antigo' ? 'bg-muted/10 text-muted' : 'bg-accent/10 text-accent'}`}>{t}</span>
+                      ))}
+                      <button onClick={() => editTags(c)} title="Editar tags" className="text-muted hover:text-accent transition-colors p-0.5"><Pencil size={11} /></button>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <button onClick={() => toggleStatus(c)} title="Clique para alternar Ativo/Inativo"
+                      className={`px-2 py-1 rounded text-xs font-body transition-colors ${c.status === 'Inativo' ? 'bg-muted/10 text-muted hover:bg-muted/20' : 'bg-green-400/10 text-green-400 hover:bg-green-400/20'}`}>
+                      {c.status === 'Inativo' ? 'Inativo' : 'Ativo'}
+                    </button>
+                  </td>
                   <td className="px-5 py-3.5 text-sm text-muted font-body">
                     {c.birth_date ? new Date(c.birth_date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' }) : '—'}
                   </td>
@@ -378,7 +442,8 @@ export default function Contacts() {
                   </select>
                 </div>
               )}
-              <Field label="Tags (separadas por vírgula)" value={form.tags} onChange={v => setForm(f => ({ ...f, tags: v }))} placeholder="vip, cliente antigo" />
+              <Field label="Tags (separadas por vírgula)" value={form.tags} onChange={v => setForm(f => ({ ...f, tags: v }))} placeholder="Novo" />
+              <p className="text-xs text-muted font-body -mt-2">Convenção combinada: use "Novo" pra contato recém-cadastrado — os que já estavam na base foram marcados como "Antigo".</p>
               {errorMsg && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 space-y-2">
                   <p className="text-red-400 text-xs font-body">{errorMsg}</p>

@@ -13,6 +13,50 @@ const statusConfig = {
   error: { label: 'Erro', icon: XCircle, color: 'text-red-400 bg-red-400/10' },
 }
 
+// Extrai o número da semana/campanha do nome (ex: "Semana 2 - ..." -> 2,
+// "Campanha 5 - ..." -> 5) pra ordenar por número, não por data de criação
+// (que fica bagunçada assim que alguém edita/reordena registros por fora).
+// Sem número no nome = vai pro final (999).
+function weekNum(c) {
+  const m = (c.name || '').match(/(?:semana|campanha)\s*(\d+)/i)
+  return m ? parseInt(m[1], 10) : 999
+}
+
+// Categoriza cada campanha numa seção clara do Histórico — "o que é
+// campanha em rascunho, o que já tá rodando, o que é agendamento" (pedido
+// literal do Leonardo), sem misturar tudo numa lista só.
+function groupOf(c) {
+  if (c.status === 'error') return 'error'
+  if (c.status === 'completed') return 'completed'
+  if (c.status === 'sending') return 'running'
+  if (c.status === 'scheduled') {
+    if (c.type === 'daily') return 'running' // recorrente — sempre "rodando", todo dia
+    if (c.scheduled_for && new Date(c.scheduled_for) > new Date()) return 'scheduled_future'
+    return 'running' // data já passou / é um envio multi-dia em andamento
+  }
+  return 'draft'
+}
+
+const GROUPS = [
+  { key: 'running', title: '🟢 Rodando agora', hint: 'Já está disparando, ou é recorrente (diária) e roda todo dia sozinha.' },
+  { key: 'scheduled_future', title: '🕐 Agendado', hint: 'Vai disparar sozinho na data marcada — ainda não começou.' },
+  { key: 'draft', title: '📝 Rascunho', hint: 'Ainda não foi disparado nem agendado — só você está vendo isso.' },
+  { key: 'completed', title: '✅ Concluído', hint: 'Já terminou de enviar pra todo o público-alvo dela.' },
+  { key: 'error', title: '⚠️ Com erro', hint: 'Teve problema no envio — dá uma olhada.' },
+]
+
+// Ordena dentro de cada seção: por número de semana/campanha, base antes
+// do próprio follow-up, e como desempate final, data de criação.
+function sortCampaigns(list) {
+  return [...list].sort((a, b) => {
+    const wa = weekNum(a), wb = weekNum(b)
+    if (wa !== wb) return wa - wb
+    const fa = a.follow_up_of ? 1 : 0, fb = b.follow_up_of ? 1 : 0
+    if (fa !== fb) return fa - fb
+    return new Date(a.created_at) - new Date(b.created_at)
+  })
+}
+
 export default function Campaigns() {
   const { profile } = useAuth()
   const clientId = profile?.client_id
@@ -85,34 +129,12 @@ export default function Campaigns() {
     setModalCampaign(null)
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display font-bold text-3xl text-white">Histórico de Disparos</h1>
-          <p className="text-muted text-sm font-body mt-1">{campaigns.length} campanhas no total</p>
-        </div>
-        <Link to="/campaigns/new" className="flex items-center gap-2 bg-accent hover:bg-accent-dim text-bg px-4 py-2.5 rounded-lg text-sm font-display font-bold transition-colors">
-          <Plus size={14} /> Novo Disparo
-        </Link>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>
-      ) : campaigns.length === 0 ? (
-        <div className="bg-card border border-border rounded-xl p-16 text-center">
-          <Megaphone size={40} className="text-muted mx-auto mb-4" />
-          <p className="text-white font-body font-medium mb-1">Nenhum disparo ainda</p>
-          <Link to="/campaigns/new" className="inline-block mt-4 text-accent text-sm font-display font-bold hover:underline">Criar primeiro disparo →</Link>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {campaigns.map(c => {
-            const st = statusConfig[c.status] || statusConfig.draft
-            const Icon = st.icon
-            const pct = c.total_count > 0 ? Math.round((c.sent_count / c.total_count) * 100) : 0
-            const launchable = isLaunchable(c)
-            return (
+  function renderCard(c) {
+    const st = statusConfig[c.status] || statusConfig.draft
+    const Icon = st.icon
+    const pct = c.total_count > 0 ? Math.round((c.sent_count / c.total_count) * 100) : 0
+    const launchable = isLaunchable(c)
+    return (
               <div key={c.id} className="bg-card border border-border rounded-xl p-5">
                 <div className="flex items-center gap-5">
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${st.color}`}>
@@ -189,6 +211,45 @@ export default function Campaigns() {
                   )}
                 </div>
               </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display font-bold text-3xl text-white">Histórico de Disparos</h1>
+          <p className="text-muted text-sm font-body mt-1">{campaigns.length} campanhas no total</p>
+        </div>
+        <Link to="/campaigns/new" className="flex items-center gap-2 bg-accent hover:bg-accent-dim text-bg px-4 py-2.5 rounded-lg text-sm font-display font-bold transition-colors">
+          <Plus size={14} /> Novo Disparo
+        </Link>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>
+      ) : campaigns.length === 0 ? (
+        <div className="bg-card border border-border rounded-xl p-16 text-center">
+          <Megaphone size={40} className="text-muted mx-auto mb-4" />
+          <p className="text-white font-body font-medium mb-1">Nenhum disparo ainda</p>
+          <Link to="/campaigns/new" className="inline-block mt-4 text-accent text-sm font-display font-bold hover:underline">Criar primeiro disparo →</Link>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {GROUPS.map(g => {
+            const items = sortCampaigns(campaigns.filter(c => groupOf(c) === g.key))
+            if (items.length === 0) return null
+            return (
+              <div key={g.key}>
+                <div className="flex items-center gap-2 mb-1">
+                  <h2 className="font-display font-bold text-sm text-white uppercase tracking-wide">{g.title}</h2>
+                  <span className="text-muted text-xs font-body">({items.length})</span>
+                </div>
+                <p className="text-muted text-xs font-body mb-3">{g.hint}</p>
+                <div className="space-y-3">
+                  {items.map(c => renderCard(c))}
+                </div>
+              </div>
             )
           })}
         </div>
@@ -223,6 +284,7 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   const [scheduledFor, setScheduledFor] = useState(toLocalInput(campaign.scheduled_for))
   const [dailyLimit, setDailyLimit] = useState(campaign.daily_limit || 100)
   const [dailyStartHour, setDailyStartHour] = useState(campaign.daily_start_hour || 9)
+  const [targetTags, setTargetTags] = useState(Array.isArray(campaign.target_tags) ? campaign.target_tags : [])
   const [saving, setSaving] = useState(false)
 
   // Follow-up ligado a esta campanha-base (se houver)
@@ -269,11 +331,14 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
       if (isBase) {
         if (campaign.type === 'scheduled') updates.scheduled_for = scheduledFor ? new Date(scheduledFor).toISOString() : null
         if (campaign.type === 'daily') { updates.daily_limit = Number(dailyLimit); updates.daily_start_hour = Number(dailyStartHour) }
+        updates.target_tags = targetTags.length > 0 ? targetTags : null
       }
       await supabase.from('campaigns').update(updates).eq('id', campaign.id)
 
       if (followUp) {
-        await supabase.from('campaigns').update({ caption: fuCaption, follow_up_delay_days: Number(fuDelayDays) }).eq('id', followUp.id)
+        // Follow-up sempre manda pro mesmo público-alvo da campanha-base —
+        // não faz sentido a base ir só pra "Antigo" e o follow-up ir pra todo mundo.
+        await supabase.from('campaigns').update({ caption: fuCaption, follow_up_delay_days: Number(fuDelayDays), target_tags: updates.target_tags }).eq('id', followUp.id)
       }
 
       // Fluxo de resposta é por cliente — upsert por client_id
@@ -360,6 +425,27 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
                   </select>
                 ) : <p className="text-sm text-white font-body">{campaign.daily_start_hour ?? 9}:00h</p>}
               </div>
+            </div>
+          )}
+
+          {isBase && (
+            <div>
+              <label className="block text-xs text-muted font-body mb-1.5">Público-alvo (por tag do contato)</label>
+              {editing ? (
+                <div className="flex flex-wrap gap-2">
+                  {['Antigo', 'Novo'].map(t => (
+                    <button key={t} type="button"
+                      onClick={() => setTargetTags(ts => ts.includes(t) ? ts.filter(x => x !== t) : [...ts, t])}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-body border transition-colors ${targetTags.includes(t) ? 'bg-accent text-bg border-accent font-bold' : 'border-border text-muted hover:text-white'}`}>
+                      {t}
+                    </button>
+                  ))}
+                  <span className="text-xs text-muted font-body self-center">{targetTags.length === 0 ? '(nenhuma marcada = manda pra todo mundo ativo)' : ''}</span>
+                </div>
+              ) : (
+                <p className="text-sm text-white font-body">{targetTags.length > 0 ? targetTags.join(' + ') : 'Todos os contatos ativos (sem filtro de tag)'}</p>
+              )}
+              {followUp && <p className="text-xs text-muted font-body mt-1">O follow-up automático desta campanha usa o mesmo alvo.</p>}
             </div>
           )}
 
