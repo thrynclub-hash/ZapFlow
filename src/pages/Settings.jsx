@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users } from 'lucide-react'
+import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { checkInstanceStatus } from '../lib/zapi'
@@ -19,6 +19,7 @@ export default function Settings() {
   const [statuses, setStatuses] = useState({})
   const [addons, setAddons] = useState([])
   const [loading, setLoading] = useState(true)
+  const [buyingType, setBuyingType] = useState(null)
 
   useEffect(() => {
     if (!profile?.client_id) return
@@ -27,8 +28,27 @@ export default function Settings() {
   }, [profile])
 
   async function fetchAddons() {
-    const { data } = await supabase.from('client_addons').select('*').eq('client_id', profile.client_id)
+    const { data } = await supabase.from('client_addons').select('*').eq('client_id', profile.client_id).order('created_at', { ascending: false })
     setAddons(data || [])
+  }
+
+  // Checkout real via Mercado Pago — cria a assinatura no servidor
+  // (mp-create-preapproval) e manda o cliente pro checkout hospedado.
+  async function buyAddon(addonType) {
+    setBuyingType(addonType)
+    try {
+      const { data, error } = await supabase.functions.invoke('mp-create-preapproval', { body: { addon_type: addonType } })
+      if (error || data?.error) {
+        alert('Não consegui iniciar o pagamento: ' + (data?.error || error.message) + '. Tenta pelo WhatsApp abaixo enquanto isso.')
+        return
+      }
+      if (data?.checkout_url) window.open(data.checkout_url, '_blank')
+      fetchAddons()
+    } catch (e) {
+      alert('Erro ao iniciar pagamento: ' + e.message)
+    } finally {
+      setBuyingType(null)
+    }
   }
 
   async function fetchNumbers() {
@@ -110,25 +130,40 @@ export default function Settings() {
         {addons.length > 0 && (
           <div className="space-y-1.5">
             {addons.map(a => (
-              <div key={a.id} className="flex justify-between text-xs font-body text-muted bg-surface rounded-lg px-3 py-2">
-                <span>{a.addon_type === 'number' ? `+${a.quantity} número(s) de WhatsApp` : `+${a.quantity * 1000} contatos`}</span>
-                <span className="text-white">R$ {a.monthly_price.toFixed(2)}/mês</span>
+              <div key={a.id} className="flex justify-between items-center text-xs font-body text-muted bg-surface rounded-lg px-3 py-2">
+                <span className="flex items-center gap-2">
+                  {a.addon_type === 'number' ? `+${a.quantity} número(s) de WhatsApp` : `+${a.quantity * 1000} contatos`}
+                  {a.status === 'pending' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-300">aguardando pagamento</span>}
+                  {a.status === 'cancelled' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-400/10 text-red-400">cancelado</span>}
+                </span>
+                <span className="text-white">R$ {Number(a.monthly_price).toFixed(2)}/mês</span>
               </div>
             ))}
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-3">
+          <button onClick={() => buyAddon('number')} disabled={buyingType === 'number'}
+            className="flex items-center justify-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-3 rounded-lg text-sm font-display font-bold transition-colors">
+            <CreditCard size={14} /> {buyingType === 'number' ? 'Abrindo...' : '+1 número — R$149/mês'}
+          </button>
+          <button onClick={() => buyAddon('contacts_1000')} disabled={buyingType === 'contacts_1000'}
+            className="flex items-center justify-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-3 rounded-lg text-sm font-display font-bold transition-colors">
+            <CreditCard size={14} /> {buyingType === 'contacts_1000' ? 'Abrindo...' : '+1000 contatos — R$59/mês'}
+          </button>
+        </div>
+        <p className="text-muted text-xs font-body">Clique abre o checkout do Mercado Pago numa nova aba (Pix ou cartão recorrente) — libera automaticamente assim que confirmar o pagamento.</p>
+
+        <div className="grid grid-cols-2 gap-3 pt-1">
           <a href={addonLink('number', profile?.client?.name)} target="_blank" rel="noreferrer"
-            className="flex items-center justify-center gap-2 border border-accent/40 text-accent hover:bg-accent hover:text-bg px-4 py-3 rounded-lg text-sm font-body font-medium transition-colors">
-            <MessageCircle size={14} /> +1 número WhatsApp
+            className="flex items-center justify-center gap-2 border border-border text-muted hover:text-white px-4 py-2 rounded-lg text-xs font-body transition-colors">
+            <MessageCircle size={12} /> Prefiro falar antes
           </a>
           <a href={addonLink('contacts', profile?.client?.name)} target="_blank" rel="noreferrer"
-            className="flex items-center justify-center gap-2 border border-accent/40 text-accent hover:bg-accent hover:text-bg px-4 py-3 rounded-lg text-sm font-body font-medium transition-colors">
-            <MessageCircle size={14} /> +1000 contatos
+            className="flex items-center justify-center gap-2 border border-border text-muted hover:text-white px-4 py-2 rounded-lg text-xs font-body transition-colors">
+            <MessageCircle size={12} /> Prefiro falar antes
           </a>
         </div>
-        <p className="text-muted text-xs font-body">Clique abre uma conversa no WhatsApp já com o pedido pronto — a liberação acontece assim que confirmado.</p>
       </div>
     </div>
   )

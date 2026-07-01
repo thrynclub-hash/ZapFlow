@@ -249,7 +249,11 @@ function AddonsModal({ client, onClose }) {
 
   async function addAddon() {
     setSaving(true)
-    await supabase.from('client_addons').insert({ client_id: client.id, addon_type: type, quantity, monthly_price: price })
+    // status='active' direto: add-on criado manualmente aqui pressupõe que
+    // você já cobrou o cliente por fora (Kiwify, Pix, etc). Add-ons que
+    // vierem do checkout automático do Mercado Pago nascem 'pending' e só
+    // viram 'active' quando o mp-webhook confirmar o pagamento.
+    await supabase.from('client_addons').insert({ client_id: client.id, addon_type: type, quantity, monthly_price: price, status: 'active' })
     setSaving(false)
     setQuantity(1)
     fetchAddons()
@@ -261,7 +265,7 @@ function AddonsModal({ client, onClose }) {
     fetchAddons()
   }
 
-  const totalExtra = addons.reduce((s, a) => s + Number(a.monthly_price), 0)
+  const totalExtra = addons.filter(a => a.status === 'active').reduce((s, a) => s + Number(a.monthly_price), 0)
 
   return (
     <Modal>
@@ -280,7 +284,12 @@ function AddonsModal({ client, onClose }) {
             {addons.map(a => (
               <div key={a.id} className="flex items-center justify-between bg-surface border border-border rounded-lg px-3 py-2.5">
                 <div>
-                  <p className="text-sm text-white font-body">{a.addon_type === 'number' ? `+${a.quantity} número(s) WhatsApp` : `+${a.quantity * 1000} contatos`}</p>
+                  <p className="text-sm text-white font-body flex items-center gap-2">
+                    {a.addon_type === 'number' ? `+${a.quantity} número(s) WhatsApp` : `+${a.quantity * 1000} contatos`}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-body ${a.status === 'active' ? 'bg-green-400/10 text-green-400' : a.status === 'pending' ? 'bg-amber-400/10 text-amber-300' : 'bg-red-400/10 text-red-400'}`}>
+                      {a.status === 'active' ? 'ativo' : a.status === 'pending' ? 'aguardando pagamento' : 'cancelado'}
+                    </span>
+                  </p>
                   <p className="text-xs text-muted font-body">R$ {Number(a.monthly_price).toFixed(2)}/mês · desde {new Date(a.created_at).toLocaleDateString('pt-BR')}</p>
                 </div>
                 <button onClick={() => removeAddon(a.id)} className="text-muted hover:text-red-400 transition-colors p-1"><Trash2 size={14} /></button>
