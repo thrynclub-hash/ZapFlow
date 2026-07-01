@@ -17,6 +17,8 @@ export default function Contacts() {
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [form, setForm] = useState({ name: '', phone: '', birth_date: '', number_id: '', tags: '' })
+  const [importTarget, setImportTarget] = useState('')
+  const [importSummary, setImportSummary] = useState(null)
   const fileRef = useRef()
 
   const clientId = profile?.client_id
@@ -26,6 +28,7 @@ export default function Contacts() {
   async function fetchNumbers() {
     const { data } = await supabase.from('client_numbers').select('*').eq('client_id', clientId).eq('active', true)
     setNumbers(data || [])
+    if (data?.length === 1) setImportTarget(data[0].id)
   }
 
   async function fetchContacts() {
@@ -68,30 +71,103 @@ export default function Contacts() {
     setContacts(c => c.filter(x => x.id !== id))
   }
 
+  // Normaliza cabeçalho de coluna: minúsculas, sem acento, sem espaço/pontuação —
+  // assim "Número", "numero ", "NÚMERO", "N° Whatsapp" etc. todos batem no mesmo alias.
+  function normalizeHeader(h) {
+    return String(h || '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '')
+  }
+
+  const NAME_ALIASES = ['nome', 'name', 'contato', 'cliente', 'nomecompleto', 'paciente']
+  const PHONE_ALIASES = ['numero', 'telefone', 'phone', 'celular', 'whatsapp', 'fone', 'contato1', 'numerowhatsapp', 'tel']
+  const BIRTH_ALIASES = ['nascimento', 'birthdate', 'aniversario', 'datadenascimento', 'dtnascimento']
+
+  function findByAlias(rowNormalized, aliases) {
+    for (const alias of aliases) {
+      if (alias in rowNormalized) return rowNormalized[alias]
+    }
+    return ''
+  }
+
+  // Aceita ISO (YYYY-MM-DD), BR (DD/MM/AAAA ou DD-MM-AAAA) e datas seriais do Excel.
+  function parseBirthDate(raw) {
+    if (!raw) return null
+    if (typeof raw === 'number') {
+      // Data serial do Excel (dias desde 1899-12-30)
+      const d = new Date(Math.round((raw - 25569) * 86400 * 1000))
+      if (isNaN(d.getTime())) return null
+      return d.toISOString().slice(0, 10)
+    }
+    const s = String(raw).trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+    const br = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
+    if (br) {
+      let [, dd, mm, yyyy] = br
+      if (yyyy.length === 2) yyyy = '20' + yyyy
+      return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`
+    }
+    return null
+  }
+
   async function handleImportCSV(e) {
     const file = e.target.files[0]
     if (!file) return
+    if (numbers.length > 1 && !importTarget) {
+      alert('Selecione para qual loja/número esses contatos são antes de importar.')
+      e.target.value = ''
+      return
+    }
     setImporting(true)
+    setImportSummary(null)
     const reader = new FileReader()
+    const targetNumberId = importTarget || numbers[0]?.id || null
+    const nowIso = new Date().toISOString()
+
     reader.onload = async (ev) => {
       try {
         const wb = XLSX.read(ev.target.result, { type: 'binary' })
         const ws = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(ws)
-        const toInsert = rows.map(r => ({
-          client_id: clientId,
-          number_id: numbers[0]?.id || null,
-          name: String(r.Nome || r.nome || r.name || r.NOME || r.CONTATO || r.Contato || ''),
-          phone: String(r.Número || r.numero || r.Numero || r.telefone || r.phone || r.Telefone || r.celular || r.Celular || r.TELEFONE || r.NUMERO || '').replace(/\D/g, ''),
-          birth_date: r.nascimento || r.birth_date || r.aniversario || null,
-          tags: [],
-        })).filter(c => c.phone.length >= 8 && c.name)
-        for (let i = 0; i < toInsert.length; i += 100) {
-          await supabase.from('contacts').upsert(toInsert.slice(i, i + 100), { onConflict: 'client_id,phone' })
+        const rows = XLSX.utils.sheet_to_json(ws, { raw: true })
+
+        const toInsert = rows.map(r => {
+          const rowNormalized = {}
+          for (const key of Object.keys(r)) rowNormalized[normalizeHeader(key)] = r[key]
+
+          const name = String(findByAlias(rowNormalized, NAME_ALIASES) || '').trim()
+          const phone = String(findByAlias(rowNormalized, PHONE_ALIASES) || '').replace(/\D/g, '')
+          const birth_date = parseBirthDate(findByAlias(rowNormalized, BIRTH_ALIASES))
+
+          return {
+            client_id: clientId,
+            number_id: targetNumberId,
+            name,
+            phone,
+            birth_date,
+            status: 'Ativo',
+            imported_at: nowIso,
+          }
+        }).filter(c => c.phone.length >= 8 && c.name)
+
+        // Dedup dentro do próprio arquivo (mesma planilha com o mesmo telefone 2x) —
+        // fica só a última ocorrência, senão o upsert em lote pode brigar consigo mesmo.
+        const byPhone = new Map()
+        for (const c of toInsert) byPhone.set(c.phone, c)
+        const deduped = Array.from(byPhone.values())
+
+        // upsert com onConflict client_id+phone: contato existente é ATUALIZADO
+        // (nome/loja/nascimento/imported_at), não duplicado — a linha nunca é
+        // recriada, então created_at original se preserva.
+        for (let i = 0; i < deduped.length; i += 100) {
+          const { error } = await supabase.from('contacts').upsert(deduped.slice(i, i + 100), { onConflict: 'client_id,phone' })
+          if (error) throw error
         }
-        fetchContacts()
+
+        await fetchContacts()
         const skipped = rows.length - toInsert.length
-        alert(`✅ ${toInsert.length} contatos importados!${skipped > 0 ? ` (${skipped} ignorados por telefone inválido)` : ''}`)
+        const duplicatesInFile = toInsert.length - deduped.length
+        setImportSummary({ imported: deduped.length, skipped, duplicatesInFile, total: rows.length })
       } catch (err) {
         alert('Erro ao importar: ' + err.message)
       }
@@ -122,7 +198,15 @@ export default function Contacts() {
           <h1 className="font-display font-bold text-3xl text-white">Contatos</h1>
           <p className="text-muted text-sm font-body mt-1">{contacts.length.toLocaleString()} contatos cadastrados</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          {numbers.length > 1 && (
+            <select value={importTarget} onChange={e => setImportTarget(e.target.value)}
+              title="Loja/número de destino para a próxima importação"
+              className="bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent">
+              <option value="">Importar para qual loja?</option>
+              {numbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+            </select>
+          )}
           <button onClick={exportExcel} className="flex items-center gap-2 border border-border text-muted hover:text-white px-4 py-2 rounded-lg text-sm font-body transition-colors">
             <Download size={14} /> Exportar
           </button>
@@ -137,6 +221,17 @@ export default function Contacts() {
           </button>
         </div>
       </div>
+
+      {importSummary && (
+        <div className="bg-accent/10 border border-accent/30 rounded-xl p-4 flex items-start justify-between gap-4">
+          <p className="text-sm font-body text-white">
+            ✅ <strong>{importSummary.imported}</strong> contatos importados/atualizados (duplicados por telefone foram atualizados, não duplicados)
+            {importSummary.skipped > 0 && <> · <span className="text-amber-300">{importSummary.skipped} ignorados</span> (sem nome ou telefone válido)</>}
+            {importSummary.duplicatesInFile > 0 && <> · {importSummary.duplicatesInFile} repetidos dentro da própria planilha</>}
+          </p>
+          <button onClick={() => setImportSummary(null)} className="text-muted hover:text-white text-xs shrink-0">fechar</button>
+        </div>
+      )}
 
       <div className="flex gap-3">
         <div className="relative flex-1 max-w-xs">
@@ -155,7 +250,7 @@ export default function Contacts() {
 
       <div className="bg-card border border-border rounded-xl p-4">
         <p className="text-xs text-muted font-body">
-          <strong className="text-white">Como importar:</strong> Seu arquivo CSV/Excel deve ter colunas: <code className="text-accent">nome</code>, <code className="text-accent">telefone</code>, <code className="text-accent">nascimento</code> (opcional, formato DD/MM/AAAA).
+          <strong className="text-white">Como importar:</strong> qualquer planilha com uma coluna de nome (ex: "Nome", "Cliente", "Paciente") e uma de telefone (ex: "Telefone", "WhatsApp", "Celular") funciona — não precisa ser sempre o mesmo formato. Nascimento é opcional (DD/MM/AAAA ou AAAA-MM-DD). Contatos com o mesmo telefone de um já existente são <strong className="text-white">atualizados</strong>, nunca duplicados.
         </p>
       </div>
 
@@ -176,7 +271,7 @@ export default function Contacts() {
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Telefone</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Loja</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Nascimento</th>
-                <th className="text-left px-5 py-3 text-xs text-muted font-body">Cadastrado</th>
+                <th className="text-left px-5 py-3 text-xs text-muted font-body">Importado em</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
@@ -189,7 +284,7 @@ export default function Contacts() {
                   <td className="px-5 py-3.5 text-sm text-muted font-body">
                     {c.birth_date ? new Date(c.birth_date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' }) : '—'}
                   </td>
-                  <td className="px-5 py-3.5 text-sm text-muted font-body">{new Date(c.created_at).toLocaleDateString('pt-BR')}</td>
+                  <td className="px-5 py-3.5 text-sm text-muted font-body">{c.imported_at ? new Date(c.imported_at).toLocaleDateString('pt-BR') : new Date(c.created_at).toLocaleDateString('pt-BR')}</td>
                   <td className="px-5 py-3.5 text-right">
                     <button onClick={() => handleDelete(c.id)} className="text-muted hover:text-red-400 transition-colors p-1"><Trash2 size={14} /></button>
                   </td>

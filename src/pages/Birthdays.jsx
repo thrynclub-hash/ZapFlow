@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Cake, Send, Settings, Image, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { sendImageMessage, sendTextMessage, formatPhone, sleep } from '../lib/zapi'
+import { sleep } from '../lib/zapi'
 
 export default function Birthdays() {
   const { profile } = useAuth()
@@ -23,7 +23,7 @@ export default function Birthdays() {
   useEffect(() => { if (clientId) fetchBirthdays() }, [tab, clientId])
 
   async function fetchData() {
-    const { data: nums } = await supabase.from('client_numbers').select('*').eq('client_id', clientId)
+    const { data: nums } = await supabase.from('client_numbers').select('id, client_id, label, phone, active').eq('client_id', clientId)
     setNumbers(nums || [])
     const { data: cfg } = await supabase.from('birthday_configs').select('*').eq('client_id', clientId).single()
     if (cfg) { setConfig({ message: cfg.message || '', enabled: cfg.enabled }); setSavedImageUrl(cfg.image_url || null) }
@@ -78,21 +78,26 @@ export default function Birthdays() {
     if (!config.message) return alert('Configure a mensagem de aniversário primeiro.')
     if (!confirm(`Enviar para ${contacts.length} aniversariantes?`)) return
     setSending(true)
+    let sent = 0, capHit = false
     for (const contact of contacts) {
+      if (capHit) break
       const number = numbers.find(n => n.id === contact.number_id)
-      if (!number?.zapi_instance_id) continue
-      try {
-        const msg = config.message.replace('{nome}', contact.name?.split(' ')[0] || 'amigo(a)')
-        if (savedImageUrl) {
-          await sendImageMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), savedImageUrl, msg)
-        } else {
-          await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), msg)
-        }
-      } catch {}
+      if (!number) continue
+      const msg = config.message.replace('{nome}', contact.name?.split(' ')[0] || 'amigo(a)')
+      // Mesma Edge Function do disparo manual: token da Z-API fica só no
+      // servidor, e o mesmo limite diário de 100/dia por número vale aqui
+      // também (soma com campanhas/automações do mesmo número).
+      const { data } = await supabase.functions.invoke('send-message', {
+        body: { number_id: number.id, phone: contact.phone, message: msg, image_url: savedImageUrl || undefined, contact_id: contact.id },
+      })
+      if (data?.error === 'LIMITE_DIARIO_ATINGIDO') { capHit = true; break }
+      if (!data?.error) sent++
       await sleep(3500)
     }
     setSending(false)
-    alert('Mensagens enviadas!')
+    alert(capHit
+      ? `Limite diário de 100 mensagens atingido neste número. ${sent} enviadas agora — o resto não foi enviado hoje (envie de novo amanhã, ou espere a próxima campanha).`
+      : `${sent} mensagens de aniversário enviadas!`)
   }
 
   return (

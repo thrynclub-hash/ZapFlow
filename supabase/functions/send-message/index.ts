@@ -1,0 +1,135 @@
+// ZapFlow — Envio central de mensagens (texto ou imagem)
+// Deploy: supabase functions deploy send-message
+// (autenticado — precisa de sessão real de Supabase Auth, ver
+// CHANGELOG-AUTH-REAL.md)
+//
+// TODO caminho de envio passa por aqui — disparo "agora" do frontend,
+// campanhas agendadas/diárias, automações e follow-ups (esses três
+// últimos chamam a função try_consume_daily_send_budget diretamente
+// via RPC, pois já rodam com service role dentro do run-automations).
+// Isso resolve dois problemas de uma vez:
+//   1) zapi_token nunca mais é lido pelo navegador do cliente
+//      (SECURITY-FINDINGS-2026-07-01.md item 3)
+//   2) o limite de 100 mensagens/dia por número é global de verdade,
+//      não "por campanha" — ninguém manda sem passar pelo contador.
+
+import { createClient } from "jsr:@supabase/supabase-js@2";
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+const ZAPI_BASE = "https://api.z-api.io/instances";
+const DAILY_CAP = 100;
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function formatPhone(phone: string): string {
+  return phone.replace(/\D/g, "").replace(/^0/, "55");
+}
+
+async function sendTextMessage(instanceId: string, token: string, phone: string, message: string) {
+  const res = await fetch(`${ZAPI_BASE}/${instanceId}/token/${token}/send-text`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Client-Token": token },
+    body: JSON.stringify({ phone, message }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Z-API error: ${res.status}`);
+  }
+  return res.json();
+}
+
+async function sendImageMessage(instanceId: string, token: string, phone: string, image: string, caption: string) {
+  const res = await fetch(`${ZAPI_BASE}/${instanceId}/token/${token}/send-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Client-Token": token },
+    body: JSON.stringify({ phone, image, caption }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Z-API error: ${res.status}`);
+  }
+  return res.json();
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  try {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.replace("Bearer ", "");
+    if (!jwt) return new Response(JSON.stringify({ error: "Não autenticado." }), { status: 401, headers: corsHeaders });
+
+    // Client "com identidade do usuário" só pra descobrir quem está chamando
+    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: userData, error: userErr } = await userClient.auth.getUser(jwt);
+    if (userErr || !userData?.user) {
+      return new Response(JSON.stringify({ error: "Sessão inválida." }), { status: 401, headers: corsHeaders });
+    }
+
+    const { data: profile } = await adminClient.from("profiles").select("role, client_id").eq("id", userData.user.id).single();
+    if (!profile) return new Response(JSON.stringify({ error: "Perfil não encontrado." }), { status: 403, headers: corsHeaders });
+
+    const { number_id, phone, message, image_url, contact_id, campaign_id } = await req.json();
+    if (!number_id || !phone || !message) {
+      return new Response(JSON.stringify({ error: "number_id, phone e message são obrigatórios." }), { status: 400, headers: corsHeaders });
+    }
+
+    const { data: number } = await adminClient.from("client_numbers").select("*").eq("id", number_id).single();
+    if (!number) return new Response(JSON.stringify({ error: "Número não encontrado." }), { status: 404, headers: corsHeaders });
+
+    // Defesa em profundidade: cliente só pode mandar pelo próprio número. Admin pode por qualquer um.
+    if (profile.role !== "admin" && number.client_id !== profile.client_id) {
+      return new Response(JSON.stringify({ error: "Sem permissão para este número." }), { status: 403, headers: corsHeaders });
+    }
+    if (!number.zapi_instance_id || !number.zapi_token) {
+      return new Response(JSON.stringify({ error: "Número sem Z-API configurado." }), { status: 422, headers: corsHeaders });
+    }
+
+    const { data: allowed } = await adminClient.rpc("try_consume_daily_send_budget", { p_number_id: number_id, p_daily_cap: DAILY_CAP });
+    if (!allowed) {
+      if (contact_id) {
+        await adminClient.from("message_logs").insert({
+          campaign_id: campaign_id ?? null, client_id: number.client_id, contact_id,
+          status: "error", error_detail: `Limite diário de ${DAILY_CAP} mensagens atingido para este número.`,
+        });
+      }
+      return new Response(
+        JSON.stringify({ error: `LIMITE_DIARIO_ATINGIDO`, message: `Limite de ${DAILY_CAP} mensagens/dia atingido para este número. O restante continua automaticamente amanhã.` }),
+        { status: 429, headers: corsHeaders },
+      );
+    }
+
+    const formattedPhone = formatPhone(String(phone));
+    try {
+      if (image_url) await sendImageMessage(number.zapi_instance_id, number.zapi_token, formattedPhone, image_url, message);
+      else await sendTextMessage(number.zapi_instance_id, number.zapi_token, formattedPhone, message);
+
+      if (contact_id) {
+        await adminClient.from("message_logs").insert({
+          campaign_id: campaign_id ?? null, client_id: number.client_id, contact_id,
+          status: "sent", sent_at: new Date().toISOString(),
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    } catch (sendErr) {
+      if (contact_id) {
+        await adminClient.from("message_logs").insert({
+          campaign_id: campaign_id ?? null, client_id: number.client_id, contact_id,
+          status: "error", error_detail: String(sendErr),
+        });
+      }
+      return new Response(JSON.stringify({ error: String(sendErr) }), { status: 502, headers: corsHeaders });
+    }
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: corsHeaders });
+  }
+});
