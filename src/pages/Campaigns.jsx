@@ -25,7 +25,23 @@ function weekNum(c) {
 // Categoriza cada campanha numa seção clara do Histórico — "o que é
 // campanha em rascunho, o que já tá rodando, o que é agendamento" (pedido
 // literal do Leonardo), sem misturar tudo numa lista só.
-function groupOf(c) {
+//
+// Bug real corrigido em 2026-07-01: follow-ups nascem com status='scheduled'
+// e scheduled_for=null pra sempre (eles não usam data marcada — disparam N
+// dias depois de cada envio individual da campanha-base, via
+// processFollowUpCampaigns no run-automations). Antes disso cair na regra
+// "scheduled sem data futura = rodando", TODO follow-up aparecia em "Rodando
+// agora" mesmo com a campanha-base ainda em rascunho, sem nunca ter
+// disparado pra ninguém — nada era enviado de verdade antes da hora (o motor
+// só age quando existe message_log real da base), mas a etiqueta na tela
+// mentia. Corrigido: follow-up agora sempre usa o MESMO grupo da sua
+// campanha-base (se a base é rascunho, o follow-up também aparece como
+// rascunho; se a base já está rodando/concluída, o follow-up acompanha).
+function groupOf(c, byId) {
+  if (c.follow_up_of && byId) {
+    const base = byId.get(c.follow_up_of)
+    if (base) return groupOf(base, null) // base nunca é follow-up de outra coisa, sem risco de loop
+  }
   if (c.status === 'error') return 'error'
   if (c.status === 'completed') return 'completed'
   if (c.status === 'sending') return 'running'
@@ -237,7 +253,8 @@ export default function Campaigns() {
       ) : (
         <div className="space-y-8">
           {GROUPS.map(g => {
-            const items = sortCampaigns(campaigns.filter(c => groupOf(c) === g.key))
+            const campaignsById = new Map(campaigns.map(c => [c.id, c]))
+            const items = sortCampaigns(campaigns.filter(c => groupOf(c, campaignsById) === g.key))
             if (items.length === 0) return null
             return (
               <div key={g.key}>
