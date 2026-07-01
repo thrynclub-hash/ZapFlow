@@ -302,6 +302,10 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   const [dailyLimit, setDailyLimit] = useState(campaign.daily_limit || 100)
   const [dailyStartHour, setDailyStartHour] = useState(campaign.daily_start_hour || 9)
   const [targetTags, setTargetTags] = useState(Array.isArray(campaign.target_tags) ? campaign.target_tags : [])
+  // Todas as tags REAIS em uso pelos contatos deste cliente — não só
+  // "Antigo"/"Novo" fixos. Bug reportado: contato com tag "vip" (ou
+  // qualquer tag livre) não aparecia como opção de público-alvo aqui.
+  const [availableTags, setAvailableTags] = useState([])
   const [saving, setSaving] = useState(false)
 
   // Follow-up ligado a esta campanha-base (se houver)
@@ -328,6 +332,20 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
         setLoadingFu(false)
       })
     }
+    // Busca TODAS as tags em uso (paginado — cliente pode ter mais de 1000
+    // contatos, ver bug do teto de 1000 corrigido em Contacts.jsx).
+    ;(async () => {
+      let all = [], from = 0
+      while (true) {
+        const { data } = await supabase.from('contacts').select('tags').eq('client_id', clientId).range(from, from + 999)
+        all = all.concat(data || [])
+        if (!data || data.length < 1000) break
+        from += 1000
+      }
+      const found = Array.from(new Set(all.flatMap(c => Array.isArray(c.tags) ? c.tags : [])))
+      const ordered = [...['Antigo', 'Novo'].filter(t => found.includes(t)), ...found.filter(t => t !== 'Antigo' && t !== 'Novo').sort()]
+      setAvailableTags(ordered)
+    })()
     supabase.from('reply_flows').select('*').eq('client_id', clientId).maybeSingle().then(({ data }) => {
       setReplyFlow(data)
       if (data) {
@@ -450,17 +468,18 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
               <label className="block text-xs text-muted font-body mb-1.5">Público-alvo (por tag do contato)</label>
               {editing ? (
                 <div className="flex flex-wrap gap-2">
-                  {['Antigo', 'Novo'].map(t => (
+                  {availableTags.length === 0 && <span className="text-xs text-muted font-body">Nenhuma tag em uso ainda nos contatos deste cliente.</span>}
+                  {availableTags.map(t => (
                     <button key={t} type="button"
                       onClick={() => setTargetTags(ts => ts.includes(t) ? ts.filter(x => x !== t) : [...ts, t])}
                       className={`px-3 py-1.5 rounded-lg text-xs font-body border transition-colors ${targetTags.includes(t) ? 'bg-accent text-bg border-accent font-bold' : 'border-border text-muted hover:text-white'}`}>
                       {t}
                     </button>
                   ))}
-                  <span className="text-xs text-muted font-body self-center">{targetTags.length === 0 ? '(nenhuma marcada = manda pra todo mundo ativo)' : ''}</span>
+                  <span className="text-xs text-muted font-body self-center">{targetTags.length === 0 ? '(nenhuma marcada = manda pra todo mundo ativo)' : targetTags.length > 1 ? '(manda pra quem tem QUALQUER uma das marcadas)' : ''}</span>
                 </div>
               ) : (
-                <p className="text-sm text-white font-body">{targetTags.length > 0 ? targetTags.join(' + ') : 'Todos os contatos ativos (sem filtro de tag)'}</p>
+                <p className="text-sm text-white font-body">{targetTags.length > 0 ? targetTags.join(' ou ') : 'Todos os contatos ativos (sem filtro de tag)'}</p>
               )}
               {followUp && <p className="text-xs text-muted font-body mt-1">O follow-up automático desta campanha usa o mesmo alvo.</p>}
             </div>
