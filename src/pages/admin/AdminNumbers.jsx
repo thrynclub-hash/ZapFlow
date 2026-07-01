@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Edit2, Smartphone, CheckCircle, XCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { checkInstanceStatus } from '../../lib/zapi'
+import Modal from '../../components/Modal'
 
 export default function AdminNumbers() {
   const [numbers, setNumbers] = useState([])
@@ -109,8 +110,7 @@ export default function AdminNumbers() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-bg/80 backdrop-blur-sm">
-          <div className="flex min-h-full items-center justify-center p-4">
+        <Modal>
             <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein">
               <h3 className="font-display font-bold text-xl text-white mb-6">{editing ? 'Editar número' : 'Novo número WPP'}</h3>
               <form onSubmit={handleSave} className="space-y-4">
@@ -142,8 +142,7 @@ export default function AdminNumbers() {
                 </div>
               </form>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
