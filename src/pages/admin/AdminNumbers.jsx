@@ -52,9 +52,14 @@ export default function AdminNumbers() {
       if (client?.plan) {
         const { data: limit } = await supabase.from('plan_limits').select('numbers_limit').eq('plan', client.plan).single()
         if (limit) {
+          // Limite efetivo = limite do plano + add-ons avulsos de "+1 número"
+          // (order bump — gerenciados em Clientes, sem precisar trocar de plano).
+          const { data: addons } = await supabase.from('client_addons').select('quantity').eq('client_id', form.client_id).eq('addon_type', 'number')
+          const extraNumbers = (addons || []).reduce((s, a) => s + a.quantity, 0)
+          const effectiveLimit = limit.numbers_limit + extraNumbers
           const { count } = await supabase.from('client_numbers').select('id', { count: 'exact', head: true }).eq('client_id', form.client_id)
-          if ((count ?? 0) >= limit.numbers_limit) {
-            alert(`Este cliente já está no limite do plano ${client.plan} (${limit.numbers_limit} número${limit.numbers_limit > 1 ? 's' : ''}). Mude o plano dele em Clientes antes de adicionar outro número.`)
+          if ((count ?? 0) >= effectiveLimit) {
+            alert(`Este cliente já está no limite (${effectiveLimit} número${effectiveLimit > 1 ? 's' : ''} — plano ${client.plan}${extraNumbers > 0 ? ` + ${extraNumbers} add-on(s)` : ''}). Mude o plano dele ou adicione um add-on "+1 número" em Clientes antes de criar outro.`)
             return
           }
         }

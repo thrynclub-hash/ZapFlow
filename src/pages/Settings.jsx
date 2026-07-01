@@ -1,19 +1,35 @@
 import { useEffect, useState } from 'react'
-import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
+import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { checkInstanceStatus } from '../lib/zapi'
+
+// Número de WhatsApp para pedir mais capacidade (order bump) — enquanto
+// não existe checkout automático, abre uma conversa já com o pedido pronto.
+const SUPPORT_WHATSAPP = '5519997051919'
+function addonLink(kind, companyName) {
+  const label = kind === 'contacts' ? '+1000 contatos' : '+1 número de WhatsApp'
+  const text = `Oi! Sou d${companyName ? 'a empresa ' + companyName : 'o ZapFlow'} e quero contratar o add-on "${label}" no meu plano.`
+  return `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(text)}`
+}
 
 export default function Settings() {
   const { profile } = useAuth()
   const [numbers, setNumbers] = useState([])
   const [statuses, setStatuses] = useState({})
+  const [addons, setAddons] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!profile?.client_id) return
     fetchNumbers()
+    fetchAddons()
   }, [profile])
+
+  async function fetchAddons() {
+    const { data } = await supabase.from('client_addons').select('*').eq('client_id', profile.client_id)
+    setAddons(data || [])
+  }
 
   async function fetchNumbers() {
     const { data } = await supabase.from('client_numbers').select('*').eq('client_id', profile.client_id)
@@ -84,6 +100,35 @@ export default function Settings() {
             })}
           </div>
         )}
+      </div>
+
+      {/* Add-ons (order bump) — mais capacidade sem trocar de plano inteiro */}
+      <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+        <h3 className="font-display font-semibold text-white flex items-center gap-2"><Users size={16} /> Precisa de mais capacidade?</h3>
+        <p className="text-muted text-xs font-body">Se o plano atual só falta um pouco (mais um número, ou mais um pouco de contatos), não precisa trocar de plano inteiro — dá pra contratar só o que falta.</p>
+
+        {addons.length > 0 && (
+          <div className="space-y-1.5">
+            {addons.map(a => (
+              <div key={a.id} className="flex justify-between text-xs font-body text-muted bg-surface rounded-lg px-3 py-2">
+                <span>{a.addon_type === 'number' ? `+${a.quantity} número(s) de WhatsApp` : `+${a.quantity * 1000} contatos`}</span>
+                <span className="text-white">R$ {a.monthly_price.toFixed(2)}/mês</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <a href={addonLink('number', profile?.client?.name)} target="_blank" rel="noreferrer"
+            className="flex items-center justify-center gap-2 border border-accent/40 text-accent hover:bg-accent hover:text-bg px-4 py-3 rounded-lg text-sm font-body font-medium transition-colors">
+            <MessageCircle size={14} /> +1 número WhatsApp
+          </a>
+          <a href={addonLink('contacts', profile?.client?.name)} target="_blank" rel="noreferrer"
+            className="flex items-center justify-center gap-2 border border-accent/40 text-accent hover:bg-accent hover:text-bg px-4 py-3 rounded-lg text-sm font-body font-medium transition-colors">
+            <MessageCircle size={14} /> +1000 contatos
+          </a>
+        </div>
+        <p className="text-muted text-xs font-body">Clique abre uma conversa no WhatsApp já com o pedido pronto — a liberação acontece assim que confirmado.</p>
       </div>
     </div>
   )

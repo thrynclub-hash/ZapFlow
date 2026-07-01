@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2, KeyRound } from 'lucide-react'
+import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2, KeyRound, PackagePlus, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/Modal'
 
@@ -18,6 +18,7 @@ export default function AdminClients() {
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
   const [provisioning, setProvisioning] = useState(null) // id do cliente sendo provisionado
+  const [addonsClient, setAddonsClient] = useState(null) // cliente com o painel de add-ons aberto
   const [form, setForm] = useState({ name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: '' })
 
   useEffect(() => { fetchClients() }, [])
@@ -155,6 +156,10 @@ export default function AdminClients() {
                       className="text-muted hover:text-accent transition-colors p-1 disabled:opacity-40">
                       <KeyRound size={14} />
                     </button>
+                    <button onClick={() => setAddonsClient(c)} title="Add-ons (order bump): +número, +contatos"
+                      className="text-muted hover:text-accent transition-colors p-1">
+                      <PackagePlus size={14} />
+                    </button>
                     <button onClick={() => openEdit(c)} className="text-muted hover:text-white transition-colors p-1"><Edit2 size={14} /></button>
                     <button onClick={() => handleDelete(c)} className="text-muted hover:text-red-400 transition-colors p-1"><Trash2 size={14} /></button>
                   </td>
@@ -197,6 +202,8 @@ export default function AdminClients() {
         </Modal>
       )}
 
+      {addonsClient && <AddonsModal client={addonsClient} onClose={() => setAddonsClient(null)} />}
+
       {showKey && (
         <Modal>
             <div className="bg-card border border-accent/30 rounded-2xl p-8 w-full max-w-sm animate-fadein text-center">
@@ -218,6 +225,96 @@ export default function AdminClients() {
         </Modal>
       )}
     </div>
+  )
+}
+
+function AddonsModal({ client, onClose }) {
+  const [addons, setAddons] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [type, setType] = useState('number')
+  const [quantity, setQuantity] = useState(1)
+  const [price, setPrice] = useState(149)
+  const [saving, setSaving] = useState(false)
+
+  const SUGGESTED = { number: 149, contacts_1000: 59 }
+
+  useEffect(() => { fetchAddons() }, [])
+
+  async function fetchAddons() {
+    setLoading(true)
+    const { data } = await supabase.from('client_addons').select('*').eq('client_id', client.id).order('created_at', { ascending: false })
+    setAddons(data || [])
+    setLoading(false)
+  }
+
+  async function addAddon() {
+    setSaving(true)
+    await supabase.from('client_addons').insert({ client_id: client.id, addon_type: type, quantity, monthly_price: price })
+    setSaving(false)
+    setQuantity(1)
+    fetchAddons()
+  }
+
+  async function removeAddon(id) {
+    if (!confirm('Remover este add-on? Isso reduz o limite efetivo do cliente imediatamente.')) return
+    await supabase.from('client_addons').delete().eq('id', id)
+    fetchAddons()
+  }
+
+  const totalExtra = addons.reduce((s, a) => s + Number(a.monthly_price), 0)
+
+  return (
+    <Modal>
+      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display font-bold text-xl text-white">Add-ons de {client.name}</h3>
+          <button onClick={onClose} className="text-muted hover:text-white"><X size={20} /></button>
+        </div>
+
+        {loading ? (
+          <p className="text-muted text-sm font-body">Carregando...</p>
+        ) : addons.length === 0 ? (
+          <p className="text-muted text-sm font-body">Nenhum add-on ainda — esse cliente usa só o limite do plano base.</p>
+        ) : (
+          <div className="space-y-2">
+            {addons.map(a => (
+              <div key={a.id} className="flex items-center justify-between bg-surface border border-border rounded-lg px-3 py-2.5">
+                <div>
+                  <p className="text-sm text-white font-body">{a.addon_type === 'number' ? `+${a.quantity} número(s) WhatsApp` : `+${a.quantity * 1000} contatos`}</p>
+                  <p className="text-xs text-muted font-body">R$ {Number(a.monthly_price).toFixed(2)}/mês · desde {new Date(a.created_at).toLocaleDateString('pt-BR')}</p>
+                </div>
+                <button onClick={() => removeAddon(a.id)} className="text-muted hover:text-red-400 transition-colors p-1"><Trash2 size={14} /></button>
+              </div>
+            ))}
+            <div className="flex justify-between text-sm font-body pt-1 border-t border-border">
+              <span className="text-muted">Total extra/mês</span>
+              <span className="text-accent font-medium">R$ {totalExtra.toFixed(2)}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="border-t border-border pt-4 space-y-3">
+          <p className="text-xs text-muted font-body">Adicionar novo add-on:</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Sel label="Tipo" value={type} onChange={v => { setType(v); setPrice(SUGGESTED[v]) }} options={['number', 'contacts_1000']} labels={['+1 número WhatsApp', '+1000 contatos']} />
+            <div>
+              <label className="block text-xs text-muted font-body mb-1.5">Quantidade</label>
+              <input type="number" min={1} value={quantity} onChange={e => setQuantity(Math.max(1, Number(e.target.value)))}
+                className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body focus:outline-none focus:border-accent" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-muted font-body mb-1.5">Preço mensal (R$) — sugestão: {SUGGESTED[type]}</label>
+            <input type="number" min={0} step="0.01" value={price} onChange={e => setPrice(Number(e.target.value))}
+              className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body focus:outline-none focus:border-accent" />
+          </div>
+          <button onClick={addAddon} disabled={saving}
+            className="w-full bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg py-3 rounded-lg text-sm font-display font-bold transition-colors">
+            {saving ? 'Adicionando...' : 'Adicionar add-on'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
