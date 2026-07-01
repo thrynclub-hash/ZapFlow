@@ -127,3 +127,7 @@ end $$;
 -- ---------------------------------------------
 -- update reply_flows set notify_phone = '5519XXXXXXXXX'
 --   where client_id = (select id from clients where name ilike '%hassum%' limit 1);
+
+-- Paulo confirmado 2026-07-01: mesmo número da clínica.
+update reply_flows set notify_phone = '5519997818773'
+  where client_id = (select id from clients where name ilike '%hassum%' limit 1);
