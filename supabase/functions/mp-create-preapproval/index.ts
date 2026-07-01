@@ -100,6 +100,10 @@ Deno.serve(async (req: Request) => {
           currency_id: "BRL",
         },
         back_url: "https://zapflow.vercel.app/settings",
+        // Aponta direto pro mp-webhook desta mesma instância — não depende
+        // de configuração manual no painel do Mercado Pago (mas configurar
+        // lá também, como reforço, não faz mal).
+        notification_url: `${supabaseUrl.replace(".supabase.co", ".functions.supabase.co")}/mp-webhook`,
         status: "pending",
       }),
     });
