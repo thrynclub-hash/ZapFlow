@@ -165,6 +165,29 @@ export default function Contacts() {
     return ''
   }
 
+  // Bug real reportado (planilha "Email.XLSX" exportada de outro sistema
+  // do cliente, formato de RELATÓRIO IMPRESSO): cabeçalho de verdade não
+  // fica na linha 1 (antes tem nome da empresa, data de impressão, linhas
+  // em branco), e o cabeçalho se REPETE a cada ~78 linhas porque é um
+  // relatório paginado — o parser antigo assumia sempre linha 1 = cabeçalho,
+  // então tudo virava lixo e dava "0 importados". Duas funções novas:
+  // acham o cabeçalho de verdade em qualquer lugar das primeiras 50 linhas,
+  // e sabem reconhecer (e pular) cabeçalhos repetidos no meio do arquivo.
+  function isHeaderLikeRow(rowArr) {
+    const normCells = (rowArr || []).map(normalizeHeader)
+    const hasName = normCells.some(c => NAME_ALIASES.includes(c))
+    const hasPhone = normCells.some(c => PHONE_ALIASES.some(alias => c.startsWith(alias)))
+    return hasName && hasPhone
+  }
+
+  function findHeaderRowIndex(rowsArr) {
+    const scanLimit = Math.min(rowsArr.length, 50)
+    for (let i = 0; i < scanLimit; i++) {
+      if (isHeaderLikeRow(rowsArr[i])) return i
+    }
+    return -1
+  }
+
   // Aceita ISO (YYYY-MM-DD), BR (DD/MM/AAAA ou DD-MM-AAAA) e datas seriais do Excel.
   function parseBirthDate(raw) {
     if (!raw) return null
@@ -203,26 +226,73 @@ export default function Contacts() {
       try {
         const wb = XLSX.read(ev.target.result, { type: 'binary' })
         const ws = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(ws, { raw: true })
+        // header:1 = devolve array de arrays (linha crua), não um dict com
+        // a linha 1 assumida como cabeçalho — precisamos disso pra achar o
+        // cabeçalho de verdade nós mesmos (ver findHeaderRowIndex acima).
+        const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })
 
-        const toInsert = rows.map(r => {
-          const rowNormalized = {}
-          for (const key of Object.keys(r)) rowNormalized[normalizeHeader(key)] = r[key]
+        const headerIdx = findHeaderRowIndex(rawRows)
+        let toInsert = []
+        let totalCandidateRows = 0 // pra calcular "ignorados" no resumo sem contar ruído do relatório (cabeçalho repetido, linhas em branco)
 
-          const name = String(findByAlias(rowNormalized, NAME_ALIASES) || '').trim()
-          const phone = String(findByAlias(rowNormalized, PHONE_ALIASES) || '').replace(/\D/g, '')
-          const birth_date = parseBirthDate(findByAlias(rowNormalized, BIRTH_ALIASES))
+        if (headerIdx === -1) {
+          // Não achou nada parecido com cabeçalho nas primeiras 50 linhas —
+          // mantém o comportamento antigo como fallback (planilha exótica
+          // demais pra essa heurística, melhor tentar do jeito de sempre
+          // do que travar o import inteiro).
+          const rows = XLSX.utils.sheet_to_json(ws, { raw: true })
+          totalCandidateRows = rows.length
+          toInsert = rows.map(r => {
+            const rowNormalized = {}
+            for (const key of Object.keys(r)) rowNormalized[normalizeHeader(key)] = r[key]
+            return {
+              client_id: clientId,
+              number_id: targetNumberId,
+              name: String(findByAlias(rowNormalized, NAME_ALIASES) || '').trim(),
+              phone: String(findByAlias(rowNormalized, PHONE_ALIASES) || '').replace(/\D/g, ''),
+              birth_date: parseBirthDate(findByAlias(rowNormalized, BIRTH_ALIASES)),
+              status: 'Ativo',
+              imported_at: nowIso,
+            }
+          })
+        } else {
+          const headerRow = (rawRows[headerIdx] || []).map(normalizeHeader)
+          let nameCol = -1, birthCol = -1
+          const phoneCols = []
+          headerRow.forEach((h, idx) => {
+            if (nameCol === -1 && NAME_ALIASES.includes(h)) nameCol = idx
+            if (PHONE_ALIASES.some(alias => h.startsWith(alias))) phoneCols.push(idx)
+            if (birthCol === -1 && BIRTH_ALIASES.some(alias => h.includes(alias))) birthCol = idx
+          })
 
-          return {
-            client_id: clientId,
-            number_id: targetNumberId,
-            name,
-            phone,
-            birth_date,
-            status: 'Ativo',
-            imported_at: nowIso,
+          for (let i = headerIdx + 1; i < rawRows.length; i++) {
+            const row = rawRows[i] || []
+            // Relatório paginado repete o cabeçalho a cada página — pula
+            // qualquer linha que pareça cabeçalho, não só a primeira.
+            if (isHeaderLikeRow(row)) continue
+            const name = String((nameCol >= 0 ? row[nameCol] : '') || '').trim()
+            // Pode ter mais de uma coluna de telefone (ex: "Telefone 1/2/3")
+            // — usa a primeira preenchida entre elas pra este contato.
+            let phone = ''
+            for (const pc of phoneCols) {
+              const v = String(row[pc] || '').replace(/\D/g, '')
+              if (v) { phone = v; break }
+            }
+            if (!name && !phone) continue // linha em branco de espaçamento do relatório
+            totalCandidateRows++
+            toInsert.push({
+              client_id: clientId,
+              number_id: targetNumberId,
+              name,
+              phone,
+              birth_date: birthCol >= 0 ? parseBirthDate(row[birthCol]) : null,
+              status: 'Ativo',
+              imported_at: nowIso,
+            })
           }
-        }).filter(c => c.phone.length >= 8 && c.name)
+        }
+
+        toInsert = toInsert.filter(c => c.phone.length >= 8 && c.name)
 
         // Dedup dentro do próprio arquivo (mesma planilha com o mesmo telefone 2x) —
         // fica só a última ocorrência, senão o upsert em lote pode brigar consigo mesmo.
@@ -265,9 +335,9 @@ export default function Contacts() {
         }
 
         await fetchContacts()
-        const skipped = rows.length - toInsert.length
+        const skipped = totalCandidateRows - toInsert.length
         const duplicatesInFile = toInsert.length - deduped.length
-        setImportSummary({ imported: toUpsert.length, skipped, duplicatesInFile, blockedByPlan, planLimit: planLimit?.contacts_limit, total: rows.length })
+        setImportSummary({ imported: toUpsert.length, skipped, duplicatesInFile, blockedByPlan, planLimit: planLimit?.contacts_limit, total: totalCandidateRows })
       } catch (err) {
         alert('Erro ao importar: ' + err.message)
       }
