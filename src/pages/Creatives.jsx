@@ -45,8 +45,15 @@ export default function Creatives() {
     // Issue"/UI bloqueada). Se der erro, volta o arquivo pra lista.
     const previous = files
     setFiles(f => f.filter(x => x.name !== name))
-    const { error } = await supabase.storage.from('creatives').remove([`biblioteca/${clientId}/${name}`])
-    if (error) { alert('Erro ao remover: ' + error.message); setFiles(previous) }
+    const { data, error } = await supabase.storage.from('creatives').remove([`biblioteca/${clientId}/${name}`])
+    // Supabase Storage nem sempre retorna "error" quando o RLS bloqueia o
+    // delete silenciosamente — às vezes só devolve "data" vazio (nenhum
+    // arquivo removido de fato). Por isso checamos os dois casos: erro
+    // explícito OU nenhum item retornado em "data".
+    if (error || !data || data.length === 0) {
+      alert('Não foi possível remover a imagem (permissão negada no servidor). Avise o suporte se isso persistir.')
+      setFiles(previous)
+    }
   }
 
   function copyLink(name) {
