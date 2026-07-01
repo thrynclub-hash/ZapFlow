@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import Modal from '../../components/Modal'
 
 const PLANS = ['Starter', 'Basic', 'Pro', 'Business', 'Enterprise']
 const SEGMENTS = ['Alimentação', 'Saúde/Clínica', 'Beleza', 'Educação', 'Varejo', 'Serviços', 'Outro']
@@ -137,8 +138,7 @@ export default function AdminClients() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-bg/80 backdrop-blur-sm">
-          <div className="flex min-h-full items-center justify-center p-4">
+        <Modal>
             <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein">
               <h3 className="font-display font-bold text-xl text-white mb-6">{editing ? 'Editar cliente' : 'Novo cliente'}</h3>
               <form onSubmit={handleSave} className="space-y-4">
@@ -166,13 +166,11 @@ export default function AdminClients() {
                 </div>
               </form>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {showKey && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-bg/80 backdrop-blur-sm">
-          <div className="flex min-h-full items-center justify-center p-4">
+        <Modal>
             <div className="bg-card border border-accent/30 rounded-2xl p-8 w-full max-w-sm animate-fadein text-center">
               <div className="w-14 h-14 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check size={24} className="text-accent" />
@@ -189,8 +187,7 @@ export default function AdminClients() {
                 <button onClick={() => setShowKey(null)} className="flex-1 bg-accent hover:bg-accent-dim text-bg py-3 rounded-lg text-sm font-display font-bold transition-colors">Fechar</button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

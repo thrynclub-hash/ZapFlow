@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Workflow, Plus, Trash2, Play, Pause, X, Cake, MessageCircle, Tag, Clock, GitBranch } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import Modal from '../components/Modal'
 
 // MVP v1 — fluxo LINEAR (sem ramificação visual). O bloco "condição" existe
 // no motor (automation_steps.next_step_id_if_false) mas nesta UI ele só
@@ -173,8 +174,8 @@ function NewAutomationModal({ clientId, numbers, onClose, onCreated }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-card border border-border rounded-xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6 space-y-5">
+    <Modal>
+      <div className="bg-card border border-border rounded-xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6 space-y-5 animate-fadein">
         <div className="flex items-center justify-between">
           <h2 className="font-display font-bold text-xl text-white">Nova automação</h2>
           <button onClick={onClose} className="text-muted hover:text-white"><X size={20} /></button>
@@ -230,7 +231,7 @@ function NewAutomationModal({ clientId, numbers, onClose, onCreated }) {
           {saving ? 'Salvando...' : 'Criar automação'}
         </button>
       </div>
-    </div>
+    </Modal>
   )
 }
 

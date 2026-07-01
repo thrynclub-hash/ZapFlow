@@ -3,6 +3,7 @@ import { Upload, Plus, Search, Trash2, Download, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import * as XLSX from 'xlsx'
+import Modal from '../components/Modal'
 
 export default function Contacts() {
   const { profile } = useAuth()
@@ -200,8 +201,8 @@ export default function Contacts() {
       )}
 
       {showAdd && (
-        <div className="fixed inset-0 bg-bg/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein my-auto">
+        <Modal>
+          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein">
             <h3 className="font-display font-bold text-xl text-white mb-6">Adicionar contato</h3>
             <form onSubmit={handleAdd} className="space-y-4">
               <Field label="Nome completo *" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} required />
@@ -231,7 +232,7 @@ export default function Contacts() {
               </div>
             </form>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
