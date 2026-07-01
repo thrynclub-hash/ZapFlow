@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2, KeyRound, PackagePlus, X } from 'lucide-react'
+import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2, KeyRound, PackagePlus, X, CalendarCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/Modal'
 
@@ -19,7 +19,7 @@ export default function AdminClients() {
   const [copied, setCopied] = useState(false)
   const [provisioning, setProvisioning] = useState(null) // id do cliente sendo provisionado
   const [addonsClient, setAddonsClient] = useState(null) // cliente com o painel de add-ons aberto
-  const [form, setForm] = useState({ name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: '' })
+  const [form, setForm] = useState({ name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: '', plan_next_charge_at: '', plan_billing_cycle_days: 30 })
 
   useEffect(() => { fetchClients() }, [])
 
@@ -30,13 +30,13 @@ export default function AdminClients() {
 
   function openNew() {
     setEditing(null)
-    setForm({ name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: generateKey() })
+    setForm({ name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: generateKey(), plan_next_charge_at: '', plan_billing_cycle_days: 30 })
     setShowModal(true)
   }
 
   function openEdit(c) {
     setEditing(c)
-    setForm({ name: c.name, plan: c.plan || 'Basic', segment: c.segment || '', status: c.status, access_key: c.access_key || generateKey() })
+    setForm({ name: c.name, plan: c.plan || 'Basic', segment: c.segment || '', status: c.status, access_key: c.access_key || generateKey(), plan_next_charge_at: c.plan_next_charge_at ? c.plan_next_charge_at.slice(0, 10) : '', plan_billing_cycle_days: c.plan_billing_cycle_days || 30 })
     setShowModal(true)
   }
 
@@ -55,10 +55,10 @@ export default function AdminClients() {
     e.preventDefault()
     setSaving(true)
     if (editing) {
-      await supabase.from('clients').update({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key }).eq('id', editing.id)
+      await supabase.from('clients').update({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key, plan_next_charge_at: form.plan_next_charge_at || null, plan_billing_cycle_days: form.plan_billing_cycle_days }).eq('id', editing.id)
       setSaving(false); setShowModal(false); fetchClients()
     } else {
-      const { data: client, error } = await supabase.from('clients').insert({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key }).select().single()
+      const { data: client, error } = await supabase.from('clients').insert({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key, plan_next_charge_at: form.plan_next_charge_at || null, plan_billing_cycle_days: form.plan_billing_cycle_days }).select().single()
       if (error) { alert('Erro: ' + error.message); setSaving(false); return }
       // Provisiona login real (Supabase Auth) automaticamente pra todo cliente novo —
       // sem isso, o cliente consegue "logar" mas o banco trata ele como anônimo.
@@ -102,6 +102,28 @@ export default function AdminClients() {
     fetchClients()
   }
 
+  // Calcula o status de vencimento na hora, a partir da data crua —
+  // nunca fica guardado/desatualizado no banco.
+  function billingInfo(c) {
+    if (!c.plan_next_charge_at) return { label: 'Sem data definida', color: 'bg-muted/10 text-muted' }
+    const diffDays = Math.ceil((new Date(c.plan_next_charge_at) - new Date()) / (1000 * 60 * 60 * 24))
+    if (diffDays < 0) return { label: `Atrasado ${Math.abs(diffDays)}d`, color: 'bg-red-400/10 text-red-400' }
+    if (diffDays <= 3) return { label: diffDays === 0 ? 'Vence hoje' : `Vence em ${diffDays}d`, color: 'bg-amber-400/10 text-amber-400' }
+    return { label: `Em dia (${new Date(c.plan_next_charge_at).toLocaleDateString('pt-BR')})`, color: 'bg-green-400/10 text-green-400' }
+  }
+
+  // "Renovar": avança a próxima cobrança pelo ciclo do cliente (default 30
+  // dias), contando a partir de hoje se já tiver vencido, ou a partir da
+  // data atual marcada se ainda não venceu (pra não perder dias já pagos).
+  async function renewPlan(c) {
+    const base = c.plan_next_charge_at && new Date(c.plan_next_charge_at) > new Date() ? new Date(c.plan_next_charge_at) : new Date()
+    const next = new Date(base)
+    next.setDate(next.getDate() + (c.plan_billing_cycle_days || 30))
+    if (!confirm(`Marcar "${c.name}" como renovado? Próxima cobrança passa a ser ${next.toLocaleDateString('pt-BR')}.`)) return
+    await supabase.from('clients').update({ plan_next_charge_at: next.toISOString() }).eq('id', c.id)
+    fetchClients()
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -130,6 +152,7 @@ export default function AdminClients() {
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Plano</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Chave de acesso</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Status</th>
+                <th className="text-left px-5 py-3 text-xs text-muted font-body">Vencimento</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
@@ -151,7 +174,14 @@ export default function AdminClients() {
                       {c.status === 'active' ? 'Ativo' : 'Inativo'}
                     </span>
                   </td>
+                  <td className="px-5 py-4">
+                    <span className={`px-2 py-1 rounded text-xs font-body whitespace-nowrap ${billingInfo(c).color}`}>{billingInfo(c).label}</span>
+                  </td>
                   <td className="px-5 py-4 text-right flex items-center justify-end gap-2">
+                    <button onClick={() => renewPlan(c)} title="Marcar como renovado (avança a próxima cobrança pelo ciclo do cliente)"
+                      className="text-muted hover:text-green-400 transition-colors p-1">
+                      <CalendarCheck size={14} />
+                    </button>
                     <button onClick={() => provisionLogin(c)} disabled={provisioning === c.id} title="Provisionar/verificar login real (Supabase Auth) deste cliente"
                       className="text-muted hover:text-accent transition-colors p-1 disabled:opacity-40">
                       <KeyRound size={14} />
@@ -181,6 +211,19 @@ export default function AdminClients() {
                   <Sel label="Segmento" value={form.segment} onChange={v => setForm(f => ({ ...f, segment: v }))} options={SEGMENTS} />
                 </div>
                 <Sel label="Status" value={form.status} onChange={v => setForm(f => ({ ...f, status: v }))} options={['active', 'inactive']} labels={['Ativo', 'Inativo']} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-muted font-body mb-1.5">Próxima cobrança</label>
+                    <input type="date" value={form.plan_next_charge_at} onChange={e => setForm(f => ({ ...f, plan_next_charge_at: e.target.value }))}
+                      className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-white text-sm font-body focus:border-accent focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted font-body mb-1.5">Ciclo (dias)</label>
+                    <input type="number" min="1" value={form.plan_billing_cycle_days} onChange={e => setForm(f => ({ ...f, plan_billing_cycle_days: parseInt(e.target.value) || 30 }))}
+                      className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-white text-sm font-body focus:border-accent focus:outline-none" />
+                  </div>
+                </div>
+                <p className="text-xs text-muted font-body -mt-2">Controle manual — não gera cobrança automática. Use o botão "Renovar" (ícone de calendário) na lista pra avançar rapidinho quando o pagamento cair.</p>
                 <div>
                   <label className="block text-xs text-muted font-body mb-1.5">Chave de acesso</label>
                   <div className="flex gap-2">
