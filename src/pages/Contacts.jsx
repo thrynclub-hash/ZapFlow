@@ -57,9 +57,27 @@ export default function Contacts() {
     if (data?.length === 1) setImportTarget(data[0].id)
   }
 
+  // Bug real reportado pelo Leonardo: "diz 1000 mas eu sei que tem mais, e
+  // quando adicionei não mudou". Causa: o Supabase/PostgREST devolve no
+  // MÁXIMO 1000 linhas por select, mesmo sem LIMIT explícito no código —
+  // é um teto padrão do projeto. Sem paginar, qualquer cliente com mais de
+  // 1000 contatos ficava com a lista (e a contagem, e a exportação, e o
+  // bloqueio de limite do plano) travada no primeiro milhar pra sempre,
+  // e novo contato adicionado nunca aparecia no total mostrado. Corrigido
+  // buscando em páginas de 1000 até a página vir incompleta (= acabou).
   async function fetchContacts() {
-    const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).order('created_at', { ascending: false })
-    setContacts(data || [])
+    const PAGE_SIZE = 1000
+    let all = []
+    let from = 0
+    while (true) {
+      const { data, error } = await supabase.from('contacts').select('*, number:client_numbers(label)')
+        .eq('client_id', clientId).order('created_at', { ascending: false }).range(from, from + PAGE_SIZE - 1)
+      if (error) { console.error('Erro buscando contatos:', error); break }
+      all = all.concat(data || [])
+      if (!data || data.length < PAGE_SIZE) break
+      from += PAGE_SIZE
+    }
+    setContacts(all)
     setLoading(false)
   }
 
