@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, Plus, Search, Trash2, Download, Users, MessageCircle, Tag, Pencil } from 'lucide-react'
+import { Upload, Plus, Search, Trash2, Download, Users, MessageCircle, Tag, Pencil, CheckSquare, Square, X as XIcon } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import * as XLSX from 'xlsx'
@@ -32,11 +32,22 @@ export default function Contacts() {
   const [importTarget, setImportTarget] = useState('')
   const [importSummary, setImportSummary] = useState(null)
   const [planLimit, setPlanLimit] = useState(null) // { plan, numbers_limit, contacts_limit }
+
+  // Edição em massa — pedido do Leonardo: selecionar vários contatos (ex:
+  // todos os "Novo") e trocar a tag deles pra "Antigo" de uma vez, em vez
+  // de um por um.
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [bulkFromTag, setBulkFromTag] = useState('')
+  const [bulkToTag, setBulkToTag] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
   const fileRef = useRef()
 
   const clientId = profile?.client_id
 
   useEffect(() => { if (clientId) { fetchContacts(); fetchNumbers(); fetchPlanLimit() } }, [clientId])
+  // Muda o filtro -> limpa seleção, pra nunca aplicar ação em massa num
+  // contato que não está mais visível/não foi o que a pessoa pretendia.
+  useEffect(() => { setSelectedIds(new Set()) }, [search, filterNumber, filterTag])
 
   async function fetchPlanLimit() {
     const { data: client } = await supabase.from('clients').select('plan').eq('id', clientId).single()
@@ -143,6 +154,88 @@ export default function Contacts() {
     const tags = input.split(',').map(t => t.trim()).filter(Boolean)
     setContacts(cs => cs.map(x => x.id === contact.id ? { ...x, tags } : x))
     await supabase.from('contacts').update({ tags }).eq('id', contact.id)
+  }
+
+  // --- Edição em massa ---------------------------------------------------
+
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  // "Selecionar todos" seleciona os contatos VISÍVEIS na lista atual
+  // (respeitando busca/filtro de loja/filtro de tag) — não literalmente
+  // todo mundo no banco, senão fica confuso qual conjunto está selecionado.
+  function toggleSelectAllVisible() {
+    const visibleIds = filtered.map(c => c.id)
+    const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id))
+    setSelectedIds(allSelected ? new Set() : new Set(visibleIds))
+  }
+
+  // Requisições em lote de N ids por vez — evita URL gigante (Postgrest
+  // .in() manda os ids na query string) quando alguém seleciona milhares
+  // de contatos de uma vez (ver bug do teto de 1000 corrigido antes: cliente
+  // grande pode ter vários milhares de contatos de verdade).
+  const BULK_CHUNK = 200
+  function chunk(arr, size) {
+    const out = []
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+    return out
+  }
+
+  async function bulkSetStatus(status) {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    setBulkBusy(true)
+    for (const idsChunk of chunk(ids, BULK_CHUNK)) {
+      await supabase.from('contacts').update({ status }).in('id', idsChunk)
+    }
+    setContacts(cs => cs.map(c => selectedIds.has(c.id) ? { ...c, status } : c))
+    setBulkBusy(false)
+  }
+
+  // Cobre os 3 casos que o Leonardo pediu, com um controle só:
+  // - só "Adicionar" preenchido -> soma essa tag em todo mundo selecionado
+  // - só "Remover" preenchido -> tira essa tag de todo mundo selecionado
+  // - os dois preenchidos -> troca (ex: tira "Novo", põe "Antigo")
+  async function bulkApplyTag() {
+    const removeTag = bulkFromTag.trim()
+    const addTag = bulkToTag.trim()
+    if (!removeTag && !addTag) return alert('Escolha uma tag pra adicionar e/ou uma pra remover.')
+    const targets = contacts.filter(c => selectedIds.has(c.id))
+    if (targets.length === 0) return
+    const rows = targets.map(c => {
+      let tags = Array.isArray(c.tags) ? [...c.tags] : []
+      if (removeTag) tags = tags.filter(t => t !== removeTag)
+      if (addTag && !tags.includes(addTag)) tags.push(addTag)
+      return { id: c.id, tags }
+    })
+    setBulkBusy(true)
+    for (const rowsChunk of chunk(rows, BULK_CHUNK)) {
+      const { error } = await supabase.from('contacts').upsert(rowsChunk, { onConflict: 'id' })
+      if (error) { alert('Erro ao atualizar tags em massa: ' + error.message); setBulkBusy(false); return }
+    }
+    const byId = new Map(rows.map(r => [r.id, r.tags]))
+    setContacts(cs => cs.map(c => byId.has(c.id) ? { ...c, tags: byId.get(c.id) } : c))
+    setBulkBusy(false)
+    setBulkFromTag(''); setBulkToTag('')
+    alert(`Tags atualizadas em ${rows.length} contato(s).`)
+  }
+
+  async function bulkDelete() {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    if (!confirm(`Remover ${ids.length} contato(s) selecionado(s)? Isso não pode ser desfeito.`)) return
+    setBulkBusy(true)
+    for (const idsChunk of chunk(ids, BULK_CHUNK)) {
+      await supabase.from('contacts').delete().in('id', idsChunk)
+    }
+    setContacts(cs => cs.filter(c => !selectedIds.has(c.id)))
+    setSelectedIds(new Set())
+    setBulkBusy(false)
   }
 
   // Normaliza cabeçalho de coluna: minúsculas, sem acento, sem espaço/pontuação —
@@ -455,6 +548,55 @@ export default function Contacts() {
         </p>
       </div>
 
+      {/* Edição em massa — aparece só quando tem seleção */}
+      {selectedIds.size > 0 && (
+        <div className="bg-accent/10 border border-accent/30 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-white font-body font-medium">{selectedIds.size} contato{selectedIds.size !== 1 ? 's' : ''} selecionado{selectedIds.size !== 1 ? 's' : ''}</p>
+            <button onClick={() => setSelectedIds(new Set())} className="flex items-center gap-1 text-xs text-muted hover:text-white font-body"><XIcon size={12} /> Limpar seleção</button>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="block text-xs text-muted font-body mb-1">Remover tag (opcional)</label>
+              <input list="tag-options-list" value={bulkFromTag} onChange={e => setBulkFromTag(e.target.value)} placeholder="ex: Novo"
+                className="w-40 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent" />
+            </div>
+            <div>
+              <label className="block text-xs text-muted font-body mb-1">Adicionar tag (opcional)</label>
+              <input list="tag-options-list" value={bulkToTag} onChange={e => setBulkToTag(e.target.value)} placeholder="ex: Antigo"
+                className="w-40 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent" />
+            </div>
+            <datalist id="tag-options-list">
+              {tagOptions.map(t => <option key={t} value={t} />)}
+            </datalist>
+            <button onClick={bulkApplyTag} disabled={bulkBusy || (!bulkFromTag.trim() && !bulkToTag.trim())}
+              className="bg-accent hover:bg-accent-dim disabled:opacity-40 text-bg px-4 py-2 rounded-lg text-sm font-display font-bold transition-colors">
+              {bulkBusy ? 'Aplicando...' : 'Aplicar nas tags'}
+            </button>
+
+            <div className="w-px h-8 bg-border mx-1" />
+
+            <button onClick={() => bulkSetStatus('Ativo')} disabled={bulkBusy}
+              className="border border-green-400/30 text-green-400 hover:bg-green-400/10 disabled:opacity-40 px-3 py-2 rounded-lg text-sm font-body transition-colors">
+              Marcar Ativo
+            </button>
+            <button onClick={() => bulkSetStatus('Inativo')} disabled={bulkBusy}
+              className="border border-border text-muted hover:text-white disabled:opacity-40 px-3 py-2 rounded-lg text-sm font-body transition-colors">
+              Marcar Inativo
+            </button>
+
+            <div className="w-px h-8 bg-border mx-1" />
+
+            <button onClick={bulkDelete} disabled={bulkBusy}
+              className="flex items-center gap-1.5 border border-red-400/30 text-red-400 hover:bg-red-400/10 disabled:opacity-40 px-3 py-2 rounded-lg text-sm font-body transition-colors">
+              <Trash2 size={13} /> Remover selecionados
+            </button>
+          </div>
+          <p className="text-xs text-muted font-body">Dica: "Remover tag" tira, "Adicionar tag" põe — preenchendo os dois de uma vez você troca (ex: remover "Novo" + adicionar "Antigo" = trocar de novo pra antigo em todos os selecionados).</p>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>
       ) : filtered.length === 0 ? (
@@ -468,6 +610,11 @@ export default function Contacts() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
+                <th className="px-5 py-3 w-8">
+                  <button type="button" onClick={toggleSelectAllVisible} title="Selecionar todos os visíveis" className="text-muted hover:text-accent transition-colors">
+                    {filtered.length > 0 && filtered.every(c => selectedIds.has(c.id)) ? <CheckSquare size={16} className="text-accent" /> : <Square size={16} />}
+                  </button>
+                </th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Nome</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Telefone</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Loja</th>
@@ -480,7 +627,12 @@ export default function Contacts() {
             </thead>
             <tbody>
               {filtered.map(c => (
-                <tr key={c.id} className="border-b border-border/50 last:border-0 hover:bg-surface/30 transition-colors">
+                <tr key={c.id} className={`border-b border-border/50 last:border-0 hover:bg-surface/30 transition-colors ${selectedIds.has(c.id) ? 'bg-accent/5' : ''}`}>
+                  <td className="px-5 py-3.5">
+                    <button type="button" onClick={() => toggleSelect(c.id)} className="text-muted hover:text-accent transition-colors">
+                      {selectedIds.has(c.id) ? <CheckSquare size={16} className="text-accent" /> : <Square size={16} />}
+                    </button>
+                  </td>
                   <td className="px-5 py-3.5 text-sm text-white font-body font-medium">{c.name}</td>
                   <td className="px-5 py-3.5 text-sm text-muted font-body">{c.phone}</td>
                   <td className="px-5 py-3.5 text-sm text-muted font-body">{c.number?.label || '—'}</td>
