@@ -196,15 +196,21 @@ export default function Campaigns() {
                     <Trash2 size={13} /> Remover
                   </button>
 
+                  {/* Adicionar/trocar imagem — disponível em TODA campanha, igual
+                      Visualizar/Editar/Remover, não só nas lançáveis. Antes só
+                      aparecia em campanha-base ainda em rascunho, então "Semana 1-4"
+                      (já lançadas antes) e follow-ups nunca tinham esse botão,
+                      mesmo já existindo campo image_url pra qualquer uma delas. */}
+                  <input ref={el => (fileRefs.current[c.id] = el)} type="file" accept="image/*" onChange={e => handleImageChange(c, e)} className="hidden" />
+                  <button onClick={() => fileRefs.current[c.id]?.click()} disabled={uploadingId === c.id}
+                    className="flex items-center gap-1.5 border border-border text-muted hover:text-white px-3 py-2 rounded-lg text-xs font-body transition-colors disabled:opacity-50">
+                    <ImageIcon size={13} /> {uploadingId === c.id ? 'Enviando...' : c.image_url ? 'Trocar imagem' : 'Adicionar imagem'}
+                  </button>
+
                   {launchable && (
                     <>
-                      <input ref={el => (fileRefs.current[c.id] = el)} type="file" accept="image/*" onChange={e => handleImageChange(c, e)} className="hidden" />
-                      <button onClick={() => fileRefs.current[c.id]?.click()} disabled={uploadingId === c.id}
-                        className="flex items-center gap-1.5 border border-border text-muted hover:text-white px-3 py-2 rounded-lg text-xs font-body transition-colors disabled:opacity-50">
-                        <ImageIcon size={13} /> {uploadingId === c.id ? 'Enviando...' : c.image_url ? 'Trocar imagem' : 'Adicionar imagem'}
-                      </button>
-
                       {schedulingId === c.id ? (
+
                         <>
                           <input type="datetime-local" value={scheduleValue} onChange={e => setScheduleValue(e.target.value)}
                             className="bg-surface border border-border rounded-lg px-3 py-2 text-xs text-white font-body focus:outline-none focus:border-accent" />
