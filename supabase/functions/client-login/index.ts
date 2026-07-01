@@ -15,11 +15,22 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+
+
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     const { access_key } = await req.json();
     if (!access_key) {
-      return new Response(JSON.stringify({ error: "access_key é obrigatório" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "access_key é obrigatório" }), { status: 400, headers: corsHeaders });
     }
 
     const { data: client, error } = await adminClient
@@ -30,7 +41,7 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (error || !client) {
-      return new Response(JSON.stringify({ error: "Chave de acesso inválida ou expirada." }), { status: 401 });
+      return new Response(JSON.stringify({ error: "Chave de acesso inválida ou expirada." }), { status: 401, headers: corsHeaders });
     }
 
     const { data: secret } = await adminClient
@@ -44,15 +55,15 @@ Deno.serve(async (req: Request) => {
       // client-provision para este client_id antes do login funcionar.
       return new Response(
         JSON.stringify({ error: "Este cliente ainda não tem login configurado. Peça para o administrador provisionar o acesso." }),
-        { status: 412 },
+        { status: 412, headers: corsHeaders },
       );
     }
 
     return new Response(
       JSON.stringify({ email: secret.synthetic_email, password: secret.synthetic_password }),
-      { headers: { "Content-Type": "application/json" } },
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
-    return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+    return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: corsHeaders });
   }
 });

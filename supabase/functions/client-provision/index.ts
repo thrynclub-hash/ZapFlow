@@ -16,6 +16,13 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+
+
 function randomPassword(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
@@ -23,23 +30,27 @@ function randomPassword(): string {
 }
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     // Só admin pode chamar: valida o JWT de quem chamou e checa profiles.role
     const authHeader = req.headers.get("Authorization") || "";
     const jwt = authHeader.replace("Bearer ", "");
     const { data: userData, error: userErr } = await adminClient.auth.getUser(jwt);
     if (userErr || !userData?.user) {
-      return new Response(JSON.stringify({ error: "Não autenticado" }), { status: 401 });
+      return new Response(JSON.stringify({ error: "Não autenticado" }), { status: 401, headers: corsHeaders });
     }
     const { data: callerProfile } = await adminClient
       .from("profiles").select("role").eq("id", userData.user.id).single();
     if (callerProfile?.role !== "admin") {
-      return new Response(JSON.stringify({ error: "Acesso restrito a administradores" }), { status: 403 });
+      return new Response(JSON.stringify({ error: "Acesso restrito a administradores" }), { status: 403, headers: corsHeaders });
     }
 
     const { client_id } = await req.json();
     if (!client_id) {
-      return new Response(JSON.stringify({ error: "client_id é obrigatório" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "client_id é obrigatório" }), { status: 400, headers: corsHeaders });
     }
 
     // Já provisionado? retorna sem recriar
@@ -47,14 +58,14 @@ Deno.serve(async (req: Request) => {
       .from("client_auth_secrets").select("*").eq("client_id", client_id).single();
     if (existing?.synthetic_email) {
       return new Response(JSON.stringify({ ok: true, already_provisioned: true }), {
-        headers: { "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const { data: client, error: clientErr } = await adminClient
       .from("clients").select("id, name").eq("id", client_id).single();
     if (clientErr || !client) {
-      return new Response(JSON.stringify({ error: "Cliente não encontrado" }), { status: 404 });
+      return new Response(JSON.stringify({ error: "Cliente não encontrado" }), { status: 404, headers: corsHeaders });
     }
 
     const syntheticEmail = `client-${client_id}@zapflow.internal`;
@@ -66,7 +77,7 @@ Deno.serve(async (req: Request) => {
       email_confirm: true,
     });
     if (createErr || !authUser?.user) {
-      return new Response(JSON.stringify({ error: createErr?.message || "Erro criando usuário" }), { status: 500 });
+      return new Response(JSON.stringify({ error: createErr?.message || "Erro criando usuário" }), { status: 500, headers: corsHeaders });
     }
 
     await adminClient.from("profiles").upsert({
@@ -86,9 +97,9 @@ Deno.serve(async (req: Request) => {
     });
 
     return new Response(JSON.stringify({ ok: true, already_provisioned: false }), {
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+    return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: corsHeaders });
   }
 });
