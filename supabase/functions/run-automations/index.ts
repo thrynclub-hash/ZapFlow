@@ -74,6 +74,34 @@ async function sendTextMessage(instanceId: string, token: string, phone: string,
   return res.json();
 }
 
+// Bug real descoberto em 2026-07-01 (a partir da pergunta do Leonardo sobre
+// o botão de imagem no Histórico): campanha agendada/diária e follow-up
+// SEMPRE mandavam só texto por aqui, mesmo quando tinham image_url
+// preenchido — só o disparo manual (Edge Function send-message, chamada
+// pelo frontend) sabia mandar imagem de verdade. Ou seja, anexar imagem
+// numa campanha agendada nunca teve efeito nenhum na mensagem que o
+// contato recebia. Adicionado o mesmo envio de imagem que send-message já
+// tinha, e as duas chamadas de sendTextMessage relevantes (campanha e
+// follow-up) agora escolhem imagem-com-legenda quando existe image_url.
+async function sendImageMessage(instanceId: string, token: string, phone: string, image: string, caption: string) {
+  const url = `${ZAPI_BASE}/${instanceId}/token/${token}/send-image`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Client-Token": token },
+    body: JSON.stringify({ phone, image, caption }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Z-API error: ${res.status}`);
+  }
+  return res.json();
+}
+
+async function sendCampaignMessage(instanceId: string, token: string, phone: string, message: string, imageUrl?: string | null) {
+  if (imageUrl) return sendImageMessage(instanceId, token, phone, imageUrl, message);
+  return sendTextMessage(instanceId, token, phone, message);
+}
+
 // ---------------------------------------------------------------------
 // PARTE 1 — ENROLL: entrar contatos elegíveis em automações de gatilho
 // MVP: só o gatilho "birthday" é avaliado por varredura periódica.
@@ -360,7 +388,7 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
     const allowed = await consumeBudget(number.id);
     if (!allowed) { budgetExhausted = true; break; }
     try {
-      await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), campaign.caption || "");
+      await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), campaign.caption || "", campaign.image_url);
       await supabase.from("message_logs").insert({
         campaign_id: campaign.id, client_id: campaign.client_id, contact_id: contact.id,
         status: "sent", sent_at: new Date().toISOString(),
@@ -443,7 +471,7 @@ async function processFollowUpCampaigns() {
 
       const message = (followUp.caption || "").replace("{{nome}}", contact.name || "");
       try {
-        await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message);
+        await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message, followUp.image_url);
         await supabase.from("message_logs").insert({
           campaign_id: followUp.id, client_id: followUp.client_id, contact_id: contact.id,
           status: "sent", sent_at: new Date().toISOString(),
