@@ -101,7 +101,7 @@ export default function Landing() {
                   </li>
                 ))}
               </ul>
-              <a href="https://wa.me/5519997051919?text=Quero+saber+mais+sobre+o+ZapFlow" target="_blank" rel="noreferrer"
+              <a href={`https://wa.me/5519997051919?text=${encodeURIComponent(`Oi! Quero contratar o plano ${p.name} do ZapFlow (R$${p.monthly}/mês + R$${p.setup.toLocaleString()} de setup).`)}`} target="_blank" rel="noreferrer"
                 className={`mt-8 py-3 rounded-xl text-sm font-display font-bold text-center transition-colors ${p.best ? 'bg-accent hover:bg-accent-dim text-bg' : 'border border-border text-white hover:bg-surface'}`}>
                 Quero este plano
               </a>
