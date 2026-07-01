@@ -37,7 +37,7 @@ begin
     v_client_id, v_number_id, 'Semana 1 - Limpeza e revisão semestral',
     E'Oi, {{nome}}! Tudo bem? 😊 Aqui é da Dra. Thaís Hassum. Passando pra lembrar que a limpeza semestral é super importante pro seu sorriso — e quem sabe já está na hora da sua! 🦷\n\nLimpeza + revisão completa\n📍 Jd. Bom Princípio, Indaiatuba\n\nTemos horários disponíveis essa semana!\n\nResponde *EU QUERO* que já te enviamos os horários disponíveis 👇',
     v_base_url || 'foto4-fundo-branco-apontando.jpg',
-    'scheduled', 'scheduled', '2026-07-02 12:00:00+00'
+    'scheduled', 'draft', null
   ) returning id into v_c1;
 
   insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
@@ -55,7 +55,7 @@ begin
     v_client_id, v_number_id, 'Semana 2 - Clareamento dental',
     E'Oi, {{nome}}! ✨ Esse mês a Dra. Thaís está com uma condição especial no *Clareamento Dental* — o procedimento que transforma o sorriso de verdade! ☀️\n\nResultado visível já na 1ª sessão 🦷\nRealizado pela própria Dra. Thaís\n💛 Sorriso mais branco e autoestima lá em cima\n\nVagas limitadas pra esse mês! Quer garantir a sua?\n\nResponde *EU QUERO* 👇',
     v_base_url || 'foto3-blazer-cruzado.jpg',
-    'scheduled', 'scheduled', '2026-07-09 12:00:00+00'
+    'scheduled', 'draft', null
   ) returning id into v_c2;
 
   insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
@@ -73,7 +73,7 @@ begin
     v_client_id, v_number_id, 'Semana 3 - Harmonização facial e Botox',
     E'Oi, {{nome}}! 💛 Você sabia que a Dra. Thaís também é especialista em harmonização facial e Botox?\n\nÉ um procedimento seguro, sem cirurgia, resultado natural — e feito por dentista especialista com mais de 20 anos de experiência em Indaiatuba ✨\n\n✅ Harmonização orofacial\n✅ Toxina botulínica (Botox)\n✅ Preenchimento labial\n\n*Este mês temos condição especial para pacientes da clínica!*\n\nQuer saber mais? Responde *EU QUERO* 👇',
     v_base_url || 'foto2-blazer-mao-queixo.jpg',
-    'scheduled', 'scheduled', '2026-07-16 12:00:00+00'
+    'scheduled', 'draft', null
   ) returning id into v_c3;
 
   insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
@@ -91,7 +91,7 @@ begin
     v_client_id, v_number_id, 'Semana 4 - Implante dental (avaliação gratuita)',
     E'Oi, {{nome}}! 😊 Perdeu um dente ou conhece alguém que usa dentadura e sofre com isso?\n\nHoje existe solução definitiva: o *Implante Dental* — dente fixo, confortável e com aparência completamente natural. A Dra. Thaís tem mais de 20 anos de experiência em implantes aqui em Indaiatuba 🦷\n\n✅ Avaliação *GRATUITA* e sem compromisso\n✅ Financiamento disponível\n✅ Resultado permanente\n\nQuer agendar sua avaliação? Responde *EU QUERO* 👇',
     v_base_url || 'foto5-blusa-creme-cruzado.jpg',
-    'scheduled', 'scheduled', '2026-07-23 12:00:00+00'
+    'scheduled', 'draft', null
   ) returning id into v_c4;
 
   insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
@@ -131,3 +131,12 @@ end $$;
 -- Paulo confirmado 2026-07-01: mesmo número da clínica.
 update reply_flows set notify_phone = '5519997818773'
   where client_id = (select id from clients where name ilike '%hassum%' limit 1);
+
+-- ---------------------------------------------
+-- Se você já rodou este script ANTES desta correção (campanhas nasceram
+-- com scheduled_for já preenchido, disparando sozinhas), rode isso pra
+-- voltar pro modo "rascunho, só dispara quando eu mandar":
+-- ---------------------------------------------
+-- update campaigns set status = 'draft', scheduled_for = null
+--   where client_id = (select id from clients where name ilike '%hassum%' limit 1)
+--   and type = 'scheduled' and follow_up_of is null;
