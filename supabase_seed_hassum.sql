@@ -32,74 +32,94 @@ begin
   -- ---------------------------------------------
   -- SEMANA 1 — Limpeza + revisão semestral
   -- ---------------------------------------------
-  insert into campaigns (client_id, number_id, name, caption, image_url, type, status, scheduled_for)
-  values (
-    v_client_id, v_number_id, 'Semana 1 - Limpeza e revisão semestral',
-    E'Oi, {{nome}}! Tudo bem? 😊 Aqui é da Dra. Thaís Hassum. Passando pra lembrar que a limpeza semestral é super importante pro seu sorriso — e quem sabe já está na hora da sua! 🦷\n\nLimpeza + revisão completa\n📍 Jd. Bom Princípio, Indaiatuba\n\nTemos horários disponíveis essa semana!\n\nResponde *EU QUERO* que já te enviamos os horários disponíveis 👇',
-    v_base_url || 'foto4-fundo-branco-apontando.jpg',
-    'scheduled', 'draft', null
-  ) returning id into v_c1;
+  select id into v_c1 from campaigns where client_id = v_client_id and name = 'Semana 1 - Limpeza e revisão semestral';
+  if v_c1 is null then
+    insert into campaigns (client_id, number_id, name, caption, image_url, type, status, scheduled_for)
+    values (
+      v_client_id, v_number_id, 'Semana 1 - Limpeza e revisão semestral',
+      E'Oi, {{nome}}! Tudo bem? 😊 Aqui é da Dra. Thaís Hassum. Passando pra lembrar que a limpeza semestral é super importante pro seu sorriso — e quem sabe já está na hora da sua! 🦷\n\nLimpeza + revisão completa\n📍 Jd. Bom Princípio, Indaiatuba\n\nTemos horários disponíveis essa semana!\n\nResponde *EU QUERO* que já te enviamos os horários disponíveis 👇',
+      v_base_url || 'foto4-fundo-branco-apontando.jpg',
+      'scheduled', 'draft', null
+    ) returning id into v_c1;
+  end if;
 
-  insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
-  values (
-    v_client_id, v_number_id, 'Semana 1 - Follow-up (2 dias)',
-    E'Oi, {{nome}}! 👋 Passando rapidinho...\n\nAinda temos alguns horários disponíveis para a sua limpeza esta semana. Que tal cuidar do seu sorriso?\n\nQualquer dúvida é só chamar 😊',
-    'followup', 'scheduled', v_c1, 2
-  );
+  if not exists (select 1 from campaigns where client_id = v_client_id and name = 'Semana 1 - Follow-up (2 dias)') then
+    insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
+    values (
+      v_client_id, v_number_id, 'Semana 1 - Follow-up (2 dias)',
+      E'Oi, {{nome}}! 👋 Passando rapidinho...\n\nAinda temos alguns horários disponíveis para a sua limpeza esta semana. Que tal cuidar do seu sorriso?\n\nQualquer dúvida é só chamar 😊',
+      'followup', 'scheduled', v_c1, 2
+    );
+  end if;
 
   -- ---------------------------------------------
   -- SEMANA 2 — Clareamento dental
   -- ---------------------------------------------
-  insert into campaigns (client_id, number_id, name, caption, image_url, type, status, scheduled_for)
-  values (
-    v_client_id, v_number_id, 'Semana 2 - Clareamento dental',
-    E'Oi, {{nome}}! ✨ Esse mês a Dra. Thaís está com uma condição especial no *Clareamento Dental* — o procedimento que transforma o sorriso de verdade! ☀️\n\nResultado visível já na 1ª sessão 🦷\nRealizado pela própria Dra. Thaís\n💛 Sorriso mais branco e autoestima lá em cima\n\nVagas limitadas pra esse mês! Quer garantir a sua?\n\nResponde *EU QUERO* 👇',
-    v_base_url || 'foto3-blazer-cruzado.jpg',
-    'scheduled', 'draft', null
-  ) returning id into v_c2;
+  select id into v_c2 from campaigns where client_id = v_client_id and name = 'Semana 2 - Clareamento dental';
+  if v_c2 is null then
+    insert into campaigns (client_id, number_id, name, caption, image_url, type, status, scheduled_for)
+    values (
+      v_client_id, v_number_id, 'Semana 2 - Clareamento dental',
+      E'Oi, {{nome}}! ✨ Esse mês a Dra. Thaís está com uma condição especial no *Clareamento Dental* — o procedimento que transforma o sorriso de verdade! ☀️\n\nResultado visível já na 1ª sessão 🦷\nRealizado pela própria Dra. Thaís\n💛 Sorriso mais branco e autoestima lá em cima\n\nVagas limitadas pra esse mês! Quer garantir a sua?\n\nResponde *EU QUERO* 👇',
+      v_base_url || 'foto3-blazer-cruzado.jpg',
+      'scheduled', 'draft', null
+    ) returning id into v_c2;
+  end if;
 
-  insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
-  values (
-    v_client_id, v_number_id, 'Semana 2 - Follow-up (2 dias)',
-    E'{{nome}}, ainda dá tempo! 😊\n\nAs vagas do clareamento especial estão quase esgotando por aqui. Se quiser garantir a sua, é só me falar!',
-    'followup', 'scheduled', v_c2, 2
-  );
+  if not exists (select 1 from campaigns where client_id = v_client_id and name = 'Semana 2 - Follow-up (2 dias)') then
+    insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
+    values (
+      v_client_id, v_number_id, 'Semana 2 - Follow-up (2 dias)',
+      E'{{nome}}, ainda dá tempo! 😊\n\nAs vagas do clareamento especial estão quase esgotando por aqui. Se quiser garantir a sua, é só me falar!',
+      'followup', 'scheduled', v_c2, 2
+    );
+  end if;
 
   -- ---------------------------------------------
   -- SEMANA 3 — Harmonização facial + Botox
   -- ---------------------------------------------
-  insert into campaigns (client_id, number_id, name, caption, image_url, type, status, scheduled_for)
-  values (
-    v_client_id, v_number_id, 'Semana 3 - Harmonização facial e Botox',
-    E'Oi, {{nome}}! 💛 Você sabia que a Dra. Thaís também é especialista em harmonização facial e Botox?\n\nÉ um procedimento seguro, sem cirurgia, resultado natural — e feito por dentista especialista com mais de 20 anos de experiência em Indaiatuba ✨\n\n✅ Harmonização orofacial\n✅ Toxina botulínica (Botox)\n✅ Preenchimento labial\n\n*Este mês temos condição especial para pacientes da clínica!*\n\nQuer saber mais? Responde *EU QUERO* 👇',
-    v_base_url || 'foto2-blazer-mao-queixo.jpg',
-    'scheduled', 'draft', null
-  ) returning id into v_c3;
+  select id into v_c3 from campaigns where client_id = v_client_id and name = 'Semana 3 - Harmonização facial e Botox';
+  if v_c3 is null then
+    insert into campaigns (client_id, number_id, name, caption, image_url, type, status, scheduled_for)
+    values (
+      v_client_id, v_number_id, 'Semana 3 - Harmonização facial e Botox',
+      E'Oi, {{nome}}! 💛 Você sabia que a Dra. Thaís também é especialista em harmonização facial e Botox?\n\nÉ um procedimento seguro, sem cirurgia, resultado natural — e feito por dentista especialista com mais de 20 anos de experiência em Indaiatuba ✨\n\n✅ Harmonização orofacial\n✅ Toxina botulínica (Botox)\n✅ Preenchimento labial\n\n*Este mês temos condição especial para pacientes da clínica!*\n\nQuer saber mais? Responde *EU QUERO* 👇',
+      v_base_url || 'foto2-blazer-mao-queixo.jpg',
+      'scheduled', 'draft', null
+    ) returning id into v_c3;
+  end if;
 
-  insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
-  values (
-    v_client_id, v_number_id, 'Semana 3 - Follow-up (2 dias)',
-    E'{{nome}}, olha só... 😍\n\nSemana passada tivemos vários atendimentos de harmonização e os resultados ficaram incríveis! Ainda temos horários disponíveis.\n\nQue tal agendar uma avaliação sem compromisso?',
-    'followup', 'scheduled', v_c3, 2
-  );
+  if not exists (select 1 from campaigns where client_id = v_client_id and name = 'Semana 3 - Follow-up (2 dias)') then
+    insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
+    values (
+      v_client_id, v_number_id, 'Semana 3 - Follow-up (2 dias)',
+      E'{{nome}}, olha só... 😍\n\nSemana passada tivemos vários atendimentos de harmonização e os resultados ficaram incríveis! Ainda temos horários disponíveis.\n\nQue tal agendar uma avaliação sem compromisso?',
+      'followup', 'scheduled', v_c3, 2
+    );
+  end if;
 
   -- ---------------------------------------------
   -- SEMANA 4 — Implante dental (avaliação gratuita)
   -- ---------------------------------------------
-  insert into campaigns (client_id, number_id, name, caption, image_url, type, status, scheduled_for)
-  values (
-    v_client_id, v_number_id, 'Semana 4 - Implante dental (avaliação gratuita)',
-    E'Oi, {{nome}}! 😊 Perdeu um dente ou conhece alguém que usa dentadura e sofre com isso?\n\nHoje existe solução definitiva: o *Implante Dental* — dente fixo, confortável e com aparência completamente natural. A Dra. Thaís tem mais de 20 anos de experiência em implantes aqui em Indaiatuba 🦷\n\n✅ Avaliação *GRATUITA* e sem compromisso\n✅ Financiamento disponível\n✅ Resultado permanente\n\nQuer agendar sua avaliação? Responde *EU QUERO* 👇',
-    v_base_url || 'foto5-blusa-creme-cruzado.jpg',
-    'scheduled', 'draft', null
-  ) returning id into v_c4;
+  select id into v_c4 from campaigns where client_id = v_client_id and name = 'Semana 4 - Implante dental (avaliação gratuita)';
+  if v_c4 is null then
+    insert into campaigns (client_id, number_id, name, caption, image_url, type, status, scheduled_for)
+    values (
+      v_client_id, v_number_id, 'Semana 4 - Implante dental (avaliação gratuita)',
+      E'Oi, {{nome}}! 😊 Perdeu um dente ou conhece alguém que usa dentadura e sofre com isso?\n\nHoje existe solução definitiva: o *Implante Dental* — dente fixo, confortável e com aparência completamente natural. A Dra. Thaís tem mais de 20 anos de experiência em implantes aqui em Indaiatuba 🦷\n\n✅ Avaliação *GRATUITA* e sem compromisso\n✅ Financiamento disponível\n✅ Resultado permanente\n\nQuer agendar sua avaliação? Responde *EU QUERO* 👇',
+      v_base_url || 'foto5-blusa-creme-cruzado.jpg',
+      'scheduled', 'draft', null
+    ) returning id into v_c4;
+  end if;
 
-  insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
-  values (
-    v_client_id, v_number_id, 'Semana 4 - Follow-up (2 dias)',
-    E'{{nome}}, a avaliação de implante é totalmente gratuita e sem compromisso 😊\n\nMuita gente não sabe que o implante hoje é mais acessível do que parece, e temos opções de parcelamento. Que tal conhecer pessoalmente?',
-    'followup', 'scheduled', v_c4, 2
-  );
+  if not exists (select 1 from campaigns where client_id = v_client_id and name = 'Semana 4 - Follow-up (2 dias)') then
+    insert into campaigns (client_id, number_id, name, caption, type, status, follow_up_of, follow_up_delay_days)
+    values (
+      v_client_id, v_number_id, 'Semana 4 - Follow-up (2 dias)',
+      E'{{nome}}, a avaliação de implante é totalmente gratuita e sem compromisso 😊\n\nMuita gente não sabe que o implante hoje é mais acessível do que parece, e temos opções de parcelamento. Que tal conhecer pessoalmente?',
+      'followup', 'scheduled', v_c4, 2
+    );
+  end if;
 
   -- ---------------------------------------------
   -- Fluxo "EU QUERO" -> pergunta turno -> confirma -> notifica Paulo
@@ -108,7 +128,7 @@ begin
   -- ---------------------------------------------
   insert into reply_flows (client_id, enabled, trigger_keyword, ask_period_message, confirm_message, notify_phone)
   values (
-    v_client_id, true, 'eu quero',
+    v_client_id, true, 'eu quero, quero, eu qro, qro, quero sim, bora, pode ser, com certeza, isso',
     'Que ótimo, {{nome}}! 😊 Você prefere atendimento pela manhã ou à tarde?',
     'Perfeito! Em breve nossa equipe entra em contato pra confirmar seu horário 🗓️',
     null

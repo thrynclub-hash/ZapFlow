@@ -22,6 +22,7 @@ export default function NewCampaign() {
   })
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
+  const [imageUrlInput, setImageUrlInput] = useState('')
   const [saving, setSaving] = useState(false)
   const fileRef = useRef()
   const clientId = profile?.client_id
@@ -47,6 +48,7 @@ export default function NewCampaign() {
     if (!file) return
     setImageFile(file)
     setImagePreview(URL.createObjectURL(file))
+    setImageUrlInput('')
   }
 
   async function uploadImage(campaignId) {
@@ -85,6 +87,10 @@ export default function NewCampaign() {
       } catch (err) {
         alert('Campanha criada, mas a imagem não subiu: ' + err.message + '. Você pode adicionar depois pelo Histórico.')
       }
+    } else if (imageUrlInput.trim()) {
+      // Link direto de imagem (ex: copiado da página Criativos) — não
+      // precisa de upload, só grava a URL na campanha.
+      await supabase.from('campaigns').update({ image_url: imageUrlInput.trim() }).eq('id', campaign.id)
     }
 
     setSaving(false)
@@ -144,8 +150,14 @@ export default function NewCampaign() {
             <input ref={fileRef} type="file" accept="image/*" onChange={handleImage} className="hidden" />
             {imagePreview ? (
               <div className="relative inline-block">
-                <img src={imagePreview} alt="preview" className="rounded-xl max-h-48 border border-border object-cover" />
+                <img src={imagePreview} alt="preview" className="rounded-xl max-h-48 border border-border object-contain bg-black/20" />
                 <button type="button" onClick={() => { setImageFile(null); setImagePreview(null) }}
+                  className="absolute top-2 right-2 bg-bg/80 rounded-full p-1 text-white hover:bg-red-500 transition-colors"><X size={14} /></button>
+              </div>
+            ) : imageUrlInput.trim() ? (
+              <div className="relative inline-block">
+                <img src={imageUrlInput.trim()} alt="preview" className="rounded-xl max-h-48 border border-border object-contain bg-black/20" onError={e => { e.target.style.display = 'none' }} />
+                <button type="button" onClick={() => setImageUrlInput('')}
                   className="absolute top-2 right-2 bg-bg/80 rounded-full p-1 text-white hover:bg-red-500 transition-colors"><X size={14} /></button>
               </div>
             ) : (
@@ -155,7 +167,13 @@ export default function NewCampaign() {
                 <p className="text-sm font-body">Adicionar imagem</p>
               </button>
             )}
-            <p className="text-xs text-muted font-body mt-1.5">Prefere reaproveitar uma imagem já enviada? Sobe em <strong className="text-white">Criativos</strong> e copia o link, ou anexa aqui direto.</p>
+            <div className="flex items-center gap-2 my-1">
+              <div className="flex-1 h-px bg-border" /><span className="text-xs text-muted font-body">ou</span><div className="flex-1 h-px bg-border" />
+            </div>
+            <input type="url" value={imageUrlInput} onChange={e => { setImageUrlInput(e.target.value); if (e.target.value) { setImageFile(null); setImagePreview(null) } }}
+              placeholder="Cola aqui o link de uma imagem (ex: copiado da página Criativos)"
+              className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
+            <p className="text-xs text-muted font-body mt-1.5">Prefere reaproveitar uma imagem já enviada? Sobe em <strong className="text-white">Criativos</strong>, copia o link e cola aqui — ou anexa um arquivo novo acima.</p>
           </div>
           <div>
             <label className="block text-xs text-muted font-body mb-1.5">Mensagem *</label>

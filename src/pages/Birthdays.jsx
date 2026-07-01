@@ -4,6 +4,14 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { sleep } from '../lib/zapi'
 
+const TEMPLATES = [
+  { label: 'Desconto no dia', text: '🎂 Feliz aniversário, {nome}! Que seu dia seja especial. Aproveite: 10% OFF em qualquer produto hoje! 🎉' },
+  { label: 'Carinhoso, sem oferta', text: '🎉 Parabéns, {nome}! Hoje é um dia só seu — desejamos muita saúde, alegria e realizações. Um abraço da nossa equipe! 💛' },
+  { label: 'Convite pra visitar', text: '🎂 {nome}, feliz aniversário! Passa aqui essa semana pra gente comemorar com você — tem uma surpresinha esperando! 🎁' },
+  { label: 'Curto e direto', text: 'Feliz aniversário, {nome}! 🎉 Tudo de bom pra você hoje e sempre.' },
+  { label: 'Agradecimento', text: '🎂 {nome}, muito feliz aniversário! Obrigado por confiar na gente durante esse ano. Contamos com você por muitos mais! 💛' },
+]
+
 export default function Birthdays() {
   const { profile } = useAuth()
   const [contacts, setContacts] = useState([])
@@ -16,6 +24,7 @@ export default function Birthdays() {
   const [sending, setSending] = useState(false)
   const [saving, setSaving] = useState(false)
   const [tab, setTab] = useState('today')
+  const [selectedIds, setSelectedIds] = useState(new Set())
   const fileRef = useRef()
   const clientId = profile?.client_id
 
@@ -33,22 +42,39 @@ export default function Birthdays() {
 
   async function fetchBirthdays() {
     const today = new Date()
+    let list = []
     if (tab === 'today') {
       const mmdd = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
       const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).like('birth_date', `%-${mmdd}`)
-      setContacts(data || [])
+      list = data || []
     } else if (tab === 'week') {
       const days = Array.from({ length: 7 }, (_, i) => {
         const d = new Date(today); d.setDate(d.getDate() + i)
         return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       })
       const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).not('birth_date', 'is', null)
-      setContacts((data || []).filter(c => { if (!c.birth_date) return false; const p = c.birth_date.split('-'); return days.includes(`${p[1]}-${p[2]}`) }))
+      list = (data || []).filter(c => { if (!c.birth_date) return false; const p = c.birth_date.split('-'); return days.includes(`${p[1]}-${p[2]}`) })
     } else {
       const month = String(today.getMonth() + 1).padStart(2, '0')
       const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).like('birth_date', `%-${month}-%`)
-      setContacts(data || [])
+      list = data || []
     }
+    setContacts(list)
+    // Por padrão todo mundo vem selecionado (comportamento igual ao antigo
+    // "enviar para todos"), mas agora dá pra desmarcar quem não quer receber.
+    setSelectedIds(new Set(list.map(c => c.id)))
+  }
+
+  function toggleSelected(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds(prev => prev.size === contacts.length ? new Set() : new Set(contacts.map(c => c.id)))
   }
 
   function handleImageSelect(e) {
@@ -76,10 +102,12 @@ export default function Birthdays() {
 
   async function sendToAll() {
     if (!config.message) return alert('Configure a mensagem de aniversário primeiro.')
-    if (!confirm(`Enviar para ${contacts.length} aniversariantes?`)) return
+    const targets = contacts.filter(c => selectedIds.has(c.id))
+    if (targets.length === 0) return alert('Selecione ao menos um aniversariante.')
+    if (!confirm(`Enviar para ${targets.length} aniversariante(s) selecionado(s)?`)) return
     setSending(true)
     let sent = 0, capHit = false
-    for (const contact of contacts) {
+    for (const contact of targets) {
       if (capHit) break
       const number = numbers.find(n => n.id === contact.number_id)
       if (!number) continue
@@ -150,7 +178,16 @@ export default function Birthdays() {
         </div>
 
         <div>
-          <label className="block text-xs text-muted font-body mb-1.5">Mensagem (use {'{nome}'} para personalizar)</label>
+          <label className="block text-xs text-muted font-body mb-1.5">Modelos prontos (clique para usar como ponto de partida)</label>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {TEMPLATES.map(t => (
+              <button key={t.label} type="button" onClick={() => setConfig(c => ({ ...c, message: t.text }))}
+                className="text-xs text-accent border border-accent/30 px-3 py-1.5 rounded-lg font-body hover:bg-accent/10 transition-colors">
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <label className="block text-xs text-muted font-body mb-1.5">Mensagem (use {'{nome}'} para personalizar) — pode editar livremente após escolher um modelo</label>
           <textarea value={config.message} onChange={e => setConfig(c => ({ ...c, message: e.target.value }))} rows={3}
             placeholder={`🎂 Feliz aniversário, {nome}! Que seu dia seja especial. Aproveite: 10% OFF em qualquer produto hoje! 🎉`}
             className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/40 focus:outline-none focus:border-accent transition-colors resize-none" />
@@ -173,11 +210,18 @@ export default function Birthdays() {
 
       <div>
         <div className="flex items-center justify-between mb-4">
-          <p className="text-muted text-sm font-body">{contacts.length} aniversariante{contacts.length !== 1 ? 's' : ''}</p>
+          <div className="flex items-center gap-3">
+            <p className="text-muted text-sm font-body">{contacts.length} aniversariante{contacts.length !== 1 ? 's' : ''} · {selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}</p>
+            {contacts.length > 0 && (
+              <button onClick={toggleSelectAll} className="text-xs text-accent font-body hover:underline">
+                {selectedIds.size === contacts.length ? 'Desmarcar todos' : 'Selecionar todos'}
+              </button>
+            )}
+          </div>
           {contacts.length > 0 && (
-            <button onClick={sendToAll} disabled={sending}
+            <button onClick={sendToAll} disabled={sending || selectedIds.size === 0}
               className="flex items-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2 rounded-lg text-sm font-display font-bold transition-colors">
-              <Send size={14} /> {sending ? 'Enviando...' : 'Enviar para todos'}
+              <Send size={14} /> {sending ? 'Enviando...' : `Enviar para ${selectedIds.size} selecionado${selectedIds.size !== 1 ? 's' : ''}`}
             </button>
           )}
         </div>
@@ -190,7 +234,9 @@ export default function Birthdays() {
         ) : (
           <div className="grid gap-3">
             {contacts.map(c => (
-              <div key={c.id} className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
+              <div key={c.id} className={`bg-card border rounded-xl p-4 flex items-center gap-4 transition-colors ${selectedIds.has(c.id) ? 'border-border' : 'border-border opacity-50'}`}>
+                <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleSelected(c.id)}
+                  className="w-4 h-4 accent-accent shrink-0" />
                 <div className="w-10 h-10 bg-accent/10 rounded-full flex items-center justify-center shrink-0">
                   <Cake size={18} className="text-accent" />
                 </div>

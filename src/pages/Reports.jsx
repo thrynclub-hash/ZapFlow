@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BarChart2, Download, TrendingUp, MessageSquare, Users, CheckCircle } from 'lucide-react'
+import { BarChart2, Download, TrendingUp, MessageSquare, Users, CheckCircle, Reply } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -10,6 +10,7 @@ export default function Reports() {
   const [campaigns, setCampaigns] = useState([])
   const [monthlyData, setMonthlyData] = useState([])
   const [totals, setTotals] = useState({ sent: 0, campaigns: 0, contacts: 0, rate: 0 })
+  const [replyRows, setReplyRows] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -19,6 +20,7 @@ export default function Reports() {
 
   async function fetchData() {
     const clientId = profile.client_id
+    fetchReplyStats(clientId)
 
     const [{ data: camps }, { count: totalContacts }] = await Promise.all([
       supabase.from('campaigns').select('*, number:client_numbers(label)').eq('client_id', clientId).eq('status', 'completed').order('created_at', { ascending: false }),
@@ -45,6 +47,52 @@ export default function Reports() {
     })
     setMonthlyData(Object.entries(byMonth).slice(-6).map(([name, enviados]) => ({ name, enviados })))
     setLoading(false)
+  }
+
+  // Controle de respostas: quem respondeu, quem não respondeu, quem chegou
+  // no follow-up e respondeu (ou não). Tudo calculado em memória a partir
+  // de message_logs (o que foi enviado) + inbound_messages (o que chegou
+  // de volta) — sem query por contato, então funciona bem mesmo com a
+  // base toda.
+  async function fetchReplyStats(clientId) {
+    const [{ data: allLogs }, { data: inbound }, { data: allCampaigns }] = await Promise.all([
+      supabase.from('message_logs').select('campaign_id, contact_id, status, sent_at').eq('client_id', clientId),
+      supabase.from('inbound_messages').select('contact_id, received_at').eq('client_id', clientId),
+      supabase.from('campaigns').select('id, name, type, follow_up_of').eq('client_id', clientId),
+    ])
+
+    const inboundByContact = {}
+    for (const m of inbound || []) {
+      if (!m.contact_id) continue
+      ;(inboundByContact[m.contact_id] ||= []).push(m.received_at)
+    }
+    function hasReplyAfter(contactId, sinceIso) {
+      return (inboundByContact[contactId] || []).some(t => t >= sinceIso)
+    }
+
+    const baseCampaigns = (allCampaigns || []).filter(c => c.type !== 'followup')
+    const rows = baseCampaigns.map(camp => {
+      const sentLogs = (allLogs || []).filter(l => l.campaign_id === camp.id && l.status === 'sent')
+      const replied = sentLogs.filter(l => hasReplyAfter(l.contact_id, l.sent_at)).length
+      const followup = (allCampaigns || []).find(c => c.follow_up_of === camp.id)
+      let fuSent = 0, fuReplied = 0
+      if (followup) {
+        const fuLogs = (allLogs || []).filter(l => l.campaign_id === followup.id && l.status === 'sent')
+        fuSent = fuLogs.length
+        fuReplied = fuLogs.filter(l => hasReplyAfter(l.contact_id, l.sent_at)).length
+      }
+      return {
+        name: camp.name,
+        sent: sentLogs.length,
+        replied,
+        notReplied: sentLogs.length - replied,
+        hasFollowup: !!followup,
+        fuSent,
+        fuReplied,
+        fuNotReplied: fuSent - fuReplied,
+      }
+    })
+    setReplyRows(rows)
   }
 
   function exportExcel() {
@@ -118,6 +166,44 @@ export default function Reports() {
           </ResponsiveContainer>
         </div>
       )}
+
+      {/* Controle de respostas */}
+      <div>
+        <h3 className="font-display font-semibold text-white mb-1 flex items-center gap-2"><Reply size={16} className="text-accent" /> Quem respondeu</h3>
+        <p className="text-muted text-xs font-body mb-4">Por campanha: quantos receberam, quantos responderam, e o mesmo para o follow-up automático (2 dias depois, só pra quem não respondeu)</p>
+        {replyRows.length === 0 ? (
+          <div className="bg-card border border-border rounded-xl p-8 text-center mb-6">
+            <p className="text-muted font-body text-sm">Nenhum envio registrado ainda</p>
+          </div>
+        ) : (
+          <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left px-5 py-3 text-xs text-muted font-body">Campanha</th>
+                  <th className="text-right px-5 py-3 text-xs text-muted font-body">Enviados</th>
+                  <th className="text-right px-5 py-3 text-xs text-muted font-body">Responderam</th>
+                  <th className="text-right px-5 py-3 text-xs text-muted font-body">Não responderam</th>
+                  <th className="text-right px-5 py-3 text-xs text-muted font-body">Follow-up enviado</th>
+                  <th className="text-right px-5 py-3 text-xs text-muted font-body">Follow-up respondeu</th>
+                </tr>
+              </thead>
+              <tbody>
+                {replyRows.map(r => (
+                  <tr key={r.name} className="border-b border-border/50 last:border-0 hover:bg-surface/30 transition-colors">
+                    <td className="px-5 py-4 text-sm text-white font-body">{r.name}</td>
+                    <td className="px-5 py-4 text-sm text-white font-body text-right">{r.sent}</td>
+                    <td className="px-5 py-4 text-sm text-green-400 font-body text-right">{r.replied}</td>
+                    <td className="px-5 py-4 text-sm text-muted font-body text-right">{r.notReplied}</td>
+                    <td className="px-5 py-4 text-sm text-white font-body text-right">{r.hasFollowup ? r.fuSent : '—'}</td>
+                    <td className="px-5 py-4 text-sm text-green-400 font-body text-right">{r.hasFollowup ? r.fuReplied : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Table */}
       <div>

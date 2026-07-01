@@ -106,7 +106,15 @@ Deno.serve(async (req: Request) => {
     }
 
     const normalizedText = normalize(inboundText);
-    const normalizedKeyword = normalize(flow.trigger_keyword || "eu quero");
+    // trigger_keyword pode conter várias variações separadas por vírgula
+    // (ex: "eu quero, quero, eu qro, qro, bora, quero sim, pode ser") —
+    // qualquer uma delas dispara o fluxo. Pedido do usuário: reconhecer
+    // "EU QUERO" ou alguma variação, não só o texto exato.
+    const keywordVariants = (flow.trigger_keyword || "eu quero")
+      .split(",")
+      .map((k: string) => normalize(k))
+      .filter((k: string) => k.length > 0);
+    const matchesKeyword = keywordVariants.some((k: string) => normalizedText.includes(k));
 
     // Campanha mais recente enviada a este contato (pra associar o estado da conversa)
     const { data: lastLog } = await supabase
@@ -126,7 +134,7 @@ Deno.serve(async (req: Request) => {
       .eq("campaign_id", campaignId)
       .maybeSingle();
 
-    if (normalizedText.includes(normalizedKeyword) && (!state || state.state === "initial")) {
+    if (matchesKeyword && (!state || state.state === "initial")) {
       await supabase.from("conversation_states").upsert(
         { client_id: number.client_id, contact_id: contact.id, campaign_id: campaignId, state: "asked_schedule", updated_at: new Date().toISOString() },
         { onConflict: "contact_id,campaign_id" },

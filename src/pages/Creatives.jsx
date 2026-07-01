@@ -84,7 +84,9 @@ export default function Creatives() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {files.map(f => (
             <div key={f.name} className="bg-card border border-border rounded-xl overflow-hidden group relative">
-              <img src={publicUrl(f.name)} alt={f.name} className="w-full h-36 object-cover" />
+              <div className="w-full h-36 bg-black/30 flex items-center justify-center">
+                <img src={publicUrl(f.name)} alt={f.name} className="max-w-full max-h-full object-contain" />
+              </div>
               <div className="p-2.5 flex items-center justify-between gap-2">
                 <button onClick={() => copyLink(f.name)} className="flex items-center gap-1.5 text-xs font-body text-accent hover:underline">
                   {copiedPath === f.name ? <><Check size={12} /> Copiado!</> : <><Copy size={12} /> Copiar link</>}
