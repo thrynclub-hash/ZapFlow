@@ -333,13 +333,17 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
   // Ordem determinística (created_at asc) — garante que "manda 100 hoje,
   // 100 amanhã" sempre continua exatamente de onde parou, sem repetir e
   // sem pular ninguém, não importa em que ordem o Postgres devolveria por padrão.
-  // target_tags filtra o público por tag (ex: só quem tem "Antigo" ou só
-  // quem tem "Novo") — NULL/vazio = manda pra todo mundo Ativo, igual antes.
+  // target_tags filtra o público por tag — NULL/vazio = manda pra todo mundo
+  // Ativo, igual antes. Com 2+ tags marcadas é OR (.overlaps): contato que
+  // tem QUALQUER uma das tags marcadas entra, não precisa ter todas ao mesmo
+  // tempo (ex: marcar "Antigo" + "vip" manda pra quem é Antigo OU vip, não
+  // só pra quem é as duas coisas — é assim que ferramenta de marketing
+  // normalmente trata seleção múltipla de tag/segmento).
   // Também paginado — cliente com mais de 1000 contatos ativos não pode
   // ficar com a campanha travada só nos primeiros 1000.
   const contacts = await fetchAllPages<any>((from, to) => {
     let q = supabase.from("contacts").select("*").eq("client_id", campaign.client_id).eq("status", "Ativo").order("created_at", { ascending: true }).range(from, to);
-    if (campaign.target_tags && campaign.target_tags.length > 0) q = q.contains("tags", campaign.target_tags);
+    if (campaign.target_tags && campaign.target_tags.length > 0) q = q.overlaps("tags", campaign.target_tags);
     return q;
   });
   const pending = contacts.filter((c: any) => !sentIds.has(c.id));
