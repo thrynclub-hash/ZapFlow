@@ -9,6 +9,7 @@ import Contacts from './pages/Contacts'
 import NewCampaign from './pages/NewCampaign'
 import Campaigns from './pages/Campaigns'
 import Birthdays from './pages/Birthdays'
+import Automations from './pages/Automations'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="campaigns" element={<Campaigns />} />
         <Route path="campaigns/new" element={<NewCampaign />} />
         <Route path="birthdays" element={<Birthdays />} />
+        <Route path="automations" element={<Automations />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<Settings />} />
       </Route>
