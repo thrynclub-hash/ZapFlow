@@ -1,14 +1,18 @@
 import { Link } from 'react-router-dom'
 import { Zap, CheckCircle, Send, Users, Cake, BarChart2, ArrowRight } from 'lucide-react'
 
+// Espelha os planos reais em plan_limits + AdminPricing.jsx (custo real ×
+// 1,30 de lucro) — atualizado em 2026-07-01 junto com o enforcement de
+// verdade no sistema. Se mudar aqui, mudar também em AdminPricing.jsx.
 const PLANS = [
-  { name: 'Starter', monthly: 299, setup: 800, numbers: 1, contacts: 500, features: ['1 número WhatsApp', '500 contatos', 'Disparo manual', 'Histórico de campanhas'] },
-  { name: 'Basic', monthly: 449, setup: 1300, numbers: 2, contacts: 1500, best: true, features: ['2 números WhatsApp', '1.500 contatos', 'Tudo do Starter', 'Mensagens de aniversário', 'Relatórios e exportação'] },
-  { name: 'Pro', monthly: 599, setup: 1800, numbers: 3, contacts: 5000, features: ['3 números WhatsApp', '5.000 contatos', 'Tudo do Basic', 'Suporte prioritário'] },
+  { name: 'Starter', monthly: 149, setup: 800, numbers: 1, contacts: 1000, features: ['1 número WhatsApp', '1.000 contatos', 'Campanhas automáticas', 'Histórico de campanhas'] },
+  { name: 'Growth', monthly: 279, setup: 1500, numbers: 2, contacts: 2000, best: true, features: ['2 números WhatsApp', '2.000 contatos', 'Tudo do Starter', 'Mensagens de aniversário', 'Relatórios e exportação'] },
+  { name: 'Scale', monthly: 669, setup: 2800, numbers: 5, contacts: 5000, features: ['5 números WhatsApp', '5.000 contatos', 'Tudo do Growth', 'Automações com resposta automática', 'Suporte prioritário'] },
+  { name: 'Enterprise', monthly: 1319, setup: 4500, numbers: 10, contacts: null, features: ['10 números WhatsApp', 'Contatos ilimitados', 'Tudo do Scale', 'SLA e consultoria mensal'] },
 ]
 
 const FEATURES = [
-  { icon: Send, title: 'Disparo em 3 cliques', desc: 'A funcionária sobe a imagem, escreve a mensagem e dispara para todos os contatos de uma loja. Simples assim.' },
+  { icon: Send, title: 'Campanhas sem esforço', desc: 'Sobe a imagem, escreve a mensagem e agenda — o sistema cuida do envio sozinho, respeitando o limite diário seguro pra nunca correr risco de bloqueio no WhatsApp.' },
   { icon: Users, title: 'Importação de contatos', desc: 'Importe sua lista atual em Excel ou CSV. O sistema organiza por loja automaticamente.' },
   { icon: Cake, title: 'Aniversários automáticos', desc: 'O sistema identifica quem faz aniversário e envia uma mensagem personalizada no dia certo, sem você fazer nada.' },
   { icon: BarChart2, title: 'Relatórios completos', desc: 'Veja quantas mensagens foram enviadas, por qual loja e com qual taxa de entrega. Exportação em Excel disponível.' },
@@ -79,7 +83,7 @@ export default function Landing() {
       <section id="planos" className="px-8 py-20 max-w-5xl mx-auto">
         <h2 className="font-display font-bold text-3xl text-white text-center mb-4">Planos e preços</h2>
         <p className="text-muted text-center mb-12 font-body">Comece com o que você precisa. Sem contrato, sem surpresas.</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
           {PLANS.map(p => (
             <div key={p.name} className={`bg-card rounded-2xl p-6 flex flex-col ${p.best ? 'border-2 border-accent' : 'border border-border'}`}>
               {p.best && <span className="self-start text-xs bg-accent text-bg px-2 py-1 rounded font-body font-semibold mb-4">Mais escolhido</span>}
@@ -87,6 +91,7 @@ export default function Landing() {
               <div className="mt-4 mb-6">
                 <p className="text-4xl font-display font-bold text-accent">R$ {p.monthly}<span className="text-base text-muted font-body font-normal">/mês</span></p>
                 <p className="text-xs text-muted font-body mt-1">+ R$ {p.setup.toLocaleString()} de setup único</p>
+                <p className="text-xs text-muted font-body mt-1">{p.contacts ? `Até ${p.contacts.toLocaleString()} contatos` : 'Contatos ilimitados'}</p>
               </div>
               <ul className="space-y-3 flex-1">
                 {p.features.map(f => (
