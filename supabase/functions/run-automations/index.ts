@@ -20,6 +20,30 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
 const ZAPI_BASE = "https://api.z-api.io/instances";
 const DAILY_CAP = 100;
 
+// Bug real descoberto em 2026-07-01 (via Contacts.jsx, mesmo teto): o
+// Supabase/PostgREST devolve no MÁXIMO 1000 linhas por select, mesmo sem
+// LIMIT explícito no código — é um teto padrão do projeto (db-max-rows),
+// e vale pra QUALQUER select feito por aqui também (o client Supabase do
+// Edge Function fala com a mesma API REST). Sem paginar, um cliente com
+// mais de 1000 contatos ativos nunca teria a campanha entregue pra quem
+// passasse do milhar — e pior, o dedup de "quem já recebeu esta campanha"
+// (message_logs) também ficaria incompleto acima de 1000 envios, o que
+// reenviaria mensagem duplicada pra quem já tinha recebido. Helper genérico
+// pra buscar TODAS as páginas antes de seguir.
+const PAGE_SIZE = 1000;
+async function fetchAllPages<T>(buildQuery: (from: number, to: number) => any): Promise<T[]> {
+  let all: T[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await buildQuery(from, from + PAGE_SIZE - 1);
+    if (error) { console.error("Erro paginando query:", error); break; }
+    all = all.concat((data ?? []) as T[]);
+    if (!data || data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return all;
+}
+
 // Único ponto de decisão "posso mandar mais uma mensagem hoje por este
 // número?" — compartilhado com send-message e zapi-webhook via a mesma
 // função Postgres. Ver supabase_automacoes_avancadas.sql.
@@ -81,19 +105,13 @@ async function enrollBirthdayTriggers() {
       .sort((a: any, b: any) => a.order_index - b.order_index)[0];
     if (!firstStep) continue;
 
-    // Contatos do mesmo cliente, aniversariantes de hoje (mês/dia)
-    const { data: contacts, error: contactsErr } = await supabase
-      .from("contacts")
-      .select("id, birth_date")
-      .eq("client_id", (automation as any).client_id)
-      .not("birth_date", "is", null);
+    // Contatos do mesmo cliente, aniversariantes de hoje (mês/dia) — paginado
+    // (ver fetchAllPages acima) pra não perder ninguém acima de 1000 contatos.
+    const contacts = await fetchAllPages<{ id: string; birth_date: string }>((from, to) =>
+      supabase.from("contacts").select("id, birth_date").eq("client_id", (automation as any).client_id).not("birth_date", "is", null).range(from, to)
+    );
 
-    if (contactsErr) {
-      console.error("Erro buscando contatos:", contactsErr);
-      continue;
-    }
-
-    for (const contact of contacts ?? []) {
+    for (const contact of contacts) {
       const bd = new Date(contact.birth_date);
       const bdMm = String(bd.getUTCMonth() + 1).padStart(2, "0");
       const bdDd = String(bd.getUTCDate()).padStart(2, "0");
@@ -304,25 +322,27 @@ async function processScheduledCampaigns() {
 }
 
 async function sendCampaignBatch(campaign: any, number: any, limit: number | null) {
-  // Contatos do cliente que ainda não receberam esta campanha
-  const { data: alreadySent } = await supabase
-    .from("message_logs")
-    .select("contact_id")
-    .eq("campaign_id", campaign.id);
-
-  const sentIds = new Set((alreadySent ?? []).map((r: any) => r.contact_id));
+  // Contatos do cliente que ainda não receberam esta campanha — paginado
+  // (ver fetchAllPages): acima de 1000 envios já registrados, um select sem
+  // paginação perderia parte do dedup e reenviaria mensagem duplicada.
+  const alreadySent = await fetchAllPages<{ contact_id: string }>((from, to) =>
+    supabase.from("message_logs").select("contact_id").eq("campaign_id", campaign.id).range(from, to)
+  );
+  const sentIds = new Set(alreadySent.map((r) => r.contact_id));
 
   // Ordem determinística (created_at asc) — garante que "manda 100 hoje,
   // 100 amanhã" sempre continua exatamente de onde parou, sem repetir e
   // sem pular ninguém, não importa em que ordem o Postgres devolveria por padrão.
   // target_tags filtra o público por tag (ex: só quem tem "Antigo" ou só
   // quem tem "Novo") — NULL/vazio = manda pra todo mundo Ativo, igual antes.
-  let contactsQuery = supabase.from("contacts").select("*").eq("client_id", campaign.client_id).eq("status", "Ativo").order("created_at", { ascending: true });
-  if (campaign.target_tags && campaign.target_tags.length > 0) {
-    contactsQuery = contactsQuery.contains("tags", campaign.target_tags);
-  }
-  const { data: contacts } = await contactsQuery;
-  const pending = (contacts ?? []).filter((c: any) => !sentIds.has(c.id));
+  // Também paginado — cliente com mais de 1000 contatos ativos não pode
+  // ficar com a campanha travada só nos primeiros 1000.
+  const contacts = await fetchAllPages<any>((from, to) => {
+    let q = supabase.from("contacts").select("*").eq("client_id", campaign.client_id).eq("status", "Ativo").order("created_at", { ascending: true }).range(from, to);
+    if (campaign.target_tags && campaign.target_tags.length > 0) q = q.contains("tags", campaign.target_tags);
+    return q;
+  });
+  const pending = contacts.filter((c: any) => !sentIds.has(c.id));
   // `limit` é o teto da PRÓPRIA campanha (daily_limit) — o teto real de
   // verdade é sempre o orçamento diário GLOBAL do número (try_consume_daily_send_budget),
   // checado mensagem a mensagem logo abaixo. Isso garante que duas
@@ -384,19 +404,20 @@ async function processFollowUpCampaigns() {
     const cutoff = new Date();
     cutoff.setUTCDate(cutoff.getUTCDate() - delayDays);
 
-    // Quem recebeu a campanha-base há >= delayDays dias
-    const { data: baseSends } = await supabase
-      .from("message_logs")
-      .select("contact_id, sent_at")
-      .eq("campaign_id", followUp.follow_up_of)
-      .eq("status", "sent")
-      .lte("sent_at", cutoff.toISOString());
+    // Quem recebeu a campanha-base há >= delayDays dias — paginado (ver
+    // fetchAllPages), senão campanha-base com mais de 1000 envios já feitos
+    // perderia gente na fila do follow-up.
+    const baseSends = await fetchAllPages<{ contact_id: string; sent_at: string }>((from, to) =>
+      supabase.from("message_logs").select("contact_id, sent_at").eq("campaign_id", followUp.follow_up_of).eq("status", "sent").lte("sent_at", cutoff.toISOString()).range(from, to)
+    );
 
-    if (!baseSends || baseSends.length === 0) continue;
+    if (baseSends.length === 0) continue;
 
-    // Quem já recebeu ESTE follow-up (não reenviar)
-    const { data: alreadyFollowedUp } = await supabase.from("message_logs").select("contact_id").eq("campaign_id", followUp.id);
-    const alreadyIds = new Set((alreadyFollowedUp ?? []).map((r: any) => r.contact_id));
+    // Quem já recebeu ESTE follow-up (não reenviar) — mesmo cuidado de paginação.
+    const alreadyFollowedUp = await fetchAllPages<{ contact_id: string }>((from, to) =>
+      supabase.from("message_logs").select("contact_id").eq("campaign_id", followUp.id).range(from, to)
+    );
+    const alreadyIds = new Set(alreadyFollowedUp.map((r) => r.contact_id));
 
     for (const baseSend of baseSends) {
       if (alreadyIds.has(baseSend.contact_id)) continue;
