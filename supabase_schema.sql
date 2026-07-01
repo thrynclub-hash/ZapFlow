@@ -158,11 +158,16 @@ create policy "Admin birthday" on birthday_configs for all using (is_admin());
 
 -- =============================================
 -- ADMIN INICIAL
--- Crie manualmente após setup:
+-- Crie manualmente após setup (NUNCA commitar a senha aqui):
 -- 1. Vá em Authentication > Users > Add user
--- 2. Email: thrynclub@gmail.com | Senha: Leo1010@2026@
+-- 2. Defina o e-mail e uma senha forte diretamente no painel do Supabase
 -- 3. Pegue o ID gerado
 -- 4. Execute:
 -- insert into profiles (id, role, full_name, email)
--- values ('<ID_DO_USER>', 'admin', 'Leonardo Marusso', 'thrynclub@gmail.com');
+-- values ('<ID_DO_USER>', 'admin', '<NOME>', '<EMAIL>');
+--
+-- Nota de segurança (2026-07-01): este arquivo tinha uma senha em texto
+-- puro aqui. Foi removida do código, mas o histórico do git ainda a
+-- contém — troque essa senha real no painel do Supabase, o texto
+-- antigo não protege mais nada. Ver SECURITY-FINDINGS-2026-07-01.md.
 -- =============================================
