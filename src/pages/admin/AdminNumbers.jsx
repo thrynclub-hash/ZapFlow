@@ -54,7 +54,7 @@ export default function AdminNumbers() {
         if (limit) {
           // Limite efetivo = limite do plano + add-ons avulsos de "+1 número"
           // (order bump — gerenciados em Clientes, sem precisar trocar de plano).
-          const { data: addons } = await supabase.from('client_addons').select('quantity').eq('client_id', form.client_id).eq('addon_type', 'number')
+          const { data: addons } = await supabase.from('client_addons').select('quantity').eq('client_id', form.client_id).eq('addon_type', 'number').eq('status', 'active')
           const extraNumbers = (addons || []).reduce((s, a) => s + a.quantity, 0)
           const effectiveLimit = limit.numbers_limit + extraNumbers
           const { count } = await supabase.from('client_numbers').select('id', { count: 'exact', head: true }).eq('client_id', form.client_id)

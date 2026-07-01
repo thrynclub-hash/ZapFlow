@@ -44,7 +44,7 @@ export default function Contacts() {
     // Limite efetivo = limite do plano + add-ons avulsos de +1000 contatos
     // (order bump — cliente não precisa trocar de plano inteiro só pra
     // caber mais um pouco).
-    const { data: addons } = await supabase.from('client_addons').select('quantity').eq('client_id', clientId).eq('addon_type', 'contacts_1000')
+    const { data: addons } = await supabase.from('client_addons').select('quantity').eq('client_id', clientId).eq('addon_type', 'contacts_1000').eq('status', 'active')
     const extra = (addons || []).reduce((s, a) => s + a.quantity, 0) * 1000
     setPlanLimit({ ...limit, contacts_limit: limit.contacts_limit != null ? limit.contacts_limit + extra : null, base_contacts_limit: limit.contacts_limit })
   }

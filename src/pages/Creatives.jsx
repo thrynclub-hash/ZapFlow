@@ -40,8 +40,13 @@ export default function Creatives() {
 
   async function handleDelete(name) {
     if (!confirm('Remover esta imagem? Se ela já estiver em uso numa campanha, a campanha fica sem imagem.')) return
-    await supabase.storage.from('creatives').remove([`biblioteca/${clientId}/${name}`])
-    fetchFiles()
+    // Remoção otimista: some da tela na hora, sem esperar a rede — evita a
+    // UI travar/parecer lenta (era isso que o Chrome acusava como "INP
+    // Issue"/UI bloqueada). Se der erro, volta o arquivo pra lista.
+    const previous = files
+    setFiles(f => f.filter(x => x.name !== name))
+    const { error } = await supabase.storage.from('creatives').remove([`biblioteca/${clientId}/${name}`])
+    if (error) { alert('Erro ao remover: ' + error.message); setFiles(previous) }
   }
 
   function copyLink(name) {
