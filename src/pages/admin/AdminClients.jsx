@@ -3,7 +3,7 @@ import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2, KeyRound } from
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/Modal'
 
-const PLANS = ['Starter', 'Basic', 'Pro', 'Business', 'Enterprise']
+const PLANS = ['Starter', 'Growth', 'Scale', 'Enterprise']
 const SEGMENTS = ['Alimentação', 'Saúde/Clínica', 'Beleza', 'Educação', 'Varejo', 'Serviços', 'Outro']
 
 function generateKey() {

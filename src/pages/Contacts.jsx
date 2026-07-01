@@ -19,11 +19,19 @@ export default function Contacts() {
   const [form, setForm] = useState({ name: '', phone: '', birth_date: '', number_id: '', tags: '' })
   const [importTarget, setImportTarget] = useState('')
   const [importSummary, setImportSummary] = useState(null)
+  const [planLimit, setPlanLimit] = useState(null) // { plan, numbers_limit, contacts_limit }
   const fileRef = useRef()
 
   const clientId = profile?.client_id
 
-  useEffect(() => { if (clientId) { fetchContacts(); fetchNumbers() } }, [clientId])
+  useEffect(() => { if (clientId) { fetchContacts(); fetchNumbers(); fetchPlanLimit() } }, [clientId])
+
+  async function fetchPlanLimit() {
+    const { data: client } = await supabase.from('clients').select('plan').eq('id', clientId).single()
+    if (!client?.plan) return
+    const { data: limit } = await supabase.from('plan_limits').select('*').eq('plan', client.plan).single()
+    if (limit) setPlanLimit(limit)
+  }
 
   async function fetchNumbers() {
     const { data } = await supabase.from('client_numbers').select('*').eq('client_id', clientId).eq('active', true)
@@ -45,6 +53,10 @@ export default function Contacts() {
 
   async function handleAdd(e) {
     e.preventDefault()
+    if (planLimit?.contacts_limit != null && contacts.length >= planLimit.contacts_limit) {
+      setErrorMsg(`Seu plano (${planLimit.plan}) permite até ${planLimit.contacts_limit.toLocaleString()} contatos. Fale com o administrador pra aumentar.`)
+      return
+    }
     setSaving(true)
     setErrorMsg('')
     const { error } = await supabase.from('contacts').insert({
@@ -156,18 +168,35 @@ export default function Contacts() {
         for (const c of toInsert) byPhone.set(c.phone, c)
         const deduped = Array.from(byPhone.values())
 
+        // Limite do plano: contato que JÁ EXISTE (vai ser atualizado) nunca
+        // é bloqueado — só CONTATO NOVO conta pro limite. Se o plano permite
+        // menos novos do que vieram na planilha, importa até o limite e avisa.
+        const existingPhones = new Set(contacts.map(c => c.phone))
+        const toUpdate = deduped.filter(c => existingPhones.has(c.phone))
+        const toCreate = deduped.filter(c => !existingPhones.has(c.phone))
+        let blockedByPlan = 0
+        let allowedNew = toCreate
+        if (planLimit?.contacts_limit != null) {
+          const remaining = Math.max(0, planLimit.contacts_limit - contacts.length)
+          if (toCreate.length > remaining) {
+            blockedByPlan = toCreate.length - remaining
+            allowedNew = toCreate.slice(0, remaining)
+          }
+        }
+        const toUpsert = [...toUpdate, ...allowedNew]
+
         // upsert com onConflict client_id+phone: contato existente é ATUALIZADO
         // (nome/loja/nascimento/imported_at), não duplicado — a linha nunca é
         // recriada, então created_at original se preserva.
-        for (let i = 0; i < deduped.length; i += 100) {
-          const { error } = await supabase.from('contacts').upsert(deduped.slice(i, i + 100), { onConflict: 'client_id,phone' })
+        for (let i = 0; i < toUpsert.length; i += 100) {
+          const { error } = await supabase.from('contacts').upsert(toUpsert.slice(i, i + 100), { onConflict: 'client_id,phone' })
           if (error) throw error
         }
 
         await fetchContacts()
         const skipped = rows.length - toInsert.length
         const duplicatesInFile = toInsert.length - deduped.length
-        setImportSummary({ imported: deduped.length, skipped, duplicatesInFile, total: rows.length })
+        setImportSummary({ imported: toUpsert.length, skipped, duplicatesInFile, blockedByPlan, planLimit: planLimit?.contacts_limit, total: rows.length })
       } catch (err) {
         alert('Erro ao importar: ' + err.message)
       }
@@ -196,7 +225,12 @@ export default function Contacts() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display font-bold text-3xl text-white">Contatos</h1>
-          <p className="text-muted text-sm font-body mt-1">{contacts.length.toLocaleString()} contatos cadastrados</p>
+          <p className="text-muted text-sm font-body mt-1">
+            {contacts.length.toLocaleString()} contatos cadastrados
+            {planLimit && (planLimit.contacts_limit != null
+              ? <span className={contacts.length >= planLimit.contacts_limit ? 'text-red-400' : 'text-muted'}> · plano {planLimit.plan}: até {planLimit.contacts_limit.toLocaleString()}</span>
+              : <span className="text-muted"> · plano {planLimit.plan}: ilimitado</span>)}
+          </p>
         </div>
         <div className="flex gap-3 items-center">
           {numbers.length > 1 && (
@@ -223,11 +257,12 @@ export default function Contacts() {
       </div>
 
       {importSummary && (
-        <div className="bg-accent/10 border border-accent/30 rounded-xl p-4 flex items-start justify-between gap-4">
+        <div className={`border rounded-xl p-4 flex items-start justify-between gap-4 ${importSummary.blockedByPlan > 0 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-accent/10 border-accent/30'}`}>
           <p className="text-sm font-body text-white">
             ✅ <strong>{importSummary.imported}</strong> contatos importados/atualizados (duplicados por telefone foram atualizados, não duplicados)
             {importSummary.skipped > 0 && <> · <span className="text-amber-300">{importSummary.skipped} ignorados</span> (sem nome ou telefone válido)</>}
             {importSummary.duplicatesInFile > 0 && <> · {importSummary.duplicatesInFile} repetidos dentro da própria planilha</>}
+            {importSummary.blockedByPlan > 0 && <> · <span className="text-amber-300 font-medium">{importSummary.blockedByPlan} não importados — limite do plano ({importSummary.planLimit?.toLocaleString()} contatos) atingido. Fale com o administrador pra aumentar.</span></>}
           </p>
           <button onClick={() => setImportSummary(null)} className="text-muted hover:text-white text-xs shrink-0">fechar</button>
         </div>
