@@ -312,7 +312,10 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
 
   const sentIds = new Set((alreadySent ?? []).map((r: any) => r.contact_id));
 
-  const { data: contacts } = await supabase.from("contacts").select("*").eq("client_id", campaign.client_id).eq("status", "Ativo");
+  // Ordem determinística (created_at asc) — garante que "manda 100 hoje,
+  // 100 amanhã" sempre continua exatamente de onde parou, sem repetir e
+  // sem pular ninguém, não importa em que ordem o Postgres devolveria por padrão.
+  const { data: contacts } = await supabase.from("contacts").select("*").eq("client_id", campaign.client_id).eq("status", "Ativo").order("created_at", { ascending: true });
   const pending = (contacts ?? []).filter((c: any) => !sentIds.has(c.id));
   // `limit` é o teto da PRÓPRIA campanha (daily_limit) — o teto real de
   // verdade é sempre o orçamento diário GLOBAL do número (try_consume_daily_send_budget),

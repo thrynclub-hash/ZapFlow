@@ -9,6 +9,11 @@
 --
 -- Contexto: agents/cargo/CTO-ZAPFLOW/AGENT.md (Mega Brain), pedido do
 -- Leonardo em 2026-07-01 para configurar as automações da Clínica Hassum.
+--
+-- SEGURO RODAR MAIS DE UMA VEZ (corrigido em 2026-07-01): toda constraint,
+-- policy e coluna deste arquivo agora tem guarda de idempotência
+-- (if not exists / drop-then-create / bloco condicional). Rodar de novo
+-- não quebra nada e não duplica nada.
 -- =============================================
 
 -- ---------------------------------------------
@@ -19,10 +24,22 @@
 -- não existia — bug real, zerava todo envio agendado/diário). Corrigido
 -- criando a coluna de verdade, com os 4 estados do master prompt.
 alter table contacts add column if not exists status text not null default 'Ativo';
-alter table contacts add constraint contacts_status_check
-  check (status in ('Ativo', 'Inativo', 'Descadastrado', 'Bloqueado'))
-  not valid;
-alter table contacts validate constraint contacts_status_check;
+
+-- Postgres não tem "ADD CONSTRAINT IF NOT EXISTS" — sem essa guarda, rodar
+-- este script uma 2ª vez dá ERROR 42710 (constraint já existe). Isso
+-- aconteceu de verdade em 2026-07-01. Corrigido com bloco condicional:
+-- só cria a constraint se ela ainda não existir.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'contacts_status_check'
+  ) then
+    alter table contacts add constraint contacts_status_check
+      check (status in ('Ativo', 'Inativo', 'Descadastrado', 'Bloqueado'))
+      not valid;
+    alter table contacts validate constraint contacts_status_check;
+  end if;
+end $$;
 
 -- Data em que o contato entrou nesta importação/lote (distinto de
 -- created_at, que não muda em upsert de contato já existente).
@@ -86,7 +103,9 @@ create table if not exists inbound_messages (
   received_at timestamptz not null default now()
 );
 alter table inbound_messages enable row level security;
+drop policy if exists "Inbound messages own" on inbound_messages;
 create policy "Inbound messages own" on inbound_messages for select using (client_id = my_client_id());
+drop policy if exists "Admin all inbound messages" on inbound_messages;
 create policy "Admin all inbound messages" on inbound_messages for all using (is_admin());
 -- Escrita só pela service role (webhook da Z-API), de propósito.
 
@@ -105,7 +124,9 @@ create table if not exists reply_flows (
   updated_at timestamptz default now()
 );
 alter table reply_flows enable row level security;
+drop policy if exists "Reply flow own" on reply_flows;
 create policy "Reply flow own" on reply_flows for all using (client_id = my_client_id()) with check (client_id = my_client_id());
+drop policy if exists "Admin all reply flows" on reply_flows;
 create policy "Admin all reply flows" on reply_flows for all using (is_admin());
 
 -- Reaproveita conversation_states (já existe e já tem RLS correta desde
@@ -125,4 +146,5 @@ create index if not exists campaigns_follow_up_idx on campaigns(follow_up_of) wh
 -- ---------------------------------------------
 -- RLS em daily_send_counters e reply_flows para admin (auditoria)
 -- ---------------------------------------------
+drop policy if exists "Admin all daily counters" on daily_send_counters;
 create policy "Admin all daily counters" on daily_send_counters for select using (is_admin());
