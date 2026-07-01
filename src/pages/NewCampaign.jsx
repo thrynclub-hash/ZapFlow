@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { Upload, Image, Send, AlertCircle, CheckCircle, X, Clock, Calendar } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { sendImageMessage, sendTextMessage, formatPhone, sleep } from '../lib/zapi'
+import { sleep } from '../lib/zapi'
 
 const DELAY_MS = 4000 // 4s entre mensagens
+const DAILY_CAP = 100
 
 export default function NewCampaign() {
   const { profile } = useAuth()
@@ -29,7 +30,10 @@ export default function NewCampaign() {
   useEffect(() => { if (form.number_id) fetchContacts() }, [form.number_id])
 
   async function fetchNumbers() {
-    const { data } = await supabase.from('client_numbers').select('*').eq('client_id', clientId).eq('active', true)
+    // Não seleciona zapi_token/zapi_instance_id: o envio agora é 100% no
+    // servidor (Edge Function send-message) — o navegador do cliente nunca
+    // mais precisa ver o token da Z-API. Ver SECURITY-FINDINGS-2026-07-01.md item 3.
+    const { data } = await supabase.from('client_numbers').select('id, client_id, label, phone, active').eq('client_id', clientId).eq('active', true)
     setNumbers(data || [])
   }
 
@@ -60,7 +64,6 @@ export default function NewCampaign() {
     if (!form.caption.trim()) return alert('Escreva a mensagem.')
 
     const number = numbers.find(n => n.id === form.number_id)
-    if (!number?.zapi_instance_id || !number?.zapi_token) return alert('Número sem Z-API configurado.')
 
     // Modo agendado — salva e sai
     if (form.send_mode === 'scheduled' || form.send_mode === 'daily') {
@@ -99,28 +102,49 @@ export default function NewCampaign() {
       catch (err) { alert('Erro ao subir imagem: ' + err.message); setStep('compose'); return }
     }
 
-    let sent = 0, errors = 0
+    let sent = 0, errors = 0, capHit = false
     setProgress({ sent: 0, errors: 0, total: contacts.length, current: '' })
 
     for (const contact of contacts) {
       if (abortRef.current) break
-      const phone = formatPhone(contact.phone)
+      if (capHit) break // limite diário do número bateu — o resto vira continuação automática (ver abaixo)
       setProgress(p => ({ ...p, current: contact.name }))
-      try {
-        if (imageUrl) await sendImageMessage(number.zapi_instance_id, number.zapi_token, phone, imageUrl, form.caption)
-        else await sendTextMessage(number.zapi_instance_id, number.zapi_token, phone, form.caption)
-        sent++
-        await supabase.from('message_logs').insert({ campaign_id: campaign.id, client_id: clientId, contact_id: contact.id, status: 'sent', sent_at: new Date().toISOString() })
-      } catch (err) {
+      // Envio passa pela Edge Function send-message: ela quem fala com a
+      // Z-API (o token nunca chega no navegador) e quem decide, mensagem a
+      // mensagem, se ainda há orçamento no limite diário global do número.
+      const { data, error: fnError } = await supabase.functions.invoke('send-message', {
+        body: {
+          number_id: form.number_id,
+          phone: contact.phone,
+          message: form.caption,
+          image_url: imageUrl || undefined,
+          contact_id: contact.id,
+          campaign_id: campaign.id,
+        },
+      })
+      if (fnError || data?.error) {
+        if (data?.error === 'LIMITE_DIARIO_ATINGIDO') { capHit = true; break }
         errors++
-        await supabase.from('message_logs').insert({ campaign_id: campaign.id, client_id: clientId, contact_id: contact.id, status: 'error', error_detail: err.message })
+      } else {
+        sent++
       }
       setProgress({ sent, errors, total: contacts.length, current: contact.name })
-      if (sent + errors < contacts.length) await sleep(DELAY_MS)
+      if (sent + errors < contacts.length && !capHit) await sleep(DELAY_MS)
     }
 
-    await supabase.from('campaigns').update({ status: abortRef.current ? 'error' : 'completed', sent_count: sent, error_count: errors, completed_at: new Date().toISOString() }).eq('id', campaign.id)
-    setProgress(p => ({ ...p, current: '' }))
+    if (capHit) {
+      // Ainda tem gente pra receber, mas bateu no teto de 100/dia deste
+      // número — a campanha vira "daily" e o motor automático
+      // (run-automations, a cada 5min) continua enviando pro resto da
+      // lista nos próximos dias, sempre respeitando o mesmo limite.
+      await supabase.from('campaigns').update({
+        type: 'daily', status: 'sending', daily_limit: DAILY_CAP,
+        sent_count: sent, error_count: errors,
+      }).eq('id', campaign.id)
+    } else {
+      await supabase.from('campaigns').update({ status: abortRef.current ? 'error' : 'completed', sent_count: sent, error_count: errors, completed_at: new Date().toISOString() }).eq('id', campaign.id)
+    }
+    setProgress(p => ({ ...p, current: '', capHit }))
     setStep('done')
   }
 
@@ -152,8 +176,11 @@ export default function NewCampaign() {
           ) : (
             <>
               <div className="w-16 h-16 bg-green-400/10 rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle size={28} className="text-green-400" /></div>
-              <h2 className="font-display font-bold text-2xl text-white mb-2">Disparo concluído!</h2>
-              <p className="text-muted text-sm font-body mb-6">{progress.sent} mensagens enviadas.{progress.errors > 0 ? ` ${progress.errors} erros.` : ''}</p>
+              <h2 className="font-display font-bold text-2xl text-white mb-2">{progress.capHit ? 'Limite diário atingido' : 'Disparo concluído!'}</h2>
+              <p className="text-muted text-sm font-body mb-6">
+                {progress.sent} mensagens enviadas.{progress.errors > 0 ? ` ${progress.errors} erros.` : ''}
+                {progress.capHit && ' Esse número já bateu o limite de 100 mensagens hoje (regra pra não tomar bloqueio do WhatsApp) — o resto da lista continua automaticamente amanhã, sem precisar fazer nada.'}
+              </p>
               <div className="flex gap-3">
                 <button onClick={() => { setStep('compose'); setImageFile(null); setImagePreview(null); setForm({ name: '', number_id: '', caption: '', send_mode: 'now', scheduled_date: '', daily_limit: 100, daily_start_hour: 9 }) }}
                   className="flex-1 border border-border text-white py-3 rounded-lg font-body text-sm hover:bg-surface transition-colors">Novo disparo</button>
@@ -266,7 +293,7 @@ export default function NewCampaign() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-muted font-body mb-1.5">Contatos por dia</label>
-                  <input type="number" min={10} max={500} value={form.daily_limit} onChange={e => setForm(f => ({ ...f, daily_limit: Number(e.target.value) }))}
+                  <input type="number" min={10} max={100} value={form.daily_limit} onChange={e => setForm(f => ({ ...f, daily_limit: Math.min(100, Number(e.target.value)) }))}
                     className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
                 </div>
                 <div>
@@ -285,7 +312,7 @@ export default function NewCampaign() {
                 </div>
               )}
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-                <p className="text-amber-200 text-xs font-body">⚠️ O ZapFlow enviará automaticamente {form.daily_limit} mensagens por dia até terminar a lista. Recomendamos máximo 100-150/dia para evitar bloqueios.</p>
+                <p className="text-amber-200 text-xs font-body">⚠️ O ZapFlow trava em no máximo 100 mensagens por dia por número — mesmo somando com outras campanhas ou automações ativas ao mesmo tempo — pra esse número nunca correr risco de bloqueio no WhatsApp.</p>
               </div>
             </div>
           )}

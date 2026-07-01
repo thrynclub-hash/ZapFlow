@@ -18,6 +18,19 @@ const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 const ZAPI_BASE = "https://api.z-api.io/instances";
+const DAILY_CAP = 100;
+
+// Único ponto de decisão "posso mandar mais uma mensagem hoje por este
+// número?" — compartilhado com send-message e zapi-webhook via a mesma
+// função Postgres. Ver supabase_automacoes_avancadas.sql.
+async function consumeBudget(numberId: string): Promise<boolean> {
+  const { data: allowed, error } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: numberId, p_daily_cap: DAILY_CAP });
+  if (error) {
+    console.error("Erro checando limite diário:", error);
+    return false;
+  }
+  return !!allowed;
+}
 
 function formatPhone(phone: string): string {
   return phone.replace(/\D/g, "").replace(/^0/, "55");
@@ -204,6 +217,9 @@ async function executeAction(run: any, step: any) {
     const { data: number } = await supabase.from("client_numbers").select("*").eq("id", automation?.number_id).single();
     if (!contact || !number) throw new Error("contato ou número não encontrado");
 
+    const allowed = await consumeBudget(number.id);
+    if (!allowed) throw new Error(`limite diário de ${DAILY_CAP} mensagens atingido para este número — tenta de novo amanhã`);
+
     const message = (step.config?.message || "").replace("{{nome}}", contact.name || "");
     await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message);
   } else if (step.block === "add_tag") {
@@ -227,11 +243,18 @@ async function evaluateCondition(run: any, step: any): Promise<boolean> {
     return (contact?.tags ?? []).includes(tag);
   }
   if (step.block === "has_replied") {
-    // TODO: não implementado — depende de um webhook de mensagens recebidas
-    // da Z-API, que ainda não existe no projeto. Sempre retorna false por
-    // enquanto para não fingir um comportamento que não existe de verdade.
-    console.warn("condição 'has_replied' ainda não implementada — requer webhook de inbound");
-    return false;
+    // Implementado em 2026-07-01 via supabase/functions/zapi-webhook, que
+    // loga toda mensagem recebida em inbound_messages. "Respondeu" =
+    // existe pelo menos 1 mensagem recebida deste contato desde que o
+    // run desta automação começou.
+    const since = run.created_at ?? new Date(0).toISOString();
+    const { data: replies } = await supabase
+      .from("inbound_messages")
+      .select("id")
+      .eq("contact_id", run.contact_id)
+      .gte("received_at", since)
+      .limit(1);
+    return (replies?.length ?? 0) > 0;
   }
   throw new Error(`condição desconhecida: ${step.block}`);
 }
@@ -248,11 +271,16 @@ async function logRun(runId: string, stepId: string | null, result: string, deta
 async function processScheduledCampaigns() {
   const today = new Date().toISOString().slice(0, 10);
 
+  // BUG real encontrado em 2026-07-01: o frontend (NewCampaign.jsx) grava
+  // status='scheduled' ao agendar, mas esse filtro só pegava
+  // 'sending'/'draft' — ou seja, NENHUMA campanha agendada/diária criada
+  // pela UI jamais era processada por esta função. Corrigido incluindo
+  // 'scheduled' também.
   const { data: campaigns, error } = await supabase
     .from("campaigns")
     .select("*, client_numbers:number_id(*)")
     .in("type", ["scheduled", "daily"])
-    .in("status", ["sending", "draft"]);
+    .in("status", ["scheduled", "sending", "draft"]);
 
   if (error) {
     console.error("Erro buscando campanhas agendadas:", error);
@@ -284,12 +312,20 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
 
   const sentIds = new Set((alreadySent ?? []).map((r: any) => r.contact_id));
 
-  let query = supabase.from("contacts").select("*").eq("client_id", campaign.client_id).eq("status", "Ativo");
-  const { data: contacts } = await query;
+  const { data: contacts } = await supabase.from("contacts").select("*").eq("client_id", campaign.client_id).eq("status", "Ativo");
   const pending = (contacts ?? []).filter((c: any) => !sentIds.has(c.id));
+  // `limit` é o teto da PRÓPRIA campanha (daily_limit) — o teto real de
+  // verdade é sempre o orçamento diário GLOBAL do número (try_consume_daily_send_budget),
+  // checado mensagem a mensagem logo abaixo. Isso garante que duas
+  // campanhas ativas ao mesmo tempo no mesmo número nunca somem mais de
+  // DAILY_CAP envios juntas.
   const batch = limit ? pending.slice(0, limit) : pending;
 
+  let budgetExhausted = false;
   for (const contact of batch) {
+    if (budgetExhausted) break;
+    const allowed = await consumeBudget(number.id);
+    if (!allowed) { budgetExhausted = true; break; }
     try {
       await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), campaign.caption || "");
       await supabase.from("message_logs").insert({
@@ -304,8 +340,89 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
     }
   }
 
-  if (pending.length <= batch.length) {
+  const stillPending = pending.length > batch.length || budgetExhausted;
+  if (!stillPending) {
     await supabase.from("campaigns").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", campaign.id);
+  } else if (campaign.type === "scheduled") {
+    // "scheduled" original mandava tudo de uma vez; se bateu no teto
+    // diário no meio, vira efetivamente uma campanha que continua nos
+    // próximos dias (o dedup por message_logs já cuida de não repetir).
+    await supabase.from("campaigns").update({ status: "sending" }).eq("id", campaign.id);
+  }
+}
+
+// ---------------------------------------------------------------------
+// PARTE 4 — FOLLOW-UPS: campanha B só vai pra quem recebeu a campanha A
+// há N dias e não respondeu nada desde então (inbound_messages).
+// ---------------------------------------------------------------------
+async function processFollowUpCampaigns() {
+  const { data: followUps, error } = await supabase
+    .from("campaigns")
+    .select("*, client_numbers:number_id(*)")
+    .eq("type", "followup")
+    .in("status", ["scheduled", "sending"]);
+
+  if (error) {
+    console.error("Erro buscando follow-ups:", error);
+    return;
+  }
+
+  for (const followUp of followUps ?? []) {
+    const number = (followUp as any).client_numbers;
+    if (!number || !followUp.follow_up_of) continue;
+
+    const delayDays = followUp.follow_up_delay_days ?? 2;
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - delayDays);
+
+    // Quem recebeu a campanha-base há >= delayDays dias
+    const { data: baseSends } = await supabase
+      .from("message_logs")
+      .select("contact_id, sent_at")
+      .eq("campaign_id", followUp.follow_up_of)
+      .eq("status", "sent")
+      .lte("sent_at", cutoff.toISOString());
+
+    if (!baseSends || baseSends.length === 0) continue;
+
+    // Quem já recebeu ESTE follow-up (não reenviar)
+    const { data: alreadyFollowedUp } = await supabase.from("message_logs").select("contact_id").eq("campaign_id", followUp.id);
+    const alreadyIds = new Set((alreadyFollowedUp ?? []).map((r: any) => r.contact_id));
+
+    for (const baseSend of baseSends) {
+      if (alreadyIds.has(baseSend.contact_id)) continue;
+
+      // Respondeu qualquer coisa desde que recebeu a campanha-base? Se sim, pula.
+      const { data: replies } = await supabase
+        .from("inbound_messages")
+        .select("id")
+        .eq("contact_id", baseSend.contact_id)
+        .gte("received_at", baseSend.sent_at)
+        .limit(1);
+      if (replies && replies.length > 0) continue;
+
+      const { data: contact } = await supabase.from("contacts").select("*").eq("id", baseSend.contact_id).single();
+      if (!contact || contact.status !== "Ativo") continue;
+
+      const allowed = await consumeBudget(number.id);
+      if (!allowed) break; // orçamento do dia acabou — resto tenta na próxima execução
+
+      const message = (followUp.caption || "").replace("{{nome}}", contact.name || "");
+      try {
+        await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message);
+        await supabase.from("message_logs").insert({
+          campaign_id: followUp.id, client_id: followUp.client_id, contact_id: contact.id,
+          status: "sent", sent_at: new Date().toISOString(),
+        });
+      } catch (e) {
+        await supabase.from("message_logs").insert({
+          campaign_id: followUp.id, client_id: followUp.client_id, contact_id: contact.id,
+          status: "error", error_detail: String(e),
+        });
+      }
+    }
+
+    await supabase.from("campaigns").update({ status: "sending" }).eq("id", followUp.id);
   }
 }
 
@@ -314,6 +431,7 @@ Deno.serve(async (_req: Request) => {
   try {
     await enrollBirthdayTriggers();
     await processRuns();
+    await processFollowUpCampaigns();
     await processScheduledCampaigns();
     return new Response(JSON.stringify({ ok: true, ran_at: new Date().toISOString() }), {
       headers: { "Content-Type": "application/json" },
