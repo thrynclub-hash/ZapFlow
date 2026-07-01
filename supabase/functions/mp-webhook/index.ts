@@ -32,7 +32,7 @@ Deno.serve(async (req: Request) => {
     if (!preapprovalId) {
       const body = await req.json().catch(() => ({}));
       preapprovalId = body?.data?.id ?? body?.id ?? null;
-      type = type || body?.type ?? body?.topic ?? null;
+      type = type || (body?.type ?? body?.topic ?? null);
     }
 
     console.log("mp-webhook recebido:", { type, preapprovalId });
