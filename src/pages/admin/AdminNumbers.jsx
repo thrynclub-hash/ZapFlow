@@ -44,6 +44,23 @@ export default function AdminNumbers() {
 
   async function handleSave(e) {
     e.preventDefault()
+
+    if (!editing) {
+      // Checa limite de números do plano ANTES de criar (o limite não se
+      // aplica ao editar um número já existente).
+      const { data: client } = await supabase.from('clients').select('plan').eq('id', form.client_id).single()
+      if (client?.plan) {
+        const { data: limit } = await supabase.from('plan_limits').select('numbers_limit').eq('plan', client.plan).single()
+        if (limit) {
+          const { count } = await supabase.from('client_numbers').select('id', { count: 'exact', head: true }).eq('client_id', form.client_id)
+          if ((count ?? 0) >= limit.numbers_limit) {
+            alert(`Este cliente já está no limite do plano ${client.plan} (${limit.numbers_limit} número${limit.numbers_limit > 1 ? 's' : ''}). Mude o plano dele em Clientes antes de adicionar outro número.`)
+            return
+          }
+        }
+      }
+    }
+
     setSaving(true)
     if (editing) await supabase.from('client_numbers').update(form).eq('id', editing.id)
     else await supabase.from('client_numbers').insert(form)
