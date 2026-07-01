@@ -101,7 +101,7 @@ export default function Landing() {
                   </li>
                 ))}
               </ul>
-              <a href="https://wa.me/5519900000000?text=Quero+saber+mais+sobre+o+ZapFlow" target="_blank" rel="noreferrer"
+              <a href="https://wa.me/5519997051919?text=Quero+saber+mais+sobre+o+ZapFlow" target="_blank" rel="noreferrer"
                 className={`mt-8 py-3 rounded-xl text-sm font-display font-bold text-center transition-colors ${p.best ? 'bg-accent hover:bg-accent-dim text-bg' : 'border border-border text-white hover:bg-surface'}`}>
                 Quero este plano
               </a>
@@ -116,7 +116,7 @@ export default function Landing() {
           <Zap size={32} className="text-accent mx-auto mb-4" fill="currentColor" />
           <h2 className="font-display font-bold text-3xl text-white mb-4">Pronto para automatizar seu WhatsApp?</h2>
           <p className="text-muted font-body mb-8">Fale com nosso time e comece hoje mesmo.</p>
-          <a href="https://wa.me/5519900000000?text=Quero+saber+mais+sobre+o+ZapFlow" target="_blank" rel="noreferrer"
+          <a href="https://wa.me/5519997051919?text=Quero+saber+mais+sobre+o+ZapFlow" target="_blank" rel="noreferrer"
             className="inline-flex items-center gap-2 bg-accent hover:bg-accent-dim text-bg px-8 py-4 rounded-xl font-display font-bold transition-colors">
             Falar pelo WhatsApp <ArrowRight size={16} />
           </a>

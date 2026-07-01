@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, Plus, Search, Trash2, Download, Users } from 'lucide-react'
+import { Upload, Plus, Search, Trash2, Download, Users, MessageCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import * as XLSX from 'xlsx'
 import Modal from '../components/Modal'
+
+// Número de WhatsApp para pedir mais capacidade (order bump) — enquanto
+// não existe checkout automático, o cliente clica e já cai numa conversa
+// pronta pedindo o add-on; Leonardo cobra manualmente e libera em Clientes.
+const SUPPORT_WHATSAPP = '5519997051919'
+function addonLink(kind, companyName) {
+  const label = kind === 'contacts' ? '+1000 contatos' : '+1 número de WhatsApp'
+  const text = `Oi! Sou d${companyName ? 'a empresa ' + companyName : 'o ZapFlow'} e quero contratar o add-on "${label}" no meu plano.`
+  return `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(text)}`
+}
 
 export default function Contacts() {
   const { profile } = useAuth()
@@ -30,7 +40,13 @@ export default function Contacts() {
     const { data: client } = await supabase.from('clients').select('plan').eq('id', clientId).single()
     if (!client?.plan) return
     const { data: limit } = await supabase.from('plan_limits').select('*').eq('plan', client.plan).single()
-    if (limit) setPlanLimit(limit)
+    if (!limit) return
+    // Limite efetivo = limite do plano + add-ons avulsos de +1000 contatos
+    // (order bump — cliente não precisa trocar de plano inteiro só pra
+    // caber mais um pouco).
+    const { data: addons } = await supabase.from('client_addons').select('quantity').eq('client_id', clientId).eq('addon_type', 'contacts_1000')
+    const extra = (addons || []).reduce((s, a) => s + a.quantity, 0) * 1000
+    setPlanLimit({ ...limit, contacts_limit: limit.contacts_limit != null ? limit.contacts_limit + extra : null, base_contacts_limit: limit.contacts_limit })
   }
 
   async function fetchNumbers() {
@@ -231,6 +247,12 @@ export default function Contacts() {
               ? <span className={contacts.length >= planLimit.contacts_limit ? 'text-red-400' : 'text-muted'}> · plano {planLimit.plan}: até {planLimit.contacts_limit.toLocaleString()}</span>
               : <span className="text-muted"> · plano {planLimit.plan}: ilimitado</span>)}
           </p>
+          {planLimit?.contacts_limit != null && contacts.length >= planLimit.contacts_limit * 0.9 && (
+            <a href={addonLink('contacts', profile?.client?.name)} target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-body text-green-400 hover:underline mt-1">
+              <MessageCircle size={12} /> Quase no limite — pedir +1000 contatos (add-on, sem trocar de plano)
+            </a>
+          )}
         </div>
         <div className="flex gap-3 items-center">
           {numbers.length > 1 && (
@@ -262,9 +284,17 @@ export default function Contacts() {
             ✅ <strong>{importSummary.imported}</strong> contatos importados/atualizados (duplicados por telefone foram atualizados, não duplicados)
             {importSummary.skipped > 0 && <> · <span className="text-amber-300">{importSummary.skipped} ignorados</span> (sem nome ou telefone válido)</>}
             {importSummary.duplicatesInFile > 0 && <> · {importSummary.duplicatesInFile} repetidos dentro da própria planilha</>}
-            {importSummary.blockedByPlan > 0 && <> · <span className="text-amber-300 font-medium">{importSummary.blockedByPlan} não importados — limite do plano ({importSummary.planLimit?.toLocaleString()} contatos) atingido. Fale com o administrador pra aumentar.</span></>}
+            {importSummary.blockedByPlan > 0 && <> · <span className="text-amber-300 font-medium">{importSummary.blockedByPlan} não importados — limite do plano ({importSummary.planLimit?.toLocaleString()} contatos) atingido.</span></>}
           </p>
-          <button onClick={() => setImportSummary(null)} className="text-muted hover:text-white text-xs shrink-0">fechar</button>
+          <div className="flex items-center gap-3 shrink-0">
+            {importSummary.blockedByPlan > 0 && (
+              <a href={addonLink('contacts', profile?.client?.name)} target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-body text-green-400 hover:underline whitespace-nowrap">
+                <MessageCircle size={12} /> Quero +1000 contatos
+              </a>
+            )}
+            <button onClick={() => setImportSummary(null)} className="text-muted hover:text-white text-xs shrink-0">fechar</button>
+          </div>
         </div>
       )}
 
@@ -350,8 +380,12 @@ export default function Contacts() {
               )}
               <Field label="Tags (separadas por vírgula)" value={form.tags} onChange={v => setForm(f => ({ ...f, tags: v }))} placeholder="vip, cliente antigo" />
               {errorMsg && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 space-y-2">
                   <p className="text-red-400 text-xs font-body">{errorMsg}</p>
+                  <a href={addonLink('contacts', profile?.client?.name)} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-body text-green-400 hover:underline">
+                    <MessageCircle size={12} /> Quero +1000 contatos agora
+                  </a>
                 </div>
               )}
               <div className="flex gap-3 pt-2">
