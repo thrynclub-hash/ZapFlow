@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, Plus, Search, Trash2, Download, Users, MessageCircle, Tag, Pencil, CheckSquare, Square, X as XIcon } from 'lucide-react'
+import { Upload, Plus, Search, Trash2, Download, Users, MessageCircle, Tag, Pencil, CheckSquare, Square, X as XIcon, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import * as XLSX from 'xlsx'
@@ -42,12 +42,17 @@ export default function Contacts() {
   const [bulkBusy, setBulkBusy] = useState(false)
   const fileRef = useRef()
 
+  // Paginação da tabela — evita renderizar milhares de <tr> de uma vez
+  // (ex: clientes com 3-6 mil contatos importados).
+  const PAGE_SIZE = 15
+  const [currentPage, setCurrentPage] = useState(1)
+
   const clientId = profile?.client_id
 
   useEffect(() => { if (clientId) { fetchContacts(); fetchNumbers(); fetchPlanLimit() } }, [clientId])
   // Muda o filtro -> limpa seleção, pra nunca aplicar ação em massa num
   // contato que não está mais visível/não foi o que a pessoa pretendia.
-  useEffect(() => { setSelectedIds(new Set()) }, [search, filterNumber, filterTag])
+  useEffect(() => { setSelectedIds(new Set()); setCurrentPage(1) }, [search, filterNumber, filterTag])
 
   async function fetchPlanLimit() {
     const { data: client } = await supabase.from('clients').select('plan').eq('id', clientId).single()
@@ -98,6 +103,13 @@ export default function Contacts() {
     const matchTag = !filterTag || (Array.isArray(c.tags) && c.tags.includes(filterTag))
     return matchSearch && matchNumber && matchTag
   })
+
+  // Só a página atual vira linhas na tabela — busca/filtro continuam
+  // rodando sobre a lista inteira (`filtered`), só a renderização é limitada.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, totalPages)
+  const pageStart = (safePage - 1) * PAGE_SIZE
+  const paginated = filtered.slice(pageStart, pageStart + PAGE_SIZE)
 
   // Lista de tags únicas já em uso, pro filtro — "Antigo"/"Novo" sempre
   // aparecem primeiro (são as tags do fluxo combinado com o Leonardo),
@@ -170,9 +182,15 @@ export default function Contacts() {
   // (respeitando busca/filtro de loja/filtro de tag) — não literalmente
   // todo mundo no banco, senão fica confuso qual conjunto está selecionado.
   function toggleSelectAllVisible() {
-    const visibleIds = filtered.map(c => c.id)
+    // "Visíveis" = contatos da página atual (paginação de 15 em 15).
+    // Não mexe em seleções feitas em outras páginas.
+    const visibleIds = paginated.map(c => c.id)
     const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id))
-    setSelectedIds(allSelected ? new Set() : new Set(visibleIds))
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      visibleIds.forEach(id => allSelected ? next.delete(id) : next.add(id))
+      return next
+    })
   }
 
   // Requisições em lote de N ids por vez — evita URL gigante (Postgrest
@@ -611,8 +629,8 @@ export default function Contacts() {
             <thead>
               <tr className="border-b border-border">
                 <th className="px-5 py-3 w-8">
-                  <button type="button" onClick={toggleSelectAllVisible} title="Selecionar todos os visíveis" className="text-muted hover:text-accent transition-colors">
-                    {filtered.length > 0 && filtered.every(c => selectedIds.has(c.id)) ? <CheckSquare size={16} className="text-accent" /> : <Square size={16} />}
+                  <button type="button" onClick={toggleSelectAllVisible} title="Selecionar todos da página" className="text-muted hover:text-accent transition-colors">
+                    {paginated.length > 0 && paginated.every(c => selectedIds.has(c.id)) ? <CheckSquare size={16} className="text-accent" /> : <Square size={16} />}
                   </button>
                 </th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Nome</th>
@@ -626,7 +644,7 @@ export default function Contacts() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(c => (
+              {paginated.map(c => (
                 <tr key={c.id} className={`border-b border-border/50 last:border-0 hover:bg-surface/30 transition-colors ${selectedIds.has(c.id) ? 'bg-accent/5' : ''}`}>
                   <td className="px-5 py-3.5">
                     <button type="button" onClick={() => toggleSelect(c.id)} className="text-muted hover:text-accent transition-colors">
@@ -661,6 +679,24 @@ export default function Contacts() {
               ))}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-5 py-3 border-t border-border">
+              <p className="text-xs text-muted font-body">
+                {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)} de {filtered.length.toLocaleString()} contato{filtered.length === 1 ? '' : 's'}
+              </p>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setCurrentPage(Math.max(1, safePage - 1))} disabled={safePage <= 1}
+                  className="flex items-center gap-1 text-xs font-body text-muted hover:text-white disabled:opacity-30 disabled:hover:text-muted transition-colors">
+                  <ChevronLeft size={14} /> Anterior
+                </button>
+                <span className="text-xs text-muted font-body">Página {safePage} de {totalPages}</span>
+                <button type="button" onClick={() => setCurrentPage(Math.min(totalPages, safePage + 1))} disabled={safePage >= totalPages}
+                  className="flex items-center gap-1 text-xs font-body text-muted hover:text-white disabled:opacity-30 disabled:hover:text-muted transition-colors">
+                  Próxima <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
