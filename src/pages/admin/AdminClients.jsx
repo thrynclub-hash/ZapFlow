@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2 } from 'lucide-react'
+import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2, KeyRound } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/Modal'
 
@@ -17,6 +17,7 @@ export default function AdminClients() {
   const [editing, setEditing] = useState(null)
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [provisioning, setProvisioning] = useState(null) // id do cliente sendo provisionado
   const [form, setForm] = useState({ name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: '' })
 
   useEffect(() => { fetchClients() }, [])
@@ -58,9 +59,32 @@ export default function AdminClients() {
     } else {
       const { data: client, error } = await supabase.from('clients').insert({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key }).select().single()
       if (error) { alert('Erro: ' + error.message); setSaving(false); return }
+      // Provisiona login real (Supabase Auth) automaticamente pra todo cliente novo —
+      // sem isso, o cliente consegue "logar" mas o banco trata ele como anônimo.
+      await provisionLogin(client, { silent: true })
       setSaving(false); setShowModal(false)
       setShowKey({ name: form.name, key: form.access_key })
       fetchClients()
+    }
+  }
+
+  // Provisiona (ou reprovisiona, é seguro chamar de novo) o login real
+  // do cliente. Ver supabase/functions/client-provision.
+  async function provisionLogin(client, { silent = false } = {}) {
+    setProvisioning(client.id)
+    try {
+      const { data, error } = await supabase.functions.invoke('client-provision', { body: { client_id: client.id } })
+      if (error || data?.error) {
+        if (!silent) alert('Erro ao provisionar login: ' + (data?.error || error.message))
+        return false
+      }
+      if (!silent) alert(data.already_provisioned ? 'Esse cliente já tinha login provisionado.' : 'Login provisionado! O cliente já pode logar com a chave de acesso normalmente.')
+      return true
+    } catch (e) {
+      if (!silent) alert('Erro ao provisionar login: ' + e.message)
+      return false
+    } finally {
+      setProvisioning(null)
     }
   }
 
@@ -127,6 +151,10 @@ export default function AdminClients() {
                     </span>
                   </td>
                   <td className="px-5 py-4 text-right flex items-center justify-end gap-2">
+                    <button onClick={() => provisionLogin(c)} disabled={provisioning === c.id} title="Provisionar/verificar login real (Supabase Auth) deste cliente"
+                      className="text-muted hover:text-accent transition-colors p-1 disabled:opacity-40">
+                      <KeyRound size={14} />
+                    </button>
                     <button onClick={() => openEdit(c)} className="text-muted hover:text-white transition-colors p-1"><Edit2 size={14} /></button>
                     <button onClick={() => handleDelete(c)} className="text-muted hover:text-red-400 transition-colors p-1"><Trash2 size={14} /></button>
                   </td>
