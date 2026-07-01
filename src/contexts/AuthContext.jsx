@@ -43,19 +43,24 @@ export function AuthProvider({ children }) {
   }
 
   // Login cliente (chave de acesso)
+  // Correção de segurança (2026-07-01): antes disso, este login fazia um
+  // select direto na tabela `clients`, que tinha uma policy pública
+  // ("Public key lookup", using (true)) permitindo listar TODOS os
+  // clientes com a anon key. Agora usa uma função no banco que retorna
+  // no máximo 1 linha, e só se a chave bater exatamente.
+  // Ver supabase_fix_public_key_lookup.sql
   async function loginWithKey(key) {
     const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('access_key', key.trim().toLowerCase())
-      .eq('status', 'active')
-      .single()
+      .rpc('lookup_client_by_key', { p_access_key: key.trim().toLowerCase() })
 
-    if (error || !data) throw new Error('Chave de acesso inválida ou expirada.')
+    if (error || !data || data.length === 0) {
+      throw new Error('Chave de acesso inválida ou expirada.')
+    }
 
-    localStorage.setItem('zapflow_client', JSON.stringify(data))
-    setClient(data)
-    return data
+    const clientData = data[0]
+    localStorage.setItem('zapflow_client', JSON.stringify(clientData))
+    setClient(clientData)
+    return clientData
   }
 
   async function logout() {
