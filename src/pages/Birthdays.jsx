@@ -34,7 +34,7 @@ export default function Birthdays() {
   async function fetchData() {
     const { data: nums } = await supabase.from('client_numbers').select('id, client_id, label, phone, active').eq('client_id', clientId)
     setNumbers(nums || [])
-    const { data: cfg } = await supabase.from('birthday_configs').select('*').eq('client_id', clientId).single()
+    const { data: cfg } = await supabase.from('birthday_configs').select('*').eq('client_id', clientId).maybeSingle()
     if (cfg) { setConfig({ message: cfg.message || '', enabled: cfg.enabled }); setSavedImageUrl(cfg.image_url || null) }
     await fetchBirthdays()
     setLoading(false)
@@ -44,9 +44,10 @@ export default function Birthdays() {
     const today = new Date()
     let list = []
     if (tab === 'today') {
-      const mmdd = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-      const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).like('birth_date', `%-${mmdd}`)
-      list = data || []
+      const mm = String(today.getMonth() + 1).padStart(2, '0')
+      const dd = String(today.getDate()).padStart(2, '0')
+      const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).not('birth_date', 'is', null)
+      list = (data || []).filter(c => { const p = c.birth_date.split('-'); return p[1] === mm && p[2] === dd })
     } else if (tab === 'week') {
       const days = Array.from({ length: 7 }, (_, i) => {
         const d = new Date(today); d.setDate(d.getDate() + i)
@@ -56,8 +57,8 @@ export default function Birthdays() {
       list = (data || []).filter(c => { if (!c.birth_date) return false; const p = c.birth_date.split('-'); return days.includes(`${p[1]}-${p[2]}`) })
     } else {
       const month = String(today.getMonth() + 1).padStart(2, '0')
-      const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).like('birth_date', `%-${month}-%`)
-      list = data || []
+      const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).not('birth_date', 'is', null)
+      list = (data || []).filter(c => c.birth_date.split('-')[1] === month)
     }
     setContacts(list)
     // Por padrão todo mundo vem selecionado (comportamento igual ao antigo

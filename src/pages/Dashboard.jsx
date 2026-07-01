@@ -42,14 +42,19 @@ export default function Dashboard() {
       supabase.from('message_logs').select('id', { count: 'exact' }).eq('client_id', clientId).eq('status', 'sent'),
     ])
 
-    // Aniversários hoje
+    // Aniversários hoje — birth_date é coluna tipo DATE, e o operador LIKE
+    // (~~) do Postgres não existe pra esse tipo (só pra texto), então filtrar
+    // com .like() direto no banco quebrava a query (404 no console). Busca
+    // só a coluna de nascimento de quem tem e filtra mês/dia em JS.
     const today = new Date()
-    const mmdd = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-    const { count: birthdays } = await supabase
+    const mm = String(today.getMonth() + 1).padStart(2, '0')
+    const dd = String(today.getDate()).padStart(2, '0')
+    const { data: withBirthdate } = await supabase
       .from('contacts')
-      .select('id', { count: 'exact' })
+      .select('birth_date')
       .eq('client_id', clientId)
-      .like('birth_date', `%-${mmdd}`)
+      .not('birth_date', 'is', null)
+    const birthdays = (withBirthdate || []).filter(c => { const p = c.birth_date.split('-'); return p[1] === mm && p[2] === dd }).length
 
     // Campanhas recentes
     const { data: recentData } = await supabase
