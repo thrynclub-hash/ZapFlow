@@ -113,13 +113,15 @@ export default function Campaigns() {
 
   async function launchNow(c) {
     if (!confirm(`Disparar "${c.name}" agora? Vai para todos os contatos desta loja, respeitando o limite de 100/dia.`)) return
-    await supabase.from('campaigns').update({ status: 'scheduled', scheduled_for: new Date().toISOString() }).eq('id', c.id)
+    const { error } = await supabase.from('campaigns').update({ status: 'scheduled', scheduled_for: new Date().toISOString() }).eq('id', c.id)
+    if (error) { alert('Erro ao disparar: ' + error.message); return }
     fetchCampaigns()
   }
 
   async function confirmSchedule(c) {
     if (!scheduleValue) return
-    await supabase.from('campaigns').update({ status: 'scheduled', scheduled_for: new Date(scheduleValue).toISOString() }).eq('id', c.id)
+    const { error } = await supabase.from('campaigns').update({ status: 'scheduled', scheduled_for: new Date(scheduleValue).toISOString() }).eq('id', c.id)
+    if (error) { alert('Erro ao agendar: ' + error.message); return }
     setSchedulingId(null)
     setScheduleValue('')
     fetchCampaigns()
@@ -131,11 +133,13 @@ export default function Campaigns() {
     setUploadingId(c.id)
     const ext = file.name.split('.').pop()
     const path = `campaigns/${clientId}/${c.id}.${ext}`
-    await supabase.storage.from('creatives').upload(path, file, { upsert: true })
+    const { error: upErr } = await supabase.storage.from('creatives').upload(path, file, { upsert: true })
+    if (upErr) { alert('Erro ao enviar imagem: ' + upErr.message); setUploadingId(null); return }
     const { data } = supabase.storage.from('creatives').getPublicUrl(path)
-    await supabase.from('campaigns').update({ image_url: data.publicUrl }).eq('id', c.id)
+    const { error } = await supabase.from('campaigns').update({ image_url: data.publicUrl }).eq('id', c.id)
     setUploadingId(null)
     e.target.value = ''
+    if (error) { alert('Imagem enviada, mas não consegui vincular à campanha: ' + error.message); return }
     fetchCampaigns()
   }
 
@@ -145,7 +149,8 @@ export default function Campaigns() {
       : `"${c.name}" já teve envios (${c.sent_count || 0}). Remover apaga o registro do Histórico, mas as mensagens já enviadas continuam entregues — não tem como "desenviar". Continuar?`
     if (!confirm(warn)) return
     await supabase.from('message_logs').delete().eq('campaign_id', c.id)
-    await supabase.from('campaigns').delete().eq('id', c.id)
+    const { error } = await supabase.from('campaigns').delete().eq('id', c.id)
+    if (error) { alert('Erro ao remover: ' + error.message); return }
     fetchCampaigns()
     setModalCampaign(null)
   }
@@ -419,24 +424,35 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
         updates.target_tags = targetTags.length > 0 ? targetTags : null
         updates.quick_replies = quickReplies.filter(q => q.label.trim())
       }
-      await supabase.from('campaigns').update(updates).eq('id', campaign.id)
+      // BUG real corrigido em 2026-07-03: nenhuma dessas chamadas checava o
+      // `error` de retorno do Supabase. supabase-js NÃO lança exceção em erro
+      // de banco (RLS, constraint, etc.) — ele resolve normal com
+      // { data: null, error }. Sem checar isso, uma falha ficava
+      // completamente silenciosa: o modal fechava, a lista recarregava
+      // mostrando os dados ANTIGOS (porque nada foi realmente escrito), e
+      // parecia que "salvou mas voltou tudo como antes" ao atualizar a
+      // página — exatamente o sintoma reportado (campanha da Hassum).
+      const { error: campErr } = await supabase.from('campaigns').update(updates).eq('id', campaign.id)
+      if (campErr) throw campErr
 
       if (followUp) {
         // Follow-up sempre manda pro mesmo público-alvo da campanha-base —
         // não faz sentido a base ir só pra "Antigo" e o follow-up ir pra todo mundo.
-        await supabase.from('campaigns').update({ caption: fuCaption, follow_up_delay_days: Number(fuDelayDays), target_tags: updates.target_tags }).eq('id', followUp.id)
+        const { error: fuErr } = await supabase.from('campaigns').update({ caption: fuCaption, follow_up_delay_days: Number(fuDelayDays), target_tags: updates.target_tags }).eq('id', followUp.id)
+        if (fuErr) throw fuErr
       }
 
       // Fluxo de resposta é por cliente — upsert por client_id
-      await supabase.from('reply_flows').upsert({
+      const { error: rfErr } = await supabase.from('reply_flows').upsert({
         client_id: clientId, enabled: rfEnabled, trigger_keyword: rfKeywords,
         ask_period_message: rfAsk, confirm_message: rfConfirm, notify_phone: rfNotify || null,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'client_id' })
+      if (rfErr) throw rfErr
 
       onSaved()
     } catch (e) {
-      alert('Erro ao salvar: ' + (e.message || e))
+      alert('Erro ao salvar: ' + (e.message || e.details || JSON.stringify(e)))
     } finally {
       setSaving(false)
     }
