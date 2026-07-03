@@ -99,13 +99,35 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: false }), { headers: { "Content-Type": "application/json" } });
     }
 
-    // 2. Fluxo "EU QUERO" (se habilitado para este cliente)
+    const normalizedText = normalize(inboundText);
+
+    // 2. Opt-out — pedido pra sair da lista. Prioridade sobre qualquer outro
+    // fluxo (adicionado em 2026-07-03): antes disso, quem respondia "PARAR"/
+    // "SAIR" só ficava logado em inbound_messages e continuava recebendo as
+    // próximas campanhas normalmente — provável maior gatilho real de
+    // denúncia/bloqueio de número no WhatsApp (mais do que volume puro).
+    // Marca status='Inativo' (mesmo campo que já exclui contato de
+    // sendCampaignBatch/processFollowUpCampaigns) + tag "Descadastrado" pra
+    // distinguir de uma inativação manual, e confirma pro contato.
+    const OPT_OUT_KEYWORDS = ["parar", "sair", "descadastrar", "cancelar", "remover", "nao quero mais", "pare de mandar", "stop"];
+    const isOptOut = OPT_OUT_KEYWORDS.some((k) => normalizedText === k || normalizedText.includes(k));
+    if (isOptOut && contact.status === "Ativo") {
+      const tags = new Set(contact.tags ?? []);
+      tags.add("Descadastrado");
+      await supabase.from("contacts").update({ status: "Inativo", tags: Array.from(tags) }).eq("id", contact.id);
+      await sendViaBudget(
+        number.id, number.zapi_instance_id, number.zapi_token, contact.phone,
+        "Combinado! Você não vai mais receber nossas mensagens. Se mudar de ideia, é só chamar por aqui de novo a qualquer momento.",
+      );
+      return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, opted_out: true }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    // 3. Fluxo "EU QUERO" (se habilitado para este cliente)
     const { data: flow } = await supabase.from("reply_flows").select("*").eq("client_id", number.client_id).single();
     if (!flow || !flow.enabled) {
       return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, reply_flow: "desabilitado" }), { headers: { "Content-Type": "application/json" } });
     }
 
-    const normalizedText = normalize(inboundText);
     // trigger_keyword pode conter várias variações separadas por vírgula
     // (ex: "eu quero, quero, eu qro, qro, bora, quero sim, pode ser") —
     // qualquer uma delas dispara o fluxo. Pedido do usuário: reconhecer

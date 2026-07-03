@@ -32,6 +32,27 @@ function formatPhone(phone: string): string {
   return phone.replace(/\D/g, "").replace(/^0/, "55");
 }
 
+// Variação de mensagens (spintax) — mesma lógica de run-automations/index.ts.
+// {opção1|opção2} escolhe uma aleatoriamente a cada chamada (ex: usado pelo
+// disparo de aniversário em Birthdays.jsx, que hoje manda a mesma mensagem
+// pra todo mundo selecionado — isso deixa de ser 100% idêntico se quem
+// configurou usar a sintaxe). Roda sobre o texto que já chegou (o
+// {nome}/{{nome}} de cada tela já foi trocado ANTES de chamar esta função).
+function resolveSpintax(text: string): string {
+  let prev: string;
+  let out = text;
+  let guard = 0;
+  do {
+    prev = out;
+    out = out.replace(/\{([^{}]+)\}/g, (_match, group: string) => {
+      const options = group.split("|");
+      return options[Math.floor(Math.random() * options.length)];
+    });
+    guard++;
+  } while (out !== prev && guard < 10);
+  return out;
+}
+
 async function sendTextMessage(instanceId: string, token: string, phone: string, message: string) {
   const res = await fetch(`${ZAPI_BASE}/${instanceId}/token/${token}/send-text`, {
     method: "POST",
@@ -109,9 +130,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const formattedPhone = formatPhone(String(phone));
+    const resolvedMessage = resolveSpintax(message);
     try {
-      if (image_url) await sendImageMessage(number.zapi_instance_id, number.zapi_token, formattedPhone, image_url, message);
-      else await sendTextMessage(number.zapi_instance_id, number.zapi_token, formattedPhone, message);
+      if (image_url) await sendImageMessage(number.zapi_instance_id, number.zapi_token, formattedPhone, image_url, resolvedMessage);
+      else await sendTextMessage(number.zapi_instance_id, number.zapi_token, formattedPhone, resolvedMessage);
 
       if (contact_id) {
         await adminClient.from("message_logs").insert({

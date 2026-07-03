@@ -276,10 +276,12 @@ function AddonsModal({ client, onClose }) {
   const [loading, setLoading] = useState(true)
   const [type, setType] = useState('number')
   const [quantity, setQuantity] = useState(1)
-  const [price, setPrice] = useState(149)
+  const [price, setPrice] = useState(150)
   const [saving, setSaving] = useState(false)
 
-  const SUGGESTED = { number: 149, contacts_1000: 59 }
+  // "number" é recorrente (mensal); "contacts_1000" é pagamento único
+  // (corrigido em 2026-07-03 — não é mais cobrado todo mês).
+  const SUGGESTED = { number: 150, contacts_1000: 59.90 }
 
   useEffect(() => { fetchAddons() }, [])
 
@@ -308,7 +310,11 @@ function AddonsModal({ client, onClose }) {
     fetchAddons()
   }
 
-  const totalExtra = addons.filter(a => a.status === 'active').reduce((s, a) => s + Number(a.monthly_price), 0)
+  // Só soma no total "extra/mês" os add-ons recorrentes (número) — contatos
+  // é pagamento único, não deveria inflar essa conta (bug corrigido em
+  // 2026-07-03, junto com a troca do checkout de contatos pra one-time).
+  const totalExtraMonthly = addons.filter(a => a.status === 'active' && a.addon_type === 'number').reduce((s, a) => s + Number(a.monthly_price), 0)
+  const totalExtraOneTime = addons.filter(a => a.status === 'active' && a.addon_type === 'contacts_1000').reduce((s, a) => s + Number(a.monthly_price), 0)
 
   return (
     <Modal>
@@ -333,15 +339,21 @@ function AddonsModal({ client, onClose }) {
                       {a.status === 'active' ? 'ativo' : a.status === 'pending' ? 'aguardando pagamento' : 'cancelado'}
                     </span>
                   </p>
-                  <p className="text-xs text-muted font-body">R$ {Number(a.monthly_price).toFixed(2)}/mês · desde {new Date(a.created_at).toLocaleDateString('pt-BR')}</p>
+                  <p className="text-xs text-muted font-body">R$ {Number(a.monthly_price).toFixed(2)}{a.addon_type === 'number' ? '/mês' : ' (único)'} · desde {new Date(a.created_at).toLocaleDateString('pt-BR')}</p>
                 </div>
                 <button onClick={() => removeAddon(a.id)} className="text-muted hover:text-red-400 transition-colors p-1"><Trash2 size={14} /></button>
               </div>
             ))}
             <div className="flex justify-between text-sm font-body pt-1 border-t border-border">
-              <span className="text-muted">Total extra/mês</span>
-              <span className="text-accent font-medium">R$ {totalExtra.toFixed(2)}</span>
+              <span className="text-muted">Total extra/mês (recorrente)</span>
+              <span className="text-accent font-medium">R$ {totalExtraMonthly.toFixed(2)}</span>
             </div>
+            {totalExtraOneTime > 0 && (
+              <div className="flex justify-between text-sm font-body">
+                <span className="text-muted">Total pago em add-ons únicos</span>
+                <span className="text-white font-medium">R$ {totalExtraOneTime.toFixed(2)}</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -356,7 +368,7 @@ function AddonsModal({ client, onClose }) {
             </div>
           </div>
           <div>
-            <label className="block text-xs text-muted font-body mb-1.5">Preço mensal (R$) — sugestão: {SUGGESTED[type]}</label>
+            <label className="block text-xs text-muted font-body mb-1.5">{type === 'number' ? 'Preço mensal (R$)' : 'Preço — pagamento único (R$)'} — sugestão: {SUGGESTED[type]}</label>
             <input type="number" min={0} step="0.01" value={price} onChange={e => setPrice(Number(e.target.value))}
               className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body focus:outline-none focus:border-accent" />
           </div>

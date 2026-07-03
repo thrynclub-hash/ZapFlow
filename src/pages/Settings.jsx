@@ -136,7 +136,7 @@ export default function Settings() {
                   {a.status === 'pending' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-300">aguardando pagamento</span>}
                   {a.status === 'cancelled' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-400/10 text-red-400">cancelado</span>}
                 </span>
-                <span className="text-white">R$ {Number(a.monthly_price).toFixed(2)}/mês</span>
+                <span className="text-white">R$ {Number(a.monthly_price).toFixed(2)}{a.addon_type === 'number' ? '/mês' : ' (único)'}</span>
               </div>
             ))}
           </div>
@@ -145,14 +145,14 @@ export default function Settings() {
         <div className="grid grid-cols-2 gap-3">
           <button onClick={() => buyAddon('number')} disabled={buyingType === 'number'}
             className="flex items-center justify-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-3 rounded-lg text-sm font-display font-bold transition-colors">
-            <CreditCard size={14} /> {buyingType === 'number' ? 'Abrindo...' : '+1 número — R$149/mês'}
+            <CreditCard size={14} /> {buyingType === 'number' ? 'Abrindo...' : '+1 número — R$150/mês'}
           </button>
           <button onClick={() => buyAddon('contacts_1000')} disabled={buyingType === 'contacts_1000'}
             className="flex items-center justify-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-3 rounded-lg text-sm font-display font-bold transition-colors">
-            <CreditCard size={14} /> {buyingType === 'contacts_1000' ? 'Abrindo...' : '+1000 contatos — R$59/mês'}
+            <CreditCard size={14} /> {buyingType === 'contacts_1000' ? 'Abrindo...' : '+1000 contatos — R$59,90 (pagamento único)'}
           </button>
         </div>
-        <p className="text-muted text-xs font-body">Clique abre o checkout do Mercado Pago numa nova aba (Pix ou cartão recorrente) — libera automaticamente assim que confirmar o pagamento.</p>
+        <p className="text-muted text-xs font-body">Clique abre o checkout do Mercado Pago numa nova aba. O número é assinatura mensal recorrente; os contatos são cobrança única — libera automaticamente assim que confirmar o pagamento.</p>
 
         <div className="grid grid-cols-2 gap-3 pt-1">
           <a href={addonLink('number', profile?.client?.name)} target="_blank" rel="noreferrer"

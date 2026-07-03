@@ -10,6 +10,9 @@ const statusConfig = {
   scheduled: { label: 'Agendado', icon: CalendarClock, color: 'text-blue-300 bg-blue-400/10' },
   sending: { label: 'Enviando', icon: Loader, color: 'text-accent bg-accent/10' },
   completed: { label: 'Concluído', icon: CheckCircle, color: 'text-green-400 bg-green-400/10' },
+  // Parou por causa da data de término (stop_at) antes de alcançar toda a
+  // lista — diferente de "completed", que significa que alcançou todo mundo.
+  stopped: { label: 'Parado (data de término)', icon: XCircle, color: 'text-amber-300 bg-amber-400/10' },
   error: { label: 'Erro', icon: XCircle, color: 'text-red-400 bg-red-400/10' },
 }
 
@@ -43,6 +46,7 @@ function groupOf(c, byId) {
     if (base) return groupOf(base, null) // base nunca é follow-up de outra coisa, sem risco de loop
   }
   if (c.status === 'error') return 'error'
+  if (c.status === 'stopped') return 'stopped'
   if (c.status === 'completed') return 'completed'
   if (c.status === 'sending') return 'running'
   if (c.status === 'scheduled') {
@@ -58,6 +62,7 @@ const GROUPS = [
   { key: 'scheduled_future', title: '🕐 Agendado', hint: 'Vai disparar sozinho na data marcada — ainda não começou.' },
   { key: 'draft', title: '📝 Rascunho', hint: 'Ainda não foi disparado nem agendado — só você está vendo isso.' },
   { key: 'completed', title: '✅ Concluído', hint: 'Já terminou de enviar pra todo o público-alvo dela.' },
+  { key: 'stopped', title: '🛑 Parado (data de término)', hint: 'Parou sozinha na data marcada, mesmo com contatos ainda pendentes na lista.' },
   { key: 'error', title: '⚠️ Com erro', hint: 'Teve problema no envio — dá uma olhada.' },
 ]
 
@@ -307,6 +312,7 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   const [scheduledFor, setScheduledFor] = useState(toLocalInput(campaign.scheduled_for))
   const [dailyLimit, setDailyLimit] = useState(campaign.daily_limit || 100)
   const [dailyStartHour, setDailyStartHour] = useState(campaign.daily_start_hour || 9)
+  const [stopAt, setStopAt] = useState(toLocalInput(campaign.stop_at))
   const [targetTags, setTargetTags] = useState(Array.isArray(campaign.target_tags) ? campaign.target_tags : [])
   // Todas as tags REAIS em uso pelos contatos deste cliente — não só
   // "Antigo"/"Novo" fixos. Bug reportado: contato com tag "vip" (ou
@@ -372,6 +378,9 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
       if (isBase) {
         if (campaign.type === 'scheduled') updates.scheduled_for = scheduledFor ? new Date(scheduledFor).toISOString() : null
         if (campaign.type === 'daily') { updates.daily_limit = Number(dailyLimit); updates.daily_start_hour = Number(dailyStartHour) }
+        if (campaign.type === 'scheduled' || campaign.type === 'daily') updates.stop_at = stopAt ? new Date(stopAt).toISOString() : null
+        // Reabrir uma campanha que já tinha parado por stop_at, se a data de término foi removida/adiada
+        if (campaign.status === 'stopped' && (!stopAt || new Date(stopAt) > new Date())) updates.status = 'scheduled'
         updates.target_tags = targetTags.length > 0 ? targetTags : null
       }
       await supabase.from('campaigns').update(updates).eq('id', campaign.id)
@@ -466,6 +475,19 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
                   </select>
                 ) : <p className="text-sm text-white font-body">{campaign.daily_start_hour ?? 9}:00h</p>}
               </div>
+            </div>
+          )}
+
+          {isBase && (campaign.type === 'scheduled' || campaign.type === 'daily') && (
+            <div>
+              <label className="block text-xs text-muted font-body mb-1.5 flex items-center gap-1.5"><Clock3 size={12} /> Parar de enviar em (opcional)</label>
+              {editing ? (
+                <input type="datetime-local" value={stopAt} onChange={e => setStopAt(e.target.value)}
+                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
+              ) : (
+                <p className="text-sm text-white font-body">{campaign.stop_at ? new Date(campaign.stop_at).toLocaleString('pt-BR') : 'Sem data de término — roda até alcançar toda a lista'}</p>
+              )}
+              {campaign.status === 'stopped' && <p className="text-xs text-amber-300 font-body mt-1">Esta campanha já parou por causa da data de término. Mude ou apague a data acima e salve para retomar o envio.</p>}
             </div>
           )}
 

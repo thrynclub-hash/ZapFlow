@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom'
 // qualquer modal do app, de uma vez.
 export default function Modal({ children }) {
   return createPortal(
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-bg/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-ink/45 backdrop-blur-sm">
       <div className="flex min-h-full items-center justify-center p-4">
         {children}
       </div>

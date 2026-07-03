@@ -1,5 +1,54 @@
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Zap, CheckCircle, Send, Users, Cake, BarChart2, ArrowRight } from 'lucide-react'
+
+// Pulso ambiente atrás do hero — um único momento de movimento na página
+// (não espalhado por vários lugares), evocando o envio/recebimento de
+// mensagem que dá nome à marca. Lento e discreto de propósito: é textura de
+// fundo, não o protagonista da tela. Respeita prefers-reduced-motion.
+function HeroPulse() {
+  const ref = useRef(null)
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const ctx = canvas.getContext('2d')
+    let raf
+    let t = 0
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = canvas.offsetWidth * dpr
+      canvas.height = canvas.offsetHeight * dpr
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+    resize()
+    window.addEventListener('resize', resize)
+
+    const colors = ['255,77,109', '139,92,246'] // accent, violet
+    function frame() {
+      const w = canvas.offsetWidth, h = canvas.offsetHeight
+      ctx.clearRect(0, 0, w, h)
+      const cx = w / 2, cy = h * 0.42
+      for (let i = 0; i < 3; i++) {
+        const phase = (t + i * 70) % 210
+        const r = phase * 1.6
+        const alpha = Math.max(0, 1 - phase / 210) * 0.16
+        ctx.beginPath()
+        ctx.arc(cx, cy, r, 0, Math.PI * 2)
+        ctx.strokeStyle = `rgba(${colors[i % 2]},${alpha})`
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+      }
+      t += 0.35
+      if (!reduceMotion) raf = requestAnimationFrame(frame)
+    }
+    frame()
+
+    return () => { window.removeEventListener('resize', resize); if (raf) cancelAnimationFrame(raf) }
+  }, [])
+  return <canvas ref={ref} className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true" />
+}
 
 // Espelha os planos reais em plan_limits + AdminPricing.jsx (custo real ×
 // 1,30 de lucro) — atualizado em 2026-07-01 junto com o enforcement de
@@ -39,8 +88,9 @@ export default function Landing() {
       </nav>
 
       {/* Hero */}
-      <section className="px-8 py-24 max-w-5xl mx-auto text-center">
-        <div className="inline-flex items-center gap-2 bg-accent/10 border border-accent/20 rounded-full px-4 py-1.5 mb-8">
+      <section className="relative px-8 py-24 max-w-5xl mx-auto text-center overflow-hidden">
+        <HeroPulse />
+        <div className="relative inline-flex items-center gap-2 bg-accent/10 border border-accent/20 rounded-full px-4 py-1.5 mb-8">
           <Zap size={12} className="text-accent" />
           <span className="text-accent text-xs font-body">Automação WhatsApp para negócios locais</span>
         </div>

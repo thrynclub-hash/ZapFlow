@@ -18,7 +18,8 @@ export default function NewCampaign() {
   const [form, setForm] = useState({
     name: '', number_id: '', caption: '',
     send_mode: 'scheduled', // 'scheduled' | 'daily'
-    scheduled_date: '', daily_limit: 100, daily_start_hour: 9
+    scheduled_date: '', daily_limit: 100, daily_start_hour: 9,
+    stop_date: '', // opcional — pra quando enviar até uma data e parar (mesmo com contatos pendentes)
   })
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
@@ -87,6 +88,7 @@ export default function NewCampaign() {
     if (!form.caption.trim()) return alert('Escreva a mensagem.')
     if (form.send_mode === 'scheduled' && !form.scheduled_date) return alert('Escolha a data e hora do disparo (ou deixe como rascunho e agende depois pelo Histórico).')
     if (wantsFollowUp && !fuCaption.trim()) return alert('Escreva a mensagem do follow-up (ou desative o follow-up).')
+    if (form.stop_date && form.send_mode === 'scheduled' && form.scheduled_date && new Date(form.stop_date) <= new Date(form.scheduled_date)) return alert('A data de término precisa ser depois da data de início.')
 
     setSaving(true)
 
@@ -98,6 +100,7 @@ export default function NewCampaign() {
       daily_limit: form.send_mode === 'daily' ? Math.min(DAILY_CAP, form.daily_limit) : null,
       daily_start_hour: form.daily_start_hour,
       scheduled_for: form.send_mode === 'scheduled' ? new Date(form.scheduled_date).toISOString() : new Date().toISOString(),
+      stop_at: form.stop_date ? new Date(form.stop_date).toISOString() : null,
     }).select().single()
 
     if (campErr) { alert('Erro ao criar campanha: ' + campErr.message); setSaving(false); return }
@@ -230,9 +233,14 @@ export default function NewCampaign() {
           <div>
             <label className="block text-xs text-muted font-body mb-1.5">Mensagem *</label>
             <textarea value={form.caption} onChange={e => setForm(f => ({ ...f, caption: e.target.value }))} required
-              rows={5} placeholder="Escreva a mensagem que será enviada..."
+              rows={5} placeholder={"Ex: {Oi|Olá|E aí}, {{nome}}! {Temos uma novidade|Chegou uma oferta} pra você..."}
               className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors resize-none" />
             <p className="text-xs text-muted font-body mt-1">{form.caption.length} caracteres</p>
+            <div className="bg-surface rounded-lg p-3 mt-2 space-y-1">
+              <p className="text-xs text-white font-body font-medium">💡 Variação de mensagem (recomendado para listas grandes)</p>
+              <p className="text-xs text-muted font-body"><code className="text-accent">{'{{nome}}'}</code> vira o nome do contato. <code className="text-accent">{'{opção1|opção2|opção3}'}</code> escolhe uma das opções aleatoriamente para cada pessoa — assim ninguém recebe exatamente a mesma frase, o que ajuda a não parecer disparo em massa pro WhatsApp.</p>
+              <p className="text-xs text-muted font-body">Ex: <code className="text-accent">{'{Oi|Olá}, {{nome}}! {Tudo bem?|Como vai?}'}</code></p>
+            </div>
           </div>
         </div>
 
@@ -292,6 +300,17 @@ export default function NewCampaign() {
               </div>
             </div>
           )}
+
+          <div className="pt-2 border-t border-border">
+            <label className="block text-xs text-muted font-body mb-1.5">Parar de enviar em (opcional)</label>
+            <input type="datetime-local" value={form.stop_date} onChange={e => setForm(f => ({ ...f, stop_date: e.target.value }))}
+              className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+            <p className="text-xs text-muted font-body mt-1.5">
+              {form.send_mode === 'daily'
+                ? 'Sem isso, a campanha continua todo dia até enviar pra toda a lista — pode levar semanas com listas grandes. Marque uma data se quiser interromper antes disso (ex: fim de uma promoção), mesmo que ainda falte gente.'
+                : 'Deixe em branco pra continuar tentando alcançar todo mundo até o fim da lista, mesmo que leve mais de um dia por causa do limite diário.'}
+            </p>
+          </div>
         </div>
 
         {/* Follow-up automático (opcional) */}
@@ -302,7 +321,7 @@ export default function NewCampaign() {
               <span className="text-xs text-muted font-body">{wantsFollowUp ? 'Sim' : 'Não'}</span>
               <div onClick={() => setWantsFollowUp(v => !v)}
                 className={`w-10 h-6 rounded-full transition-colors relative cursor-pointer ${wantsFollowUp ? 'bg-accent' : 'bg-border'}`}>
-                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${wantsFollowUp ? 'left-5' : 'left-1'}`} />
+                <div className={`w-4 h-4 bg-[#ffffff] rounded-full absolute top-1 transition-all ${wantsFollowUp ? 'left-5' : 'left-1'}`} />
               </div>
             </label>
           </div>
@@ -319,8 +338,9 @@ export default function NewCampaign() {
               <div>
                 <label className="block text-xs text-muted font-body mb-1.5">Mensagem do follow-up *</label>
                 <textarea value={fuCaption} onChange={e => setFuCaption(e.target.value)}
-                  rows={4} placeholder="Ex: Oi, {{nome}}! Passando rapidinho pra saber se ainda tem interesse..."
+                  rows={4} placeholder={"Ex: {Oi|Olá}, {{nome}}! Passando rapidinho pra saber se ainda tem interesse..."}
                   className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors resize-none" />
+                <p className="text-xs text-muted font-body mt-1">Mesma sintaxe da mensagem principal: <code className="text-accent">{'{{nome}}'}</code> e <code className="text-accent">{'{opção1|opção2}'}</code>.</p>
               </div>
 
               <div>
@@ -363,6 +383,7 @@ export default function NewCampaign() {
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Loja</span><span className="text-white">{selectedNumber?.label || '—'}</span></div>
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Total de contatos</span><span className="text-accent font-medium">{contacts.length}</span></div>
             {form.send_mode === 'daily' && <div className="flex justify-between text-sm font-body"><span className="text-muted">Por dia</span><span className="text-white">{form.daily_limit} contatos/dia</span></div>}
+            {form.stop_date && <div className="flex justify-between text-sm font-body"><span className="text-muted">Para de enviar em</span><span className="text-white">{new Date(form.stop_date).toLocaleString('pt-BR')}</span></div>}
             {wantsFollowUp && <div className="flex justify-between text-sm font-body"><span className="text-muted">Follow-up</span><span className="text-white">{fuDelayDays} dia(s) depois, se não responder</span></div>}
           </div>
 

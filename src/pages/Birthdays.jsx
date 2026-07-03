@@ -144,7 +144,7 @@ export default function Birthdays() {
             <span className="text-xs text-muted font-body">{config.enabled ? 'Ativado' : 'Desativado'}</span>
             <div onClick={() => setConfig(c => ({ ...c, enabled: !c.enabled }))}
               className={`w-10 h-6 rounded-full transition-colors relative cursor-pointer ${config.enabled ? 'bg-accent' : 'bg-border'}`}>
-              <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${config.enabled ? 'left-5' : 'left-1'}`} />
+              <div className={`w-4 h-4 bg-[#ffffff] rounded-full absolute top-1 transition-all ${config.enabled ? 'left-5' : 'left-1'}`} />
             </div>
           </label>
         </div>

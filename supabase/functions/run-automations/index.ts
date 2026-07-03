@@ -60,6 +60,51 @@ function formatPhone(phone: string): string {
   return phone.replace(/\D/g, "").replace(/^0/, "55");
 }
 
+// Variação de mensagens (spintax) — pedido do Leonardo pra não mandar a
+// MESMA copy, palavra por palavra, pra centenas/milhares de contatos (isso
+// é um dos sinais que o WhatsApp usa pra detectar spam em massa). Sintaxe:
+// {opção1|opção2|opção3} — escolhe uma aleatoriamente por contato. Suporta
+// aninhamento simples: {Oi{,| tudo bem?}|Olá}. Roda SEMPRE depois de
+// substituir {{nome}}, nunca antes — assim "{{nome}}" nunca é confundido
+// com um grupo de spintax (chave dupla vs. chave simples).
+function resolveSpintax(text: string): string {
+  let prev: string;
+  let out = text;
+  let guard = 0; // evita loop infinito em spintax malformado (chave sem fechar, etc.)
+  do {
+    prev = out;
+    out = out.replace(/\{([^{}]+)\}/g, (_match, group: string) => {
+      const options = group.split("|");
+      return options[Math.floor(Math.random() * options.length)];
+    });
+    guard++;
+  } while (out !== prev && guard < 10);
+  return out;
+}
+
+function personalize(rawMessage: string, contactName?: string | null): string {
+  const withName = (rawMessage || "").replace(/\{\{\s*nome\s*\}\}/gi, contactName || "");
+  return resolveSpintax(withName);
+}
+
+// Pausa entre envios consecutivos pro mesmo número — antes disso, um lote de
+// 100 mensagens saía em sequência direta, sem pausa nenhuma (padrão bem mais
+// "robótico" do que qualquer humano mandando mensagem manualmente, um dos
+// sinais que o WhatsApp usa pra identificar disparo automatizado). Intervalo
+// aleatório (não fixo) — um delay sempre idêntico também é um padrão
+// detectável. Mantido curto de propósito: Edge Functions do Supabase têm
+// limite de tempo de execução; um delay longo demais em lote de 100 correria
+// risco de a função ser encerrada no meio do envio (o que não perde nada —
+// o dedup por message_logs continua de onde parou no próximo ciclo do cron
+// — mas é mais sujo que terminar certinho). Ajuste os valores abaixo se
+// perceber timeout nos logs do Supabase.
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+async function humanDelay() {
+  await sleep(600 + Math.floor(Math.random() * 900)); // 600–1500ms
+}
+
 async function sendTextMessage(instanceId: string, token: string, phone: string, message: string) {
   const url = `${ZAPI_BASE}/${instanceId}/token/${token}/send-text`;
   const res = await fetch(url, {
@@ -266,8 +311,9 @@ async function executeAction(run: any, step: any) {
     const allowed = await consumeBudget(number.id);
     if (!allowed) throw new Error(`limite diário de ${DAILY_CAP} mensagens atingido para este número — tenta de novo amanhã`);
 
-    const message = (step.config?.message || "").replace("{{nome}}", contact.name || "");
+    const message = personalize(step.config?.message || "", contact.name);
     await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message);
+    await humanDelay();
   } else if (step.block === "add_tag") {
     const tag = step.config?.tag;
     if (!tag) return;
@@ -333,12 +379,26 @@ async function processScheduledCampaigns() {
     return;
   }
 
+  const nowIso = new Date().toISOString();
+
   for (const campaign of campaigns ?? []) {
     const number = (campaign as any).client_numbers;
     if (!number) continue;
 
+    // Data/hora de término (stop_at, opcional) — pedido do Leonardo pra
+    // conseguir dizer "para de mandar a partir do dia X" mesmo com gente
+    // ainda pendente na lista. Checado ANTES de mandar qualquer mensagem
+    // deste ciclo: se já passou, marca como 'stopped' (distinto de
+    // 'completed', que significa "alcançou todo mundo") e não envia mais nada.
+    if (campaign.stop_at && campaign.stop_at <= nowIso) {
+      if (campaign.status !== "stopped" && campaign.status !== "completed") {
+        await supabase.from("campaigns").update({ status: "stopped", completed_at: nowIso }).eq("id", campaign.id);
+      }
+      continue;
+    }
+
     if (campaign.type === "scheduled") {
-      if (!campaign.scheduled_for || campaign.scheduled_for > new Date().toISOString()) continue;
+      if (!campaign.scheduled_for || campaign.scheduled_for > nowIso) continue;
       if (campaign.status === "completed") continue;
       await sendCampaignBatch(campaign, number, null); // sem limite diário: manda tudo pendente
     } else if (campaign.type === "daily") {
@@ -388,7 +448,8 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
     const allowed = await consumeBudget(number.id);
     if (!allowed) { budgetExhausted = true; break; }
     try {
-      await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), campaign.caption || "", campaign.image_url);
+      const message = personalize(campaign.caption || "", contact.name);
+      await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message, campaign.image_url);
       await supabase.from("message_logs").insert({
         campaign_id: campaign.id, client_id: campaign.client_id, contact_id: contact.id,
         status: "sent", sent_at: new Date().toISOString(),
@@ -399,6 +460,7 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
         status: "error", error_detail: String(e),
       });
     }
+    await humanDelay();
   }
 
   const stillPending = pending.length > batch.length || budgetExhausted;
@@ -469,7 +531,7 @@ async function processFollowUpCampaigns() {
       const allowed = await consumeBudget(number.id);
       if (!allowed) break; // orçamento do dia acabou — resto tenta na próxima execução
 
-      const message = (followUp.caption || "").replace("{{nome}}", contact.name || "");
+      const message = personalize(followUp.caption || "", contact.name);
       try {
         await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message, followUp.image_url);
         await supabase.from("message_logs").insert({
@@ -482,6 +544,7 @@ async function processFollowUpCampaigns() {
           status: "error", error_detail: String(e),
         });
       }
+      await humanDelay();
     }
 
     await supabase.from("campaigns").update({ status: "sending" }).eq("id", followUp.id);
