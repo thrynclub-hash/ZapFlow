@@ -18,14 +18,46 @@ export default function NewCampaign() {
   const [form, setForm] = useState({
     name: '', number_id: '', caption: '',
     send_mode: 'scheduled', // 'scheduled' | 'daily'
-    scheduled_date: '', daily_limit: 100, daily_start_hour: 9,
-    stop_date: '', // opcional — pra quando enviar até uma data e parar (mesmo com contatos pendentes)
+    // Data e horário sempre separados (2 campos, não 1 datetime-local) —
+    // pedido explícito do Leonardo pra deixar o horário óbvio e fácil de
+    // ajustar, tanto pra começar quanto pra parar o disparo.
+    scheduled_date: '', scheduled_time: '09:00',
+    daily_limit: 100, daily_start_hour: 9,
+    stop_date: '', stop_time: '18:00', // opcional — pra quando enviar até uma data/hora e parar (mesmo com contatos pendentes)
   })
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [imageUrlInput, setImageUrlInput] = useState('')
   const [saving, setSaving] = useState(false)
   const fileRef = useRef()
+
+  // Botões de resposta rápida (2026-07-03) — além de escrever "eu quero" na
+  // mão, a pessoa pode tocar num botão pronto na própria mensagem. Cada
+  // opção é configurável: o que acontece quando ALGUÉM clica nela.
+  //   trigger_flow    -> mesmo fluxo de quem digita a palavra-chave (pergunta turno)
+  //   stop_followup   -> confirma e não manda mais o follow-up desta campanha pra essa pessoa
+  //   opt_out         -> descadastra de vez (igual responder "PARAR")
+  const [wantsQuickReplies, setWantsQuickReplies] = useState(false)
+  const [quickReplies, setQuickReplies] = useState([
+    { id: 'yes', label: 'Quero sim! 🙌', action: 'trigger_flow' },
+    { id: 'no', label: 'Não quero receber esse tipo de mensagem', action: 'stop_followup' },
+  ])
+  function updateQuickReply(idx, patch) {
+    setQuickReplies(list => list.map((q, i) => i === idx ? { ...q, ...patch } : q))
+  }
+  function addQuickReply() {
+    setQuickReplies(list => [...list, { id: `opt_${list.length + 1}`, label: '', action: 'trigger_flow' }])
+  }
+  function removeQuickReply(idx) {
+    setQuickReplies(list => list.filter((_, i) => i !== idx))
+  }
+
+  // Combina data (YYYY-MM-DD) + hora (HH:MM) num Date local — os dois
+  // campos precisam estar preenchidos, senão retorna null (rascunho/sem data).
+  function combineDateTime(date, time) {
+    if (!date) return null
+    return new Date(`${date}T${time || '00:00'}:00`)
+  }
 
   // Follow-up automático — pedido do Leonardo pra ficar embutido aqui
   // direto (não depender da tela de Automations, que ainda não está clara
@@ -88,7 +120,10 @@ export default function NewCampaign() {
     if (!form.caption.trim()) return alert('Escreva a mensagem.')
     if (form.send_mode === 'scheduled' && !form.scheduled_date) return alert('Escolha a data e hora do disparo (ou deixe como rascunho e agende depois pelo Histórico).')
     if (wantsFollowUp && !fuCaption.trim()) return alert('Escreva a mensagem do follow-up (ou desative o follow-up).')
-    if (form.stop_date && form.send_mode === 'scheduled' && form.scheduled_date && new Date(form.stop_date) <= new Date(form.scheduled_date)) return alert('A data de término precisa ser depois da data de início.')
+    const scheduledDT = combineDateTime(form.scheduled_date, form.scheduled_time)
+    const stopDT = combineDateTime(form.stop_date, form.stop_time)
+    if (stopDT && scheduledDT && stopDT <= scheduledDT) return alert('A data/hora de término precisa ser depois da data/hora de início.')
+    if (wantsQuickReplies && quickReplies.some(q => !q.label.trim())) return alert('Preencha o texto de todos os botões de resposta rápida (ou remova o que não vai usar).')
 
     setSaving(true)
 
@@ -99,8 +134,9 @@ export default function NewCampaign() {
       total_count: contacts.length, sent_count: 0, error_count: 0,
       daily_limit: form.send_mode === 'daily' ? Math.min(DAILY_CAP, form.daily_limit) : null,
       daily_start_hour: form.daily_start_hour,
-      scheduled_for: form.send_mode === 'scheduled' ? new Date(form.scheduled_date).toISOString() : new Date().toISOString(),
-      stop_at: form.stop_date ? new Date(form.stop_date).toISOString() : null,
+      scheduled_for: form.send_mode === 'scheduled' ? scheduledDT.toISOString() : new Date().toISOString(),
+      stop_at: stopDT ? stopDT.toISOString() : null,
+      quick_replies: wantsQuickReplies ? quickReplies.filter(q => q.label.trim()) : [],
     }).select().single()
 
     if (campErr) { alert('Erro ao criar campanha: ' + campErr.message); setSaving(false); return }
@@ -150,13 +186,14 @@ export default function NewCampaign() {
     setSaving(false)
     const fuNote = wantsFollowUp && fuCaption.trim() ? ` Follow-up configurado pra ${fuDelayDays} dia(s) depois, pra quem não responder.` : ''
     alert((form.send_mode === 'scheduled'
-      ? `✅ Campanha agendada! Dispara automaticamente a partir de ${new Date(form.scheduled_date).toLocaleString('pt-BR')}, no máximo ${DAILY_CAP}/dia.`
+      ? `✅ Campanha agendada! Dispara automaticamente a partir de ${scheduledDT.toLocaleString('pt-BR')}, no máximo ${DAILY_CAP}/dia.`
       : `✅ Campanha configurada! Envia até ${Math.min(DAILY_CAP, form.daily_limit)} contatos/dia a partir de amanhã.`) + fuNote)
     navigate('/campaigns')
   }
 
   const selectedNumber = numbers.find(n => n.id === form.number_id)
   const estimatedDays = form.send_mode === 'daily' ? Math.ceil(contacts.length / Math.min(DAILY_CAP, form.daily_limit)) : null
+  const stopDTPreview = combineDateTime(form.stop_date, form.stop_time)
 
   return (
     <div className="max-w-2xl">
@@ -263,11 +300,15 @@ export default function NewCampaign() {
 
           {form.send_mode === 'scheduled' && (
             <div>
-              <label className="block text-xs text-muted font-body mb-1.5">Data e hora do disparo</label>
-              <input type="datetime-local" value={form.scheduled_date} onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
-                className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+              <label className="block text-xs text-muted font-body mb-1.5">Data e horário do disparo</label>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="date" value={form.scheduled_date} onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))}
+                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+                <input type="time" value={form.scheduled_time} onChange={e => setForm(f => ({ ...f, scheduled_time: e.target.value }))}
+                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+              </div>
               {contacts.length > DAILY_CAP && (
-                <p className="text-xs text-amber-300 font-body mt-2">⚠️ {contacts.length} contatos, mas o limite é {DAILY_CAP}/dia — vai levar ~{Math.ceil(contacts.length / DAILY_CAP)} dias pra alcançar todo mundo, começando na data marcada.</p>
+                <p className="text-xs text-amber-300 font-body mt-2">⚠️ {contacts.length} contatos, mas o limite é {DAILY_CAP}/dia — vai levar ~{Math.ceil(contacts.length / DAILY_CAP)} dias pra alcançar todo mundo, começando na data/horário marcados.</p>
               )}
             </div>
           )}
@@ -302,9 +343,13 @@ export default function NewCampaign() {
           )}
 
           <div className="pt-2 border-t border-border">
-            <label className="block text-xs text-muted font-body mb-1.5">Parar de enviar em (opcional)</label>
-            <input type="datetime-local" value={form.stop_date} onChange={e => setForm(f => ({ ...f, stop_date: e.target.value }))}
-              className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+            <label className="block text-xs text-muted font-body mb-1.5">Parar de enviar em (data e horário, opcional)</label>
+            <div className="grid grid-cols-2 gap-3">
+              <input type="date" value={form.stop_date} onChange={e => setForm(f => ({ ...f, stop_date: e.target.value }))}
+                className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+              <input type="time" value={form.stop_time} onChange={e => setForm(f => ({ ...f, stop_time: e.target.value }))} disabled={!form.stop_date}
+                className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors disabled:opacity-40" />
+            </div>
             <p className="text-xs text-muted font-body mt-1.5">
               {form.send_mode === 'daily'
                 ? 'Sem isso, a campanha continua todo dia até enviar pra toda a lista — pode levar semanas com listas grandes. Marque uma data se quiser interromper antes disso (ex: fim de uma promoção), mesmo que ainda falte gente.'
@@ -313,10 +358,55 @@ export default function NewCampaign() {
           </div>
         </div>
 
+        {/* Respostas rápidas (opcional) */}
+        <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display font-semibold text-white text-sm uppercase tracking-wide">4. Respostas rápidas (opcional)</h3>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <span className="text-xs text-muted font-body">{wantsQuickReplies ? 'Sim' : 'Não'}</span>
+              <div onClick={() => setWantsQuickReplies(v => !v)}
+                className={`w-10 h-6 rounded-full transition-colors relative cursor-pointer ${wantsQuickReplies ? 'bg-accent' : 'bg-border'}`}>
+                <div className={`w-4 h-4 bg-[#ffffff] rounded-full absolute top-1 transition-all ${wantsQuickReplies ? 'left-5' : 'left-1'}`} />
+              </div>
+            </label>
+          </div>
+          <p className="text-xs text-muted font-body -mt-2">Manda a mensagem junto com botões prontos pra pessoa tocar, sem precisar escrever nada — além disso, quem <strong className="text-white">digitar</strong> a palavra-chave (ex: "eu quero") continua funcionando normalmente também.</p>
+
+          {wantsQuickReplies && (
+            <div className="space-y-3 pt-2 border-t border-border">
+              {quickReplies.map((q, idx) => (
+                <div key={idx} className="bg-surface border border-border rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input value={q.label} onChange={e => updateQuickReply(idx, { label: e.target.value })}
+                      placeholder="Texto do botão"
+                      className="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
+                    <button type="button" onClick={() => removeQuickReply(idx)}
+                      className="text-muted hover:text-red-400 p-2 shrink-0" title="Remover botão"><X size={14} /></button>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted font-body mb-1">Quando alguém tocar aqui:</label>
+                    <select value={q.action} onChange={e => updateQuickReply(idx, { action: e.target.value })}
+                      className="w-full bg-card border border-border rounded-lg px-3 py-2 text-xs text-white font-body focus:outline-none focus:border-accent transition-colors">
+                      <option value="trigger_flow">Continuar o fluxo normal (pergunta o turno, igual "eu quero")</option>
+                      <option value="stop_followup">Parar o follow-up automático desta campanha pra essa pessoa</option>
+                      <option value="opt_out">Descadastrar de vez (igual responder "PARAR")</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+              <button type="button" onClick={addQuickReply}
+                className="text-xs text-accent hover:underline font-body">+ Adicionar outro botão</button>
+              <div className="bg-surface rounded-lg p-3">
+                <p className="text-xs text-muted font-body">💡 Independente do botão escolhido, tocar em qualquer um deles já conta como resposta — então o follow-up automático nunca dispara pra quem interagiu, mesmo que a ação escolhida não seja "Parar o follow-up". Quem não tocar em nada e não escrever nada continua no follow-up normalmente.</p>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Follow-up automático (opcional) */}
         <div className="bg-card border border-border rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-display font-semibold text-white text-sm uppercase tracking-wide">4. Follow-up automático (opcional)</h3>
+            <h3 className="font-display font-semibold text-white text-sm uppercase tracking-wide">5. Follow-up automático (opcional)</h3>
             <label className="flex items-center gap-2 cursor-pointer">
               <span className="text-xs text-muted font-body">{wantsFollowUp ? 'Sim' : 'Não'}</span>
               <div onClick={() => setWantsFollowUp(v => !v)}
@@ -378,13 +468,14 @@ export default function NewCampaign() {
 
         {/* Confirmar */}
         <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-          <h3 className="font-display font-semibold text-white text-sm uppercase tracking-wide">5. Confirmar</h3>
+          <h3 className="font-display font-semibold text-white text-sm uppercase tracking-wide">6. Confirmar</h3>
           <div className="bg-surface rounded-xl p-4 space-y-2">
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Loja</span><span className="text-white">{selectedNumber?.label || '—'}</span></div>
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Total de contatos</span><span className="text-accent font-medium">{contacts.length}</span></div>
             {form.send_mode === 'daily' && <div className="flex justify-between text-sm font-body"><span className="text-muted">Por dia</span><span className="text-white">{form.daily_limit} contatos/dia</span></div>}
-            {form.stop_date && <div className="flex justify-between text-sm font-body"><span className="text-muted">Para de enviar em</span><span className="text-white">{new Date(form.stop_date).toLocaleString('pt-BR')}</span></div>}
+            {stopDTPreview && <div className="flex justify-between text-sm font-body"><span className="text-muted">Para de enviar em</span><span className="text-white">{stopDTPreview.toLocaleString('pt-BR')}</span></div>}
             {wantsFollowUp && <div className="flex justify-between text-sm font-body"><span className="text-muted">Follow-up</span><span className="text-white">{fuDelayDays} dia(s) depois, se não responder</span></div>}
+            {wantsQuickReplies && <div className="flex justify-between text-sm font-body"><span className="text-muted">Botões de resposta</span><span className="text-white">{quickReplies.filter(q => q.label.trim()).length}</span></div>}
           </div>
 
           <button type="submit" disabled={!form.number_id || contacts.length === 0 || saving}

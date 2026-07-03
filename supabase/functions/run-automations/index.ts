@@ -142,7 +142,57 @@ async function sendImageMessage(instanceId: string, token: string, phone: string
   return res.json();
 }
 
-async function sendCampaignMessage(instanceId: string, token: string, phone: string, message: string, imageUrl?: string | null) {
+// Botões de resposta rápida (2026-07-03) — pedido do Leonardo pra oferecer
+// opções prontas na própria mensagem (ex: "Quero sim! 🙌" / "Não quero
+// receber esse tipo de mensagem"), além de já poder escrever "eu quero" na
+// mão (fluxo que continua funcionando sem mudança nenhuma).
+//
+// ATENÇÃO — endpoint e formato do payload NÃO validados ao vivo nesta
+// sessão (nenhum número real ligado ainda, Z-API só será ativado quando o
+// Leonardo pagar o plano). Segue o formato documentado publicamente da
+// Z-API para "mensagem com lista de botões" (send-button-list). Se o
+// formato real divergir quando o primeiro número for ligado, o erro cai em
+// message_logs (status='error', com o detalhe da resposta da Z-API) em vez
+// de travar o resto do envio — vale conferir os logs do Supabase Functions
+// e o response_json de um erro real pra ajustar o payload se necessário.
+async function sendButtonMessage(
+  instanceId: string,
+  token: string,
+  phone: string,
+  message: string,
+  buttons: Array<{ id: string; label: string }>,
+) {
+  const url = `${ZAPI_BASE}/${instanceId}/token/${token}/send-button-list`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Client-Token": token },
+    body: JSON.stringify({
+      phone,
+      message,
+      buttonList: { buttons: buttons.map((b) => ({ id: b.id, label: b.label })) },
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Z-API error (send-button-list): ${res.status}`);
+  }
+  return res.json();
+}
+
+async function sendCampaignMessage(
+  instanceId: string,
+  token: string,
+  phone: string,
+  message: string,
+  imageUrl?: string | null,
+  quickReplies?: Array<{ id: string; label: string; action: string }> | null,
+) {
+  if (quickReplies && quickReplies.length > 0) {
+    // Foto sem legenda (se houver) + o texto de verdade vai na mensagem de
+    // botões, pra não repetir a mesma legenda duas vezes pro contato.
+    if (imageUrl) await sendImageMessage(instanceId, token, phone, imageUrl, "");
+    return sendButtonMessage(instanceId, token, phone, message, quickReplies);
+  }
   if (imageUrl) return sendImageMessage(instanceId, token, phone, imageUrl, message);
   return sendTextMessage(instanceId, token, phone, message);
 }
@@ -449,7 +499,7 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
     if (!allowed) { budgetExhausted = true; break; }
     try {
       const message = personalize(campaign.caption || "", contact.name);
-      await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message, campaign.image_url);
+      await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message, campaign.image_url, campaign.quick_replies);
       await supabase.from("message_logs").insert({
         campaign_id: campaign.id, client_id: campaign.client_id, contact_id: contact.id,
         status: "sent", sent_at: new Date().toISOString(),
@@ -533,7 +583,7 @@ async function processFollowUpCampaigns() {
 
       const message = personalize(followUp.caption || "", contact.name);
       try {
-        await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message, followUp.image_url);
+        await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message, followUp.image_url, followUp.quick_replies);
         await supabase.from("message_logs").insert({
           campaign_id: followUp.id, client_id: followUp.client_id, contact_id: contact.id,
           status: "sent", sent_at: new Date().toISOString(),

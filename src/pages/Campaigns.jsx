@@ -303,17 +303,50 @@ function toLocalInput(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+// Data e horário sempre em 2 campos separados (não 1 datetime-local) —
+// mesmo pedido do Leonardo aplicado em NewCampaign.jsx, pra deixar o
+// horário óbvio tanto pra editar o início quanto o término de uma campanha
+// já criada.
+function toDatePart(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+function toTimePart(iso) {
+  if (!iso) return '09:00'
+  const d = new Date(iso)
+  const pad = n => String(n).padStart(2, '0')
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+function combineDateTime(date, time) {
+  if (!date) return null
+  return new Date(`${date}T${time || '00:00'}:00`)
+}
+
 function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   const editing = mode === 'edit'
   const isBase = !campaign.follow_up_of
 
   const [name, setName] = useState(campaign.name || '')
   const [caption, setCaption] = useState(campaign.caption || '')
-  const [scheduledFor, setScheduledFor] = useState(toLocalInput(campaign.scheduled_for))
+  const [scheduledDate, setScheduledDate] = useState(toDatePart(campaign.scheduled_for))
+  const [scheduledTime, setScheduledTime] = useState(toTimePart(campaign.scheduled_for))
   const [dailyLimit, setDailyLimit] = useState(campaign.daily_limit || 100)
   const [dailyStartHour, setDailyStartHour] = useState(campaign.daily_start_hour || 9)
-  const [stopAt, setStopAt] = useState(toLocalInput(campaign.stop_at))
+  const [stopDate, setStopDate] = useState(toDatePart(campaign.stop_at))
+  const [stopTime, setStopTime] = useState(toTimePart(campaign.stop_at))
   const [targetTags, setTargetTags] = useState(Array.isArray(campaign.target_tags) ? campaign.target_tags : [])
+  const [quickReplies, setQuickReplies] = useState(Array.isArray(campaign.quick_replies) ? campaign.quick_replies : [])
+  function updateQuickReply(idx, patch) {
+    setQuickReplies(list => list.map((q, i) => i === idx ? { ...q, ...patch } : q))
+  }
+  function addQuickReply() {
+    setQuickReplies(list => [...list, { id: `opt_${list.length + 1}`, label: '', action: 'trigger_flow' }])
+  }
+  function removeQuickReply(idx) {
+    setQuickReplies(list => list.filter((_, i) => i !== idx))
+  }
   // Todas as tags REAIS em uso pelos contatos deste cliente — não só
   // "Antigo"/"Novo" fixos. Bug reportado: contato com tag "vip" (ou
   // qualquer tag livre) não aparecia como opção de público-alvo aqui.
@@ -374,14 +407,17 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   async function handleSave() {
     setSaving(true)
     try {
+      const scheduledDT = combineDateTime(scheduledDate, scheduledTime)
+      const stopDT = combineDateTime(stopDate, stopTime)
       const updates = { name, caption }
       if (isBase) {
-        if (campaign.type === 'scheduled') updates.scheduled_for = scheduledFor ? new Date(scheduledFor).toISOString() : null
+        if (campaign.type === 'scheduled') updates.scheduled_for = scheduledDT ? scheduledDT.toISOString() : null
         if (campaign.type === 'daily') { updates.daily_limit = Number(dailyLimit); updates.daily_start_hour = Number(dailyStartHour) }
-        if (campaign.type === 'scheduled' || campaign.type === 'daily') updates.stop_at = stopAt ? new Date(stopAt).toISOString() : null
+        if (campaign.type === 'scheduled' || campaign.type === 'daily') updates.stop_at = stopDT ? stopDT.toISOString() : null
         // Reabrir uma campanha que já tinha parado por stop_at, se a data de término foi removida/adiada
-        if (campaign.status === 'stopped' && (!stopAt || new Date(stopAt) > new Date())) updates.status = 'scheduled'
+        if (campaign.status === 'stopped' && (!stopDT || stopDT > new Date())) updates.status = 'scheduled'
         updates.target_tags = targetTags.length > 0 ? targetTags : null
+        updates.quick_replies = quickReplies.filter(q => q.label.trim())
       }
       await supabase.from('campaigns').update(updates).eq('id', campaign.id)
 
@@ -447,10 +483,14 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
 
           {isBase && campaign.type === 'scheduled' && (
             <div>
-              <label className="block text-xs text-muted font-body mb-1.5 flex items-center gap-1.5"><Clock3 size={12} /> Quando dispara</label>
+              <label className="block text-xs text-muted font-body mb-1.5 flex items-center gap-1.5"><Clock3 size={12} /> Quando dispara (data e horário)</label>
               {editing ? (
-                <input type="datetime-local" value={scheduledFor} onChange={e => setScheduledFor(e.target.value)}
-                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)}
+                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
+                  <input type="time" value={scheduledTime} onChange={e => setScheduledTime(e.target.value)}
+                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
+                </div>
               ) : (
                 <p className="text-sm text-white font-body">{campaign.scheduled_for ? new Date(campaign.scheduled_for).toLocaleString('pt-BR') : 'Ainda não agendado'}</p>
               )}
@@ -480,14 +520,53 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
 
           {isBase && (campaign.type === 'scheduled' || campaign.type === 'daily') && (
             <div>
-              <label className="block text-xs text-muted font-body mb-1.5 flex items-center gap-1.5"><Clock3 size={12} /> Parar de enviar em (opcional)</label>
+              <label className="block text-xs text-muted font-body mb-1.5 flex items-center gap-1.5"><Clock3 size={12} /> Parar de enviar em (data e horário, opcional)</label>
               {editing ? (
-                <input type="datetime-local" value={stopAt} onChange={e => setStopAt(e.target.value)}
-                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="date" value={stopDate} onChange={e => setStopDate(e.target.value)}
+                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
+                  <input type="time" value={stopTime} onChange={e => setStopTime(e.target.value)} disabled={!stopDate}
+                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent disabled:opacity-40" />
+                </div>
               ) : (
                 <p className="text-sm text-white font-body">{campaign.stop_at ? new Date(campaign.stop_at).toLocaleString('pt-BR') : 'Sem data de término — roda até alcançar toda a lista'}</p>
               )}
               {campaign.status === 'stopped' && <p className="text-xs text-amber-300 font-body mt-1">Esta campanha já parou por causa da data de término. Mude ou apague a data acima e salve para retomar o envio.</p>}
+            </div>
+          )}
+
+          {isBase && (
+            <div>
+              <label className="block text-xs text-muted font-body mb-1.5">Botões de resposta rápida</label>
+              {editing ? (
+                <div className="space-y-2">
+                  {quickReplies.map((q, idx) => (
+                    <div key={idx} className="bg-surface border border-border rounded-lg p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <input value={q.label} onChange={e => updateQuickReply(idx, { label: e.target.value })}
+                          placeholder="Texto do botão"
+                          className="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent" />
+                        <button type="button" onClick={() => removeQuickReply(idx)}
+                          className="text-muted hover:text-red-400 p-2 shrink-0" title="Remover botão"><X size={14} /></button>
+                      </div>
+                      <select value={q.action} onChange={e => updateQuickReply(idx, { action: e.target.value })}
+                        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-xs text-white font-body focus:outline-none focus:border-accent">
+                        <option value="trigger_flow">Continuar o fluxo normal (pergunta o turno, igual "eu quero")</option>
+                        <option value="stop_followup">Parar o follow-up automático desta campanha pra essa pessoa</option>
+                        <option value="opt_out">Descadastrar de vez (igual responder "PARAR")</option>
+                      </select>
+                    </div>
+                  ))}
+                  <button type="button" onClick={addQuickReply} className="text-xs text-accent hover:underline font-body">+ Adicionar botão</button>
+                  {quickReplies.length === 0 && <p className="text-xs text-muted font-body">Nenhum botão configurado — a mensagem vai só em texto, e o fluxo "eu quero" continua funcionando por digitação normalmente.</p>}
+                </div>
+              ) : (
+                quickReplies.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {quickReplies.map((q, idx) => <span key={idx} className="px-2.5 py-1 rounded-full text-xs font-body bg-surface border border-border text-white">{q.label}</span>)}
+                  </div>
+                ) : <p className="text-sm text-white font-body">Nenhum — só texto (sem botões)</p>
+              )}
             </div>
           )}
 

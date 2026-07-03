@@ -18,6 +18,16 @@
 //     RLS correta desde supabase_security_fixes.sql).
 //  3. Todo envio feito por este webhook passa pelo mesmo limite diário
 //     global (try_consume_daily_send_budget) que o resto do sistema.
+//  4. Detecta clique em botão de resposta rápida (campaigns.quick_replies,
+//     2026-07-03) e executa a ação configurada pro botão (continuar o
+//     fluxo "eu quero", parar o follow-up, ou descadastrar). O FORMATO DO
+//     PAYLOAD de clique de botão da Z-API NÃO foi validado ao vivo nesta
+//     sessão (nenhum número real ligado ainda) — o código abaixo tenta os
+//     formatos documentados publicamente (buttonsResponseMessage /
+//     listResponseMessage) e cai de volta pro fluxo de texto normal se não
+//     reconhecer o payload. Vale conferir o payload real (console.log já
+//     deixado abaixo) assim que o primeiro clique de botão acontecer de
+//     verdade, e ajustar extractButtonReply() se o formato divergir.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -62,6 +72,35 @@ async function sendViaBudget(numberId: string, instanceId: string, token: string
   return res.ok;
 }
 
+// Descadastro completo — reusado tanto pela palavra-chave (PARAR/SAIR/...)
+// quanto por um botão configurado com action='opt_out'.
+async function optOutContact(contact: any, number: any) {
+  const tags = new Set(contact.tags ?? []);
+  tags.add("Descadastrado");
+  await supabase.from("contacts").update({ status: "Inativo", tags: Array.from(tags) }).eq("id", contact.id);
+  await sendViaBudget(
+    number.id, number.zapi_instance_id, number.zapi_token, contact.phone,
+    "Combinado! Você não vai mais receber nossas mensagens. Se mudar de ideia, é só chamar por aqui de novo a qualquer momento.",
+  );
+}
+
+// Tenta reconhecer um clique em botão de resposta rápida (send-button-list)
+// nos formatos documentados publicamente da Z-API. NÃO VALIDADO AO VIVO —
+// ver comentário no topo do arquivo. Retorna null se o payload não bater
+// com nenhum dos formatos conhecidos (nesse caso, o fluxo de texto normal
+// segue tratando o payload, sem quebrar nada do que já funcionava).
+function extractButtonReply(payload: any): { buttonId: string | null; text: string | null } | null {
+  const buttonsResp = payload?.buttonsResponseMessage;
+  if (buttonsResp) {
+    return { buttonId: buttonsResp.buttonId ?? null, text: buttonsResp.message ?? null };
+  }
+  const listResp = payload?.listResponseMessage;
+  if (listResp) {
+    return { buttonId: listResp.selectedRowId ?? listResp.buttonId ?? null, text: listResp.title ?? listResp.message ?? null };
+  }
+  return null;
+}
+
 Deno.serve(async (req: Request) => {
   try {
     const payload = await req.json().catch(() => ({}));
@@ -70,7 +109,12 @@ Deno.serve(async (req: Request) => {
     if (payload.type !== "ReceivedCallback" || payload.fromMe || payload.isGroup) {
       return new Response(JSON.stringify({ ok: true, ignored: true }), { headers: { "Content-Type": "application/json" } });
     }
-    const inboundText = payload.text?.message;
+    // Clique em botão de resposta rápida (se for esse o tipo de payload) —
+    // ver extractButtonReply() e o aviso de "não validado ao vivo" no topo
+    // do arquivo. Se não for um clique de botão reconhecido, buttonReply
+    // fica null e tudo segue exatamente como antes (texto normal).
+    const buttonReply = extractButtonReply(payload);
+    const inboundText = buttonReply?.text || payload.text?.message;
     const inboundPhone = payload.phone;
     const instanceId = payload.instanceId;
     if (!inboundText || !inboundPhone || !instanceId) {
@@ -86,7 +130,12 @@ Deno.serve(async (req: Request) => {
     const { data: candidates } = await supabase.from("contacts").select("*").eq("client_id", number.client_id);
     const contact = (candidates ?? []).find((c: any) => last8(c.phone) === last8(inboundPhone));
 
-    // 1. Loga sempre — mesmo sem contato reconhecido, mesmo sem match de fluxo
+    // 1. Loga sempre — mesmo sem contato reconhecido, mesmo sem match de
+    // fluxo. Isso vale IGUAL pra clique de botão: é o que garante que o
+    // follow-up automático nunca dispara pra quem já interagiu (ver
+    // processFollowUpCampaigns em run-automations, que checa inbound_messages
+    // desde o envio da campanha-base) — independente da ação configurada
+    // pro botão, tocar em qualquer um deles já conta como resposta.
     await supabase.from("inbound_messages").insert({
       client_id: number.client_id,
       contact_id: contact?.id ?? null,
@@ -101,44 +150,8 @@ Deno.serve(async (req: Request) => {
 
     const normalizedText = normalize(inboundText);
 
-    // 2. Opt-out — pedido pra sair da lista. Prioridade sobre qualquer outro
-    // fluxo (adicionado em 2026-07-03): antes disso, quem respondia "PARAR"/
-    // "SAIR" só ficava logado em inbound_messages e continuava recebendo as
-    // próximas campanhas normalmente — provável maior gatilho real de
-    // denúncia/bloqueio de número no WhatsApp (mais do que volume puro).
-    // Marca status='Inativo' (mesmo campo que já exclui contato de
-    // sendCampaignBatch/processFollowUpCampaigns) + tag "Descadastrado" pra
-    // distinguir de uma inativação manual, e confirma pro contato.
-    const OPT_OUT_KEYWORDS = ["parar", "sair", "descadastrar", "cancelar", "remover", "nao quero mais", "pare de mandar", "stop"];
-    const isOptOut = OPT_OUT_KEYWORDS.some((k) => normalizedText === k || normalizedText.includes(k));
-    if (isOptOut && contact.status === "Ativo") {
-      const tags = new Set(contact.tags ?? []);
-      tags.add("Descadastrado");
-      await supabase.from("contacts").update({ status: "Inativo", tags: Array.from(tags) }).eq("id", contact.id);
-      await sendViaBudget(
-        number.id, number.zapi_instance_id, number.zapi_token, contact.phone,
-        "Combinado! Você não vai mais receber nossas mensagens. Se mudar de ideia, é só chamar por aqui de novo a qualquer momento.",
-      );
-      return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, opted_out: true }), { headers: { "Content-Type": "application/json" } });
-    }
-
-    // 3. Fluxo "EU QUERO" (se habilitado para este cliente)
-    const { data: flow } = await supabase.from("reply_flows").select("*").eq("client_id", number.client_id).single();
-    if (!flow || !flow.enabled) {
-      return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, reply_flow: "desabilitado" }), { headers: { "Content-Type": "application/json" } });
-    }
-
-    // trigger_keyword pode conter várias variações separadas por vírgula
-    // (ex: "eu quero, quero, eu qro, qro, bora, quero sim, pode ser") —
-    // qualquer uma delas dispara o fluxo. Pedido do usuário: reconhecer
-    // "EU QUERO" ou alguma variação, não só o texto exato.
-    const keywordVariants = (flow.trigger_keyword || "eu quero")
-      .split(",")
-      .map((k: string) => normalize(k))
-      .filter((k: string) => k.length > 0);
-    const matchesKeyword = keywordVariants.some((k: string) => normalizedText.includes(k));
-
-    // Campanha mais recente enviada a este contato (pra associar o estado da conversa)
+    // Campanha mais recente enviada a este contato (pra associar o estado da
+    // conversa, e também pra resolver a ação configurada do botão clicado).
     const { data: lastLog } = await supabase
       .from("message_logs")
       .select("campaign_id, sent_at")
@@ -148,6 +161,62 @@ Deno.serve(async (req: Request) => {
       .limit(1)
       .maybeSingle();
     const campaignId = lastLog?.campaign_id ?? null;
+
+    // 2. Ação configurada do botão clicado (campaigns.quick_replies) — tem
+    // prioridade sobre o resto do fluxo, porque é uma escolha explícita e
+    // sem ambiguidade da pessoa (diferente de tentar adivinhar por palavra-chave).
+    let forceTriggerFlow = false;
+    if (buttonReply && campaignId) {
+      const { data: sourceCampaign } = await supabase.from("campaigns").select("quick_replies").eq("id", campaignId).maybeSingle();
+      const options: Array<{ id: string; label: string; action: string }> = Array.isArray(sourceCampaign?.quick_replies) ? sourceCampaign.quick_replies : [];
+      const matched = options.find((o) => (buttonReply.buttonId && o.id === buttonReply.buttonId) || (buttonReply.text && o.label === buttonReply.text));
+
+      if (matched?.action === "opt_out" && contact.status === "Ativo") {
+        await optOutContact(contact, number);
+        return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, button_action: "opt_out" }), { headers: { "Content-Type": "application/json" } });
+      }
+      if (matched?.action === "stop_followup") {
+        // O follow-up já para sozinho por causa do insert em inbound_messages
+        // acima (ver comentário lá) — aqui só confirma pro contato.
+        await sendViaBudget(
+          number.id, number.zapi_instance_id, number.zapi_token, contact.phone,
+          "Combinado! Você não vai mais receber esse tipo de mensagem.",
+        );
+        return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, button_action: "stop_followup" }), { headers: { "Content-Type": "application/json" } });
+      }
+      if (matched?.action === "trigger_flow") forceTriggerFlow = true;
+    }
+
+    // 3. Opt-out — pedido pra sair da lista, por texto digitado (prioridade
+    // sobre o resto do fluxo de texto, adicionado em 2026-07-03): antes
+    // disso, quem respondia "PARAR"/"SAIR" só ficava logado em
+    // inbound_messages e continuava recebendo as próximas campanhas
+    // normalmente — provável maior gatilho real de denúncia/bloqueio de
+    // número no WhatsApp (mais do que volume puro).
+    const OPT_OUT_KEYWORDS = ["parar", "sair", "descadastrar", "cancelar", "remover", "nao quero mais", "pare de mandar", "stop"];
+    const isOptOut = !buttonReply && OPT_OUT_KEYWORDS.some((k) => normalizedText === k || normalizedText.includes(k));
+    if (isOptOut && contact.status === "Ativo") {
+      await optOutContact(contact, number);
+      return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, opted_out: true }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    // 4. Fluxo "EU QUERO" (se habilitado para este cliente)
+    const { data: flow } = await supabase.from("reply_flows").select("*").eq("client_id", number.client_id).single();
+    if (!flow || !flow.enabled) {
+      return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, reply_flow: "desabilitado" }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    // trigger_keyword pode conter várias variações separadas por vírgula
+    // (ex: "eu quero, quero, eu qro, qro, bora, quero sim, pode ser") —
+    // qualquer uma delas dispara o fluxo. Pedido do usuário: reconhecer
+    // "EU QUERO" ou alguma variação, não só o texto exato. Um botão com
+    // action='trigger_flow' também dispara, mesmo que o texto do botão não
+    // bata com nenhuma keyword configurada (forceTriggerFlow).
+    const keywordVariants = (flow.trigger_keyword || "eu quero")
+      .split(",")
+      .map((k: string) => normalize(k))
+      .filter((k: string) => k.length > 0);
+    const matchesKeyword = forceTriggerFlow || keywordVariants.some((k: string) => normalizedText.includes(k));
 
     const { data: state } = await supabase
       .from("conversation_states")
