@@ -57,6 +57,41 @@ function last8(phone: string): string {
   return digits.slice(-8);
 }
 
+// Mesma ressalva de run-automations/index.ts (sendButtonMessage): formato
+// NÃO validado ao vivo, segue a documentação pública da Z-API. Duplicado
+// aqui (em vez de importado) porque cada Supabase Edge Function neste
+// projeto é publicada isoladamente, sem pasta `_shared` — mesmo padrão já
+// usado no resto do arquivo (formatPhone, normalize, etc. também são
+// próprios de cada function).
+async function sendButtonMessage(
+  numberId: string,
+  instanceId: string,
+  token: string,
+  phone: string,
+  message: string,
+  buttons: Array<{ id: string; label: string }>,
+) {
+  // Mesmo orçamento diário global do número que todo o resto do sistema usa
+  // (try_consume_daily_send_budget) — uma resposta automática com botões
+  // não pode furar o limite anti-bloqueio.
+  const { data: allowed } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: numberId, p_daily_cap: DAILY_CAP });
+  if (!allowed) {
+    console.warn(`Limite diário atingido para número ${numberId}, mensagem com botões não enviada agora.`);
+    return false;
+  }
+  const res = await fetch(`${ZAPI_BASE}/${instanceId}/token/${token}/send-button-list`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Client-Token": token },
+    body: JSON.stringify({
+      phone: formatPhone(phone),
+      message,
+      buttonList: { buttons: buttons.map((b) => ({ id: b.id, label: b.label })) },
+    }),
+  });
+  if (!res.ok) console.error("Erro ao enviar mensagem com botões:", await res.text().catch(() => ""));
+  return res.ok;
+}
+
 async function sendViaBudget(numberId: string, instanceId: string, token: string, phone: string, message: string) {
   const { data: allowed } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: numberId, p_daily_cap: DAILY_CAP });
   if (!allowed) {
@@ -162,13 +197,62 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
     const campaignId = lastLog?.campaign_id ?? null;
 
-    // 2. Ação configurada do botão clicado (campaigns.quick_replies) — tem
+    // 2a. Resposta a uma sub-pergunta de "ask_choice" (2026-07-03) — se o
+    // contato já estava esperando escolher entre as sub-opções (ver
+    // conversation_states.state === "awaiting_choice" abaixo), este clique é
+    // a resposta a ISSO, não um clique novo nos botões principais da
+    // campanha. Checado ANTES do matching normal de quick_replies pra não
+    // confundir os dois níveis.
+    if (buttonReply && campaignId) {
+      const { data: choiceState } = await supabase
+        .from("conversation_states")
+        .select("*")
+        .eq("contact_id", contact.id)
+        .eq("campaign_id", campaignId)
+        .eq("state", "awaiting_choice")
+        .maybeSingle();
+
+      if (choiceState) {
+        const { data: sourceCampaign } = await supabase.from("campaigns").select("quick_replies").eq("id", campaignId).maybeSingle();
+        const topOptions: Array<{ id: string; label: string; action: string; question?: string; options?: Array<{ id: string; label: string }> }> =
+          Array.isArray(sourceCampaign?.quick_replies) ? sourceCampaign.quick_replies : [];
+        const askChoiceOption = topOptions.find((o) => o.action === "ask_choice" && Array.isArray(o.options));
+        const subMatch = askChoiceOption?.options?.find(
+          (o) => (buttonReply.buttonId && o.id === buttonReply.buttonId) || (buttonReply.text && o.label === buttonReply.text),
+        );
+
+        if (subMatch) {
+          await supabase.from("conversation_states").update({ state: "confirmed", preference: subMatch.label, updated_at: new Date().toISOString() })
+            .eq("contact_id", contact.id).eq("campaign_id", campaignId);
+
+          await sendViaBudget(
+            number.id, number.zapi_instance_id, number.zapi_token, contact.phone,
+            "Combinado! Já anotamos e alguém vai te chamar por aqui pra continuar.",
+          );
+
+          const { data: flowForNotify } = await supabase.from("reply_flows").select("notify_phone").eq("client_id", number.client_id).maybeSingle();
+          if (flowForNotify?.notify_phone) {
+            const notifyMsg = `🔔 Escolha via botão:\n${contact.name}\n${contact.phone}\nEscolheu: ${subMatch.label}`;
+            await sendViaBudget(number.id, number.zapi_instance_id, number.zapi_token, flowForNotify.notify_phone, notifyMsg);
+          } else {
+            console.warn(`reply_flows.notify_phone não configurado para client_id=${number.client_id} — notificação de escolha não enviada.`);
+          }
+          return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, button_action: "ask_choice_answered", choice: subMatch.label }), { headers: { "Content-Type": "application/json" } });
+        }
+        // Clique não bateu com nenhuma sub-opção conhecida (ex: pessoa
+        // digitou texto livre em vez de tocar num botão) — cai pro fluxo
+        // normal abaixo, sem travar a conversa.
+      }
+    }
+
+    // 2b. Ação configurada do botão clicado (campaigns.quick_replies) — tem
     // prioridade sobre o resto do fluxo, porque é uma escolha explícita e
     // sem ambiguidade da pessoa (diferente de tentar adivinhar por palavra-chave).
     let forceTriggerFlow = false;
     if (buttonReply && campaignId) {
       const { data: sourceCampaign } = await supabase.from("campaigns").select("quick_replies").eq("id", campaignId).maybeSingle();
-      const options: Array<{ id: string; label: string; action: string }> = Array.isArray(sourceCampaign?.quick_replies) ? sourceCampaign.quick_replies : [];
+      const options: Array<{ id: string; label: string; action: string; question?: string; options?: Array<{ id: string; label: string }> }> =
+        Array.isArray(sourceCampaign?.quick_replies) ? sourceCampaign.quick_replies : [];
       const matched = options.find((o) => (buttonReply.buttonId && o.id === buttonReply.buttonId) || (buttonReply.text && o.label === buttonReply.text));
 
       if (matched?.action === "opt_out" && contact.status === "Ativo") {
@@ -183,6 +267,16 @@ Deno.serve(async (req: Request) => {
           "Combinado! Você não vai mais receber esse tipo de mensagem.",
         );
         return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, button_action: "stop_followup" }), { headers: { "Content-Type": "application/json" } });
+      }
+      if (matched?.action === "ask_choice" && matched.question && Array.isArray(matched.options) && matched.options.length > 0) {
+        // Manda a 2ª pergunta com as sub-opções como botões, e marca que
+        // este contato está esperando escolher uma delas (ver 2a acima).
+        await supabase.from("conversation_states").upsert(
+          { client_id: number.client_id, contact_id: contact.id, campaign_id: campaignId, state: "awaiting_choice", updated_at: new Date().toISOString() },
+          { onConflict: "contact_id,campaign_id" },
+        );
+        await sendButtonMessage(number.id, number.zapi_instance_id, number.zapi_token, contact.phone, matched.question, matched.options);
+        return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, button_action: "ask_choice_asked" }), { headers: { "Content-Type": "application/json" } });
       }
       if (matched?.action === "trigger_flow") forceTriggerFlow = true;
     }

@@ -110,6 +110,37 @@ sozinho pra quem clicou em qualquer botão, não só no configurado como
 O texto "eu quero" digitado na mão continua funcionando exatamente igual —
 os botões são um atalho a mais, não uma substituição.
 
+### 6.1. 4ª ação: "perguntar e continuar" (`ask_choice`) — caso da Hassum
+Pedido real: no botão "Não quero a limpeza, prefiro outro serviço" da campanha
+da Hassum, em vez de só parar o follow-up, perguntar **qual** procedimento a
+pessoa prefere (com novos botões: Clareamento, Canal, Extração etc.) e, quando
+ela escolher, notificar o WhatsApp interno (`reply_flows.notify_phone`) com
+nome + telefone + escolha, pra o dentista continuar o atendimento na mão.
+
+Cada botão pode agora ter `action: "ask_choice"` + `question` (a 2ª pergunta) +
+`options` (array de `{id, label}`, as sub-opções). Fluxo:
+1. Pessoa clica no botão de nível 1 (`ask_choice`) → `zapi-webhook` manda a
+   pergunta configurada com as sub-opções como novos botões, e marca
+   `conversation_states.state = 'awaiting_choice'` pra esse contato+campanha.
+2. Pessoa clica numa sub-opção → `zapi-webhook` reconhece que este contato
+   estava esperando (`awaiting_choice`), confirma pra ela, e manda a
+   notificação pro `notify_phone` configurado na seção "Resposta automática"
+   do Histórico.
+3. Se a pessoa não clicar em nada, ou digitar texto livre em vez de tocar num
+   botão, nada trava — cai no fluxo normal (nenhuma automação nova dispara,
+   mas também não gera erro).
+
+**Mesma ressalva de antes**: `send-button-list` (`zapi-webhook` e
+`run-automations`) segue documentação pública não validada ao vivo.
+
+## Passos manuais (SQL já rodado por você em 2026-07-03)
+
+As migrações `supabase_campaign_stop_date.sql` e
+`supabase_campaign_quick_replies.sql` já foram executadas no SQL Editor —
+é por isso que salvar campanha (`stop_at`) e configurar botões
+(`quick_replies`) já funcionam. Nenhuma migração nova é necessária pro
+`ask_choice` (usa as mesmas colunas + `conversation_states`, que já existia).
+
 **⚠️ NÃO VALIDADO AO VIVO** — como nenhum número Z-API real está ligado ainda
 (Leonardo ainda vai pagar o plano pra ativar), o formato exato do payload de
 "clique em botão" que a Z-API manda pro webhook (`buttonsResponseMessage` /

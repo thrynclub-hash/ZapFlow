@@ -2,3 +2,5 @@ node_modules
 dist
 .env
 .env.local
+deno.lock
+supabase/.temp

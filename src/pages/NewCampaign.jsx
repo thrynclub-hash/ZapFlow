@@ -37,6 +37,12 @@ export default function NewCampaign() {
   //   trigger_flow    -> mesmo fluxo de quem digita a palavra-chave (pergunta turno)
   //   stop_followup   -> confirma e não manda mais o follow-up desta campanha pra essa pessoa
   //   opt_out         -> descadastra de vez (igual responder "PARAR")
+  //   ask_choice      -> manda uma 2ª pergunta com outros botões (ex: "qual
+  //                      procedimento você prefere?"); quando a pessoa
+  //                      escolhe uma das sub-opções, notifica o WhatsApp
+  //                      interno (mesmo número de reply_flows.notify_phone)
+  //                      pra continuar manualmente — pedido do Leonardo
+  //                      pro caso da Hassum (dentista vê e agenda na mão).
   const [wantsQuickReplies, setWantsQuickReplies] = useState(false)
   const [quickReplies, setQuickReplies] = useState([
     { id: 'yes', label: 'Quero sim! 🙌', action: 'trigger_flow' },
@@ -50,6 +56,21 @@ export default function NewCampaign() {
   }
   function removeQuickReply(idx) {
     setQuickReplies(list => list.filter((_, i) => i !== idx))
+  }
+  function updateSubOption(idx, subIdx, patch) {
+    setQuickReplies(list => list.map((q, i) => i === idx
+      ? { ...q, options: (q.options || []).map((o, j) => j === subIdx ? { ...o, ...patch } : o) }
+      : q))
+  }
+  function addSubOption(idx) {
+    setQuickReplies(list => list.map((q, i) => i === idx
+      ? { ...q, options: [...(q.options || []), { id: `sub_${(q.options || []).length + 1}`, label: '' }] }
+      : q))
+  }
+  function removeSubOption(idx, subIdx) {
+    setQuickReplies(list => list.map((q, i) => i === idx
+      ? { ...q, options: (q.options || []).filter((_, j) => j !== subIdx) }
+      : q))
   }
 
   // Combina data (YYYY-MM-DD) + hora (HH:MM) num Date local — os dois
@@ -124,6 +145,9 @@ export default function NewCampaign() {
     const stopDT = combineDateTime(form.stop_date, form.stop_time)
     if (stopDT && scheduledDT && stopDT <= scheduledDT) return alert('A data/hora de término precisa ser depois da data/hora de início.')
     if (wantsQuickReplies && quickReplies.some(q => !q.label.trim())) return alert('Preencha o texto de todos os botões de resposta rápida (ou remova o que não vai usar).')
+    if (wantsQuickReplies && quickReplies.some(q => q.action === 'ask_choice' && (!q.question?.trim() || !(q.options || []).length || q.options.some(o => !o.label.trim())))) {
+      return alert('Pra um botão do tipo "perguntar e continuar", preencha a pergunta e o texto de todas as sub-opções (ou remova as vazias).')
+    }
 
     setSaving(true)
 
@@ -390,8 +414,35 @@ export default function NewCampaign() {
                       <option value="trigger_flow">Continuar o fluxo normal (pergunta o turno, igual "eu quero")</option>
                       <option value="stop_followup">Parar o follow-up automático desta campanha pra essa pessoa</option>
                       <option value="opt_out">Descadastrar de vez (igual responder "PARAR")</option>
+                      <option value="ask_choice">Perguntar outra coisa com novos botões, e depois notificar pra continuar na mão</option>
                     </select>
                   </div>
+
+                  {q.action === 'ask_choice' && (
+                    <div className="space-y-2 pl-3 border-l-2 border-accent/30">
+                      <div>
+                        <label className="block text-xs text-muted font-body mb-1">Pergunta enviada (com as sub-opções abaixo como botões)</label>
+                        <input value={q.question || ''} onChange={e => updateQuickReply(idx, { question: e.target.value })}
+                          placeholder='Ex: Qual procedimento você prefere?'
+                          className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-xs text-muted font-body">Sub-opções (botões da 2ª pergunta)</label>
+                        {(q.options || []).map((o, subIdx) => (
+                          <div key={subIdx} className="flex items-center gap-2">
+                            <input value={o.label} onChange={e => updateSubOption(idx, subIdx, { label: e.target.value })}
+                              placeholder="Ex: Clareamento"
+                              className="flex-1 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
+                            <button type="button" onClick={() => removeSubOption(idx, subIdx)}
+                              className="text-muted hover:text-red-400 p-1 shrink-0" title="Remover"><X size={12} /></button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => addSubOption(idx)}
+                          className="text-xs text-accent hover:underline font-body">+ Adicionar sub-opção</button>
+                      </div>
+                      <p className="text-xs text-muted font-body">Quando a pessoa escolher uma sub-opção, o WhatsApp interno (configurado em "Resposta automática" no Histórico → notificação) recebe o nome, telefone e a escolha, pra continuar o atendimento manualmente.</p>
+                    </div>
+                  )}
                 </div>
               ))}
               <button type="button" onClick={addQuickReply}

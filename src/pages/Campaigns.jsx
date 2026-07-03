@@ -352,6 +352,21 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   function removeQuickReply(idx) {
     setQuickReplies(list => list.filter((_, i) => i !== idx))
   }
+  function updateSubOption(idx, subIdx, patch) {
+    setQuickReplies(list => list.map((q, i) => i === idx
+      ? { ...q, options: (q.options || []).map((o, j) => j === subIdx ? { ...o, ...patch } : o) }
+      : q))
+  }
+  function addSubOption(idx) {
+    setQuickReplies(list => list.map((q, i) => i === idx
+      ? { ...q, options: [...(q.options || []), { id: `sub_${(q.options || []).length + 1}`, label: '' }] }
+      : q))
+  }
+  function removeSubOption(idx, subIdx) {
+    setQuickReplies(list => list.map((q, i) => i === idx
+      ? { ...q, options: (q.options || []).filter((_, j) => j !== subIdx) }
+      : q))
+  }
   // Todas as tags REAIS em uso pelos contatos deste cliente — não só
   // "Antigo"/"Novo" fixos. Bug reportado: contato com tag "vip" (ou
   // qualquer tag livre) não aparecia como opção de público-alvo aqui.
@@ -410,6 +425,9 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   }, [])
 
   async function handleSave() {
+    if (isBase && quickReplies.some(q => q.action === 'ask_choice' && (!q.question?.trim() || !(q.options || []).length || q.options.some(o => !o.label.trim())))) {
+      return alert('Pra um botão do tipo "perguntar e continuar", preencha a pergunta e o texto de todas as sub-opções (ou remova as vazias).')
+    }
     setSaving(true)
     try {
       const scheduledDT = combineDateTime(scheduledDate, scheduledTime)
@@ -570,7 +588,34 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
                         <option value="trigger_flow">Continuar o fluxo normal (pergunta o turno, igual "eu quero")</option>
                         <option value="stop_followup">Parar o follow-up automático desta campanha pra essa pessoa</option>
                         <option value="opt_out">Descadastrar de vez (igual responder "PARAR")</option>
+                        <option value="ask_choice">Perguntar outra coisa com novos botões, e depois notificar pra continuar na mão</option>
                       </select>
+
+                      {q.action === 'ask_choice' && (
+                        <div className="space-y-2 pl-3 border-l-2 border-accent/30">
+                          <div>
+                            <label className="block text-xs text-muted font-body mb-1">Pergunta enviada (com as sub-opções abaixo como botões)</label>
+                            <input value={q.question || ''} onChange={e => updateQuickReply(idx, { question: e.target.value })}
+                              placeholder='Ex: Qual procedimento você prefere?'
+                              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="block text-xs text-muted font-body">Sub-opções (botões da 2ª pergunta)</label>
+                            {(q.options || []).map((o, subIdx) => (
+                              <div key={subIdx} className="flex items-center gap-2">
+                                <input value={o.label} onChange={e => updateSubOption(idx, subIdx, { label: e.target.value })}
+                                  placeholder="Ex: Clareamento"
+                                  className="flex-1 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent" />
+                                <button type="button" onClick={() => removeSubOption(idx, subIdx)}
+                                  className="text-muted hover:text-red-400 p-1 shrink-0" title="Remover"><X size={12} /></button>
+                              </div>
+                            ))}
+                            <button type="button" onClick={() => addSubOption(idx)}
+                              className="text-xs text-accent hover:underline font-body">+ Adicionar sub-opção</button>
+                          </div>
+                          <p className="text-xs text-muted font-body">Quando a pessoa escolher uma sub-opção, o WhatsApp interno (campo "notificação" na seção de resposta automática abaixo) recebe nome, telefone e a escolha.</p>
+                        </div>
+                      )}
                     </div>
                   ))}
                   <button type="button" onClick={addQuickReply} className="text-xs text-accent hover:underline font-body">+ Adicionar botão</button>
