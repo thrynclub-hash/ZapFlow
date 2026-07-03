@@ -1,65 +1,13 @@
-// Z-API integration helpers
-// Base URL da Z-API
-const ZAPI_BASE = 'https://api.z-api.io/instances'
-
-/**
- * Envia imagem + texto para um número via Z-API
- * @param {string} instanceId - ID da instância Z-API
- * @param {string} token - Token da instância Z-API
- * @param {string} phone - Número do destinatário (5511999999999)
- * @param {string} imageUrl - URL pública da imagem
- * @param {string} caption - Legenda da mensagem
- */
-export async function sendImageMessage(instanceId, token, phone, imageUrl, caption) {
-  const url = `${ZAPI_BASE}/${instanceId}/token/${token}/send-image`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Client-Token': token },
-    body: JSON.stringify({ phone, image: imageUrl, caption }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.message || `Z-API error: ${res.status}`)
-  }
-  return res.json()
-}
-
-/**
- * Envia texto simples para um número via Z-API
- */
-export async function sendTextMessage(instanceId, token, phone, message) {
-  const url = `${ZAPI_BASE}/${instanceId}/token/${token}/send-text`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Client-Token': token },
-    body: JSON.stringify({ phone, message }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.message || `Z-API error: ${res.status}`)
-  }
-  return res.json()
-}
-
-/**
- * Verifica status da instância Z-API
- */
-export async function checkInstanceStatus(instanceId, token) {
-  const url = `${ZAPI_BASE}/${instanceId}/token/${token}/status`
-  const res = await fetch(url, {
-    headers: { 'Client-Token': token },
-  })
-  if (!res.ok) return { connected: false }
-  const data = await res.json()
-  return { connected: data.connected, number: data.phone }
-}
-
-/**
- * Formata número para padrão Z-API (5511999999999)
- */
-export function formatPhone(phone) {
-  return phone.replace(/\D/g, '').replace(/^0/, '55')
-}
+// Helpers usados pelo front-end do cliente. Nada aqui fala com a Z-API
+// diretamente — todo envio real e checagem de status passam por Edge
+// Functions (send-message, run-automations, zapi-status), que seguram o
+// zapi_token no servidor. Removido em 2026-07-03: sendImageMessage,
+// sendTextMessage, checkInstanceStatus e formatPhone chamavam
+// api.z-api.io direto do navegador, o que exigia mandar o zapi_token pro
+// cliente — um bug de segurança real (ver Settings.jsx e
+// supabase/functions/zapi-status). Eram funções não usadas de verdade em
+// nenhum envio real (a Settings.jsx era a única que ainda chamava
+// checkInstanceStatus), então a remoção não muda nenhuma funcionalidade.
 
 /**
  * Faz sleep entre envios para evitar ban

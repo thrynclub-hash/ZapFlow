@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { checkInstanceStatus } from '../lib/zapi'
 
 // Número de WhatsApp para pedir mais capacidade (order bump) — enquanto
 // não existe checkout automático, abre uma conversa já com o pedido pronto.
@@ -52,7 +51,13 @@ export default function Settings() {
   }
 
   async function fetchNumbers() {
-    const { data } = await supabase.from('client_numbers').select('*').eq('client_id', profile.client_id)
+    // BUG DE SEGURANÇA corrigido em 2026-07-03: select('*') trazia
+    // zapi_token (credencial real da Z-API) pro navegador, e checkStatus
+    // chamava a Z-API direto do cliente com esse token — qualquer pessoa
+    // logada conseguia pegar o próprio token pelo DevTools e mandar
+    // mensagem direto pela Z-API, por fora do limite diário, opt-out,
+    // spintax e message_logs deste sistema. Ver supabase/functions/zapi-status.
+    const { data } = await supabase.from('client_numbers').select('id, client_id, label, phone, active').eq('client_id', profile.client_id)
     setNumbers(data || [])
     setLoading(false)
   }
@@ -60,8 +65,9 @@ export default function Settings() {
   async function checkStatus(number) {
     setStatuses(s => ({ ...s, [number.id]: 'checking' }))
     try {
-      const res = await checkInstanceStatus(number.zapi_instance_id, number.zapi_token)
-      setStatuses(s => ({ ...s, [number.id]: res.connected ? 'connected' : 'disconnected' }))
+      const { data, error } = await supabase.functions.invoke('zapi-status', { body: { number_id: number.id } })
+      if (error || !data?.ok) throw new Error('erro ao checar status')
+      setStatuses(s => ({ ...s, [number.id]: data.connected ? 'connected' : 'disconnected' }))
     } catch {
       setStatuses(s => ({ ...s, [number.id]: 'disconnected' }))
     }

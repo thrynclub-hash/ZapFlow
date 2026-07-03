@@ -177,6 +177,7 @@ export default function Reports() {
           </div>
         ) : (
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
@@ -201,6 +202,7 @@ export default function Reports() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>
@@ -215,6 +217,7 @@ export default function Reports() {
           </div>
         ) : (
           <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
@@ -244,6 +247,7 @@ export default function Reports() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

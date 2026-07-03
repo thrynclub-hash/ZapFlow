@@ -32,8 +32,27 @@ const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const mpAccessToken = Deno.env.get("MP_ACCESS_TOKEN")!;
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+// Verificação leve de autenticidade — mesma lógica e mesma ressalva do
+// zapi-webhook: OPCIONAL, só entra em vigor se MP_WEBHOOK_SECRET estiver
+// configurada. O risco real aqui é menor (o status final sempre vem de uma
+// consulta direta à API do Mercado Pago com o token do servidor, nunca do
+// corpo da notificação em si — um invasor só conseguiria forçar reconsultar
+// um ID de pagamento/assinatura real que ele já soubesse), mas o mesmo
+// padrão de defesa é barato de aplicar. Pra ativar: definir
+// MP_WEBHOOK_SECRET nas envs da function E atualizar a notification_url
+// cadastrada no Mercado Pago pra incluir "?token=SEU_SEGREDO".
+const MP_WEBHOOK_SECRET = Deno.env.get("MP_WEBHOOK_SECRET");
+function isAuthorizedWebhookCall(req: Request): boolean {
+  if (!MP_WEBHOOK_SECRET) return true;
+  return new URL(req.url).searchParams.get("token") === MP_WEBHOOK_SECRET;
+}
+
 Deno.serve(async (req: Request) => {
   try {
+    if (!isAuthorizedWebhookCall(req)) {
+      return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+
     const url = new URL(req.url);
     let preapprovalId = url.searchParams.get("data.id") || url.searchParams.get("id");
     let type = url.searchParams.get("type") || url.searchParams.get("topic");

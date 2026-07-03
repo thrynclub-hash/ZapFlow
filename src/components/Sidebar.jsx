@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Megaphone, Plus, Cake,
-  BarChart2, Settings, LogOut, Shield, Building2, Tag, Smartphone, Workflow, Image
+  BarChart2, Settings, LogOut, Shield, Building2, Tag, Smartphone, Workflow, Image, X
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -25,7 +25,7 @@ const adminNav = [
   { to: '/admin/pricing', icon: Tag, label: 'Precificação' },
 ]
 
-export default function Sidebar({ isAdmin }) {
+export default function Sidebar({ isAdmin, open = false, onClose = () => {} }) {
   const { profile, logout } = useAuth()
   const navigate = useNavigate()
   const nav = isAdmin ? adminNav : clientNav
@@ -36,21 +36,30 @@ export default function Sidebar({ isAdmin }) {
   }
 
   return (
-    <aside className="w-56 shrink-0 bg-card border-r border-border flex flex-col min-h-screen">
+    <>
+      {/* Fundo escuro atrás do menu, só em telas pequenas — clicar fora fecha */}
+      {open && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={onClose} />}
+
+      <aside className={`w-64 shrink-0 bg-card border-r border-border flex flex-col h-screen fixed md:static top-0 left-0 z-50 transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
       {/* Logo */}
-      <div className="px-5 py-6 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
-            <span className="text-bg font-display font-bold text-sm">Z</span>
+      <div className="px-5 py-6 border-b border-border flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
+              <span className="text-bg font-display font-bold text-sm">Z</span>
+            </div>
+            <span className="font-display font-bold text-white text-lg">ZapFlow</span>
           </div>
-          <span className="font-display font-bold text-white text-lg">ZapFlow</span>
+          {isAdmin && (
+            <div className="mt-2 flex items-center gap-1 text-accent text-xs font-body">
+              <Shield size={10} />
+              <span>Admin</span>
+            </div>
+          )}
         </div>
-        {isAdmin && (
-          <div className="mt-2 flex items-center gap-1 text-accent text-xs font-body">
-            <Shield size={10} />
-            <span>Admin</span>
-          </div>
-        )}
+        <button onClick={onClose} className="md:hidden text-muted hover:text-white p-1" aria-label="Fechar menu">
+          <X size={18} />
+        </button>
       </div>
 
       {/* Client info */}
@@ -71,6 +80,7 @@ export default function Sidebar({ isAdmin }) {
             key={to}
             to={to}
             end={to === '/admin'}
+            onClick={onClose}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-body transition-all ${
                 highlight
@@ -93,12 +103,12 @@ export default function Sidebar({ isAdmin }) {
       {profile?.role === 'admin' && (
         <div className="px-3 pb-2">
           {isAdmin ? (
-            <NavLink to="/dashboard" className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-muted hover:text-white font-body transition-all">
+            <NavLink to="/dashboard" onClick={onClose} className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-muted hover:text-white font-body transition-all">
               <LayoutDashboard size={14} />
               Ver como cliente
             </NavLink>
           ) : (
-            <NavLink to="/admin" className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-accent hover:text-white font-body transition-all">
+            <NavLink to="/admin" onClick={onClose} className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-accent hover:text-white font-body transition-all">
               <Shield size={14} />
               Painel admin
             </NavLink>
@@ -117,5 +127,6 @@ export default function Sidebar({ isAdmin }) {
         </button>
       </div>
     </aside>
+    </>
   )
 }

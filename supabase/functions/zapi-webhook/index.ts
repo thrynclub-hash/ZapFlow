@@ -38,6 +38,27 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
 const ZAPI_BASE = "https://api.z-api.io/instances";
 const DAILY_CAP = 100;
 
+// Verificação leve de autenticidade do webhook (2026-07-03) — OPCIONAL, só
+// entra em vigor se a env var ZAPI_WEBHOOK_SECRET estiver configurada. Sem
+// ela, o comportamento é IDÊNTICO a antes (qualquer chamada é aceita, como
+// sempre foi) — não quebra nada que já está funcionando.
+//
+// Por quê: sem isso, QUALQUER UM que descubra esta URL pode chamar o
+// webhook fingindo ser a Z-API — isso poderia gastar o orçamento diário de
+// envio do número (100/dia) com respostas automáticas falsas, ou forçar
+// opt-out de contatos reais. Z-API (nos planos usados aqui) não assina os
+// webhooks que manda, então um segredo na própria URL é a defesa prática
+// disponível — pra ativar, defina ZAPI_WEBHOOK_SECRET nas envs da function
+// (Supabase Dashboard > Edge Functions > zapi-webhook > Secrets) E atualize
+// a URL cadastrada no painel da Z-API ("Webhook ao receber") pra incluir
+// "?token=SEU_SEGREDO" no final — sem isso, a Z-API vai levar 401 e as
+// mensagens param de ser processadas.
+const WEBHOOK_SECRET = Deno.env.get("ZAPI_WEBHOOK_SECRET");
+function isAuthorizedWebhookCall(req: Request): boolean {
+  if (!WEBHOOK_SECRET) return true;
+  return new URL(req.url).searchParams.get("token") === WEBHOOK_SECRET;
+}
+
 function formatPhone(phone: string): string {
   return phone.replace(/\D/g, "").replace(/^0/, "55");
 }
@@ -138,6 +159,10 @@ function extractButtonReply(payload: any): { buttonId: string | null; text: stri
 
 Deno.serve(async (req: Request) => {
   try {
+    if (!isAuthorizedWebhookCall(req)) {
+      return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+
     const payload = await req.json().catch(() => ({}));
 
     // Ignora eventos que não são mensagem de texto recebida de verdade

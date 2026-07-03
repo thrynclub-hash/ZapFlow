@@ -144,6 +144,7 @@ export default function AdminClients() {
         </div>
       ) : (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
@@ -197,6 +198,7 @@ export default function AdminClients() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

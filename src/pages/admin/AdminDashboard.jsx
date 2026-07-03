@@ -54,6 +54,7 @@ export default function AdminDashboard() {
           <div className="flex justify-center py-10"><div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>
         ) : (
           <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
@@ -82,6 +83,7 @@ export default function AdminDashboard() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

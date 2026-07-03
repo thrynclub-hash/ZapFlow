@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Plus, Edit2, Smartphone, CheckCircle, XCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { checkInstanceStatus } from '../../lib/zapi'
 import Modal from '../../components/Modal'
+
+// select('*') aqui é intencional (diferente de Settings.jsx/client_numbers
+// lá) — esta é a tela de ADMIN que cadastra/edita o próprio zapi_token, o
+// formulário precisa dele pra preencher a edição. O que NÃO pode é chamar a
+// Z-API direto do navegador com esse token pra testar conexão — por isso
+// checkStatus usa a Edge Function zapi-status (ver bug de segurança
+// corrigido em 2026-07-03, mesmo descrito em Settings.jsx).
 
 export default function AdminNumbers() {
   const [numbers, setNumbers] = useState([])
@@ -75,8 +81,9 @@ export default function AdminNumbers() {
   async function checkStatus(n) {
     setStatuses(s => ({ ...s, [n.id]: 'checking' }))
     try {
-      const res = await checkInstanceStatus(n.zapi_instance_id, n.zapi_token)
-      setStatuses(s => ({ ...s, [n.id]: res.connected ? 'connected' : 'disconnected' }))
+      const { data, error } = await supabase.functions.invoke('zapi-status', { body: { number_id: n.id } })
+      if (error || !data?.ok) throw new Error('erro ao checar status')
+      setStatuses(s => ({ ...s, [n.id]: data.connected ? 'connected' : 'disconnected' }))
     } catch {
       setStatuses(s => ({ ...s, [n.id]: 'disconnected' }))
     }

@@ -2,6 +2,10 @@
 
 > Gerado via Mega Brain (Cowork) em 2026-07-03, a partir de pedidos diretos do Leonardo
 
+> **Ver também:** `RELATORIO-QA-2026-07-03.md` — auditoria de mobile/responsividade,
+> performance e segurança (a partir dos templates em `core/templates/qa-prompts/`),
+> incluindo uma correção de segurança real (token da Z-API exposto no navegador).
+
 ## O que mudou
 
 ### 1. Bug real de cobrança: add-on de contatos estava recorrente, devia ser único

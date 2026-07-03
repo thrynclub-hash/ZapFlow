@@ -625,6 +625,7 @@ export default function Contacts() {
         </div>
       ) : (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
@@ -679,6 +680,7 @@ export default function Contacts() {
               ))}
             </tbody>
           </table>
+          </div>
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-5 py-3 border-t border-border">
               <p className="text-xs text-muted font-body">
