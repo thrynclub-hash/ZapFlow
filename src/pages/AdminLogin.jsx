@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Zap, Shield } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 
 export default function AdminLogin() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [resetSent, setResetSent] = useState(false)
   const navigate = useNavigate()
   const { loginAdmin } = useAuth()
 
@@ -22,6 +24,22 @@ export default function AdminLogin() {
       setError(err.message)
     }
     setLoading(false)
+  }
+
+  // "Esqueci minha senha" — manda o email de recuperação já com o redirect
+  // certo pra este mesmo site (não depende de nenhuma configuração manual
+  // no painel do Supabase; window.location.origin resolve pra
+  // https://zap-flow-smoky.vercel.app em produção, ou localhost em dev).
+  async function handleForgotPassword() {
+    if (!email.trim()) return setError('Digite seu email acima primeiro, depois clique em "Esqueci minha senha".')
+    setLoading(true)
+    setError('')
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    setLoading(false)
+    if (err) return setError(err.message)
+    setResetSent(true)
   }
 
   return (
@@ -58,9 +76,20 @@ export default function AdminLogin() {
             </div>
           )}
 
+          {resetSent && (
+            <div className="bg-green-500/10 border border-green-500/20 rounded-lg px-4 py-3">
+              <p className="text-green-400 text-sm font-body">Email de recuperação enviado! Verifique sua caixa de entrada (e o spam) e clique no link pra definir uma senha nova.</p>
+            </div>
+          )}
+
           <button type="submit" disabled={loading}
             className="w-full bg-accent hover:bg-accent-dim text-bg font-display font-bold py-3 rounded-lg transition-colors disabled:opacity-50">
             {loading ? 'Entrando...' : 'Entrar como admin'}
+          </button>
+
+          <button type="button" onClick={handleForgotPassword} disabled={loading}
+            className="w-full text-muted hover:text-white text-xs font-body transition-colors disabled:opacity-50">
+            Esqueci minha senha
           </button>
         </form>
       </div>

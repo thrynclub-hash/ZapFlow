@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import AdminLogin from './pages/AdminLogin'
+import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import Contacts from './pages/Contacts'
 import NewCampaign from './pages/NewCampaign'
@@ -52,6 +53,7 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={isAuthenticated && !isAdmin ? <Navigate to="/dashboard" /> : <Login />} />
       <Route path="/admin/login" element={isAdmin ? <Navigate to="/admin" /> : <AdminLogin />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       {/* App cliente */}
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
