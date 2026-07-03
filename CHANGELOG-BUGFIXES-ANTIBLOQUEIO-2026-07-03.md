@@ -141,6 +141,58 @@ As migrações `supabase_campaign_stop_date.sql` e
 (`quick_replies`) já funcionam. Nenhuma migração nova é necessária pro
 `ask_choice` (usa as mesmas colunas + `conversation_states`, que já existia).
 
+### 7. Rajada de 100 mensagens em poucos minutos → espalhado ao longo do dia (`daily_end_hour`, `weekdays_only`)
+
+**Bug real encontrado (relato do Leonardo sobre a campanha da Hassum):**
+`daily_start_hour` existia na UI desde sempre, mas o motor (`run-automations`)
+**nunca checava esse campo**. Assim que uma campanha virava elegível (data
+passou / ainda não rodou hoje), ele mandava o lote inteiro — até 100
+mensagens — de uma vez, em poucos minutos (só havia um delay de 600–1500ms
+entre uma mensagem e outra). Isso é uma rajada muito mais "robótica" e
+detectável do que qualquer humano mandando mensagem aos poucos.
+
+**Correção:** nova coluna `daily_end_hour` (junto com `daily_start_hour` já
+existente) define uma janela de horário comercial (padrão 9h–18h, horário do
+Brasil, fixo em UTC-3 já que o país não observa mais horário de verão desde
+2019). O motor agora calcula, a cada execução do cron, **quantas mensagens
+já deveriam ter saído** proporcionalmente ao tempo decorrido dentro da
+janela — e manda só a diferença entre isso e o que já foi enviado hoje (teto
+de 15 por ciclo, mesmo que o cron tenha ficado parado e acumulado atraso).
+Isso vale pra campanhas **scheduled** e **daily**, não só "por dia".
+
+Nova coluna `weekdays_only` (padrão `true`) pula sábado e domingo — pra
+negócios como a Hassum que só funcionam dias úteis.
+
+Ambos os campos são editáveis por campanha, tanto na criação
+(`NewCampaign.jsx`, seção "Quando enviar") quanto depois no Histórico
+(`Campaigns.jsx`, editar campanha).
+
+**Exemplo prático:** 1050 contatos, 100/dia, janela 9h–17h, só dias úteis —
+o motor manda ~12-13 mensagens por hora dentro da janela (a cada ciclo do
+cron de 5 min, ~1 mensagem), levando ~11 dias úteis pra alcançar todo mundo
+(1050 ÷ 100 ≈ 10,5 dias), sem nunca mandar mais de ~15 de uma vez.
+
+### 8. Como usar variação de mensagem (spintax) na prática
+
+Sintaxe: `{opção 1|opção 2|opção 3}` — o sistema escolhe uma das opções
+aleatoriamente, pra cada contato, sozinho. Não precisa numerar nada além de
+separar por `|` (barra vertical) dentro de `{ }`. Exemplo real (campanha de
+limpeza dental):
+
+```
+{Oi|Olá|E aí}, {{nome}}! {Já faz um tempo desde sua última limpeza|Está na hora de agendar sua limpeza|Sua limpeza semestral está chegando}. {Quer marcar um horário?|Vamos agendar?|Topa marcar?}
+```
+
+Cada pessoa da lista recebe uma combinação diferente das opções entre chaves
+— e `{{nome}}` (sempre com chave dupla) continua virando o nome de cada
+contato, sem conflitar com a spintax (chave simples). Essa dica com exemplo
+já aparece no campo de mensagem da campanha, embaixo do textarea.
+
+## Passos manuais desta rodada
+
+1. Rodar `supabase_campaign_daily_window.sql` no SQL Editor
+2. Deploy: `npx supabase functions deploy run-automations --no-verify-jwt`
+
 **⚠️ NÃO VALIDADO AO VIVO** — como nenhum número Z-API real está ligado ainda
 (Leonardo ainda vai pagar o plano pra ativar), o formato exato do payload de
 "clique em botão" que a Z-API manda pro webhook (`buttonsResponseMessage` /

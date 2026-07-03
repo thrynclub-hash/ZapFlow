@@ -60,6 +60,18 @@ function formatPhone(phone: string): string {
   return phone.replace(/\D/g, "").replace(/^0/, "55");
 }
 
+// Brasil não observa horário de verão desde 2019 — UTC-3 fixo o ano todo,
+// então dá pra converter sem biblioteca de timezone: só subtrair 3h do
+// horário UTC do servidor (Edge Functions rodam em UTC). O Date resultante
+// tem os getters UTC (getUTCHours, getUTCDay etc.) já representando o
+// horário de parede do Brasil.
+function brazilNow(): Date {
+  return new Date(Date.now() - 3 * 60 * 60 * 1000);
+}
+function brazilDateKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
 // Variação de mensagens (spintax) — pedido do Leonardo pra não mandar a
 // MESMA copy, palavra por palavra, pra centenas/milhares de contatos (isso
 // é um dos sinais que o WhatsApp usa pra detectar spam em massa). Sintaxe:
@@ -411,8 +423,6 @@ async function logRun(runId: string, stepId: string | null, result: string, deta
 // nada rodava no servidor até esta função existir)
 // ---------------------------------------------------------------------
 async function processScheduledCampaigns() {
-  const today = new Date().toISOString().slice(0, 10);
-
   // BUG real encontrado em 2026-07-01: o frontend (NewCampaign.jsx) grava
   // status='scheduled' ao agendar, mas esse filtro só pegava
   // 'sending'/'draft' — ou seja, NENHUMA campanha agendada/diária criada
@@ -431,6 +441,23 @@ async function processScheduledCampaigns() {
 
   const nowIso = new Date().toISOString();
 
+  // BUG real encontrado em 2026-07-03 (a partir do relato do Leonardo sobre
+  // a campanha da Hassum): daily_start_hour existia na UI desde sempre, mas
+  // NUNCA era checado aqui — assim que a campanha virava elegível (data
+  // passou / ainda não rodou hoje), o motor mandava o lote inteiro (até 100
+  // mensagens) de uma vez, em poucos minutos (só o humanDelay de
+  // 600-1500ms entre uma e outra). Isso é uma rajada bem mais "robótica" do
+  // que qualquer humano mandando mensagem — pior sinal de automação em
+  // massa do que o volume em si. Agora TODA campanha (scheduled e daily)
+  // respeita uma janela de horário comercial (daily_start_hour até
+  // daily_end_hour, horário do Brasil) e espalha os envios proporcionalmente
+  // ao tempo decorrido dentro dela, em vez de despejar tudo de uma vez.
+  const brNow = brazilNow();
+  const todayBR = brazilDateKey(brNow);
+  const hourBR = brNow.getUTCHours();
+  const minuteBR = brNow.getUTCMinutes();
+  const dowBR = brNow.getUTCDay(); // 0=domingo, 6=sábado — já no horário do Brasil
+
   for (const campaign of campaigns ?? []) {
     const number = (campaign as any).client_numbers;
     if (!number) continue;
@@ -447,19 +474,43 @@ async function processScheduledCampaigns() {
       continue;
     }
 
-    if (campaign.type === "scheduled") {
-      if (!campaign.scheduled_for || campaign.scheduled_for > nowIso) continue;
-      if (campaign.status === "completed") continue;
-      await sendCampaignBatch(campaign, number, null); // sem limite diário: manda tudo pendente
-    } else if (campaign.type === "daily") {
-      if (campaign.last_daily_run === today) continue; // já rodou hoje
-      await sendCampaignBatch(campaign, number, campaign.daily_limit ?? 100);
-      await supabase.from("campaigns").update({ last_daily_run: today, daily_sent_today: 0 }).eq("id", campaign.id);
+    if (campaign.status === "completed") continue;
+    if (campaign.type === "scheduled" && (!campaign.scheduled_for || campaign.scheduled_for > nowIso)) continue;
+
+    // weekdays_only tem default true no banco — undefined (campanha antiga,
+    // criada antes desta coluna existir) também conta como "só dias úteis".
+    if (campaign.weekdays_only !== false && (dowBR === 0 || dowBR === 6)) continue;
+
+    const startH = campaign.daily_start_hour ?? 9;
+    const endH = campaign.daily_end_hour ?? 18;
+    if (hourBR < startH || hourBR >= endH) continue; // fora da janela de hoje
+
+    const dailyCap = campaign.type === "daily" ? (campaign.daily_limit ?? 100) : DAILY_CAP;
+    const isNewDay = campaign.last_daily_run !== todayBR;
+    const sentToday = isNewDay ? 0 : (campaign.daily_sent_today ?? 0);
+
+    // Quantas deveriam ter saído até AGORA, proporcional ao quanto da janela
+    // já passou hoje (ex: janela 9h-18h = 540min; às 13h30 já passou 270min
+    // = 50% => já deveria ter mandado metade do daily_cap).
+    const windowMinutes = Math.max(1, (endH - startH) * 60);
+    const elapsedMinutes = (hourBR - startH) * 60 + minuteBR;
+    const proportion = Math.min(1, Math.max(0, elapsedMinutes / windowMinutes));
+    const targetByNow = Math.ceil(proportion * dailyCap);
+    // Teto de 15 por ciclo mesmo se "devia" mais (ex: cron ficou parado um
+    // tempo) — evita rajada mesmo num cenário de atraso acumulado.
+    const due = Math.max(0, Math.min(targetByNow - sentToday, 15));
+
+    if (due === 0) {
+      if (isNewDay) await supabase.from("campaigns").update({ last_daily_run: todayBR, daily_sent_today: 0 }).eq("id", campaign.id);
+      continue;
     }
+
+    const attempted = await sendCampaignBatch(campaign, number, due);
+    await supabase.from("campaigns").update({ last_daily_run: todayBR, daily_sent_today: sentToday + attempted }).eq("id", campaign.id);
   }
 }
 
-async function sendCampaignBatch(campaign: any, number: any, limit: number | null) {
+async function sendCampaignBatch(campaign: any, number: any, limit: number | null): Promise<number> {
   // Contatos do cliente que ainda não receberam esta campanha — paginado
   // (ver fetchAllPages): acima de 1000 envios já registrados, um select sem
   // paginação perderia parte do dedup e reenviaria mensagem duplicada.
@@ -493,10 +544,12 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
   const batch = limit ? pending.slice(0, limit) : pending;
 
   let budgetExhausted = false;
+  let attempted = 0; // conta sent + error — cada um é uma chamada real à Z-API, é isso que pauta o ritmo (ver daily_sent_today em processScheduledCampaigns)
   for (const contact of batch) {
     if (budgetExhausted) break;
     const allowed = await consumeBudget(number.id);
     if (!allowed) { budgetExhausted = true; break; }
+    attempted++;
     try {
       const message = personalize(campaign.caption || "", contact.name);
       await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message, campaign.image_url, campaign.quick_replies);
@@ -522,6 +575,7 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
     // próximos dias (o dedup por message_logs já cuida de não repetir).
     await supabase.from("campaigns").update({ status: "sending" }).eq("id", campaign.id);
   }
+  return attempted;
 }
 
 // ---------------------------------------------------------------------

@@ -22,8 +22,14 @@ export default function NewCampaign() {
     // pedido explícito do Leonardo pra deixar o horário óbvio e fácil de
     // ajustar, tanto pra começar quanto pra parar o disparo.
     scheduled_date: '', scheduled_time: '09:00',
-    daily_limit: 100, daily_start_hour: 9,
+    daily_limit: 100,
     stop_date: '', stop_time: '18:00', // opcional — pra quando enviar até uma data/hora e parar (mesmo com contatos pendentes)
+    // Janela de horário comercial (2026-07-03) — vale pra AMBOS os modos
+    // (agendado e por dia), não só "por dia": o motor espalha os envios
+    // proporcionalmente ao longo dessa janela em vez de mandar tudo de
+    // rajada assim que a campanha vira elegível. Pedido real do Leonardo:
+    // "a clínica abre de seg a sexta das 9 as 17, devia dividir o intervalo".
+    daily_start_hour: 9, daily_end_hour: 18, weekdays_only: true,
   })
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
@@ -144,6 +150,7 @@ export default function NewCampaign() {
     const scheduledDT = combineDateTime(form.scheduled_date, form.scheduled_time)
     const stopDT = combineDateTime(form.stop_date, form.stop_time)
     if (stopDT && scheduledDT && stopDT <= scheduledDT) return alert('A data/hora de término precisa ser depois da data/hora de início.')
+    if (Number(form.daily_end_hour) <= Number(form.daily_start_hour)) return alert('O horário de fim da janela de envio precisa ser depois do horário de início.')
     if (wantsQuickReplies && quickReplies.some(q => !q.label.trim())) return alert('Preencha o texto de todos os botões de resposta rápida (ou remova o que não vai usar).')
     if (wantsQuickReplies && quickReplies.some(q => q.action === 'ask_choice' && (!q.question?.trim() || !(q.options || []).length || q.options.some(o => !o.label.trim())))) {
       return alert('Pra um botão do tipo "perguntar e continuar", preencha a pergunta e o texto de todas as sub-opções (ou remova as vazias).')
@@ -158,6 +165,8 @@ export default function NewCampaign() {
       total_count: contacts.length, sent_count: 0, error_count: 0,
       daily_limit: form.send_mode === 'daily' ? Math.min(DAILY_CAP, form.daily_limit) : null,
       daily_start_hour: form.daily_start_hour,
+      daily_end_hour: form.daily_end_hour,
+      weekdays_only: form.weekdays_only,
       scheduled_for: form.send_mode === 'scheduled' ? scheduledDT.toISOString() : new Date().toISOString(),
       stop_at: stopDT ? stopDT.toISOString() : null,
       quick_replies: wantsQuickReplies ? quickReplies.filter(q => q.label.trim()) : [],
@@ -339,25 +348,15 @@ export default function NewCampaign() {
 
           {form.send_mode === 'daily' && (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-muted font-body mb-1.5">Contatos por dia</label>
-                  <input type="number" min={10} max={DAILY_CAP} value={form.daily_limit} onChange={e => setForm(f => ({ ...f, daily_limit: Math.min(DAILY_CAP, Number(e.target.value)) }))}
-                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
-                </div>
-                <div>
-                  <label className="block text-xs text-muted font-body mb-1.5">Horário início</label>
-                  <select value={form.daily_start_hour} onChange={e => setForm(f => ({ ...f, daily_start_hour: Number(e.target.value) }))}
-                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors">
-                    {[8,9,10,11,14,15,16,17,18].map(h => <option key={h} value={h}>{h}:00h</option>)}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs text-muted font-body mb-1.5">Contatos por dia</label>
+                <input type="number" min={10} max={DAILY_CAP} value={form.daily_limit} onChange={e => setForm(f => ({ ...f, daily_limit: Math.min(DAILY_CAP, Number(e.target.value)) }))}
+                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
               </div>
               {contacts.length > 0 && (
                 <div className="bg-surface rounded-xl p-4 space-y-1">
                   <p className="text-xs text-muted font-body">📊 Com {form.daily_limit} contatos/dia:</p>
                   <p className="text-sm text-white font-body">→ {estimatedDays} dias para enviar para todos os {contacts.length} contatos</p>
-                  <p className="text-xs text-muted font-body">→ Início todos os dias às {form.daily_start_hour}:00h</p>
                 </div>
               )}
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
@@ -365,6 +364,38 @@ export default function NewCampaign() {
               </div>
             </div>
           )}
+
+          {/* Janela de envio — vale pros dois modos (Agendado e Por dia):
+              em vez de mandar tudo de rajada assim que a campanha vira
+              elegível, o motor espalha os envios proporcionalmente dentro
+              desta janela de horário. Pedido real do Leonardo: "a clínica
+              abre de seg a sexta das 9 as 17, devia dividir o intervalo". */}
+          <div className="pt-2 border-t border-border space-y-3">
+            <div>
+              <label className="block text-xs text-muted font-body mb-1.5">Janela de envio (espalha as mensagens ao longo do dia, em vez de mandar tudo de uma vez)</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-muted font-body mb-1">Começa às</label>
+                  <select value={form.daily_start_hour} onChange={e => setForm(f => ({ ...f, daily_start_hour: Number(e.target.value) }))}
+                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors">
+                    {Array.from({ length: 24 }, (_, h) => h).map(h => <option key={h} value={h}>{h}:00h</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted font-body mb-1">Termina às</label>
+                  <select value={form.daily_end_hour} onChange={e => setForm(f => ({ ...f, daily_end_hour: Number(e.target.value) }))}
+                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors">
+                    {Array.from({ length: 24 }, (_, h) => h).map(h => <option key={h} value={h}>{h}:00h</option>)}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-muted font-body mt-1.5">Ex: clínica que atende das 9h às 17h — as mensagens do dia saem espalhadas nesse intervalo (proporcional ao horário), não tudo de uma vez às 9h em ponto.</p>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.weekdays_only} onChange={e => setForm(f => ({ ...f, weekdays_only: e.target.checked }))} className="accent-accent" />
+              <span className="text-xs text-white font-body">Só dias úteis (pula sábado e domingo)</span>
+            </label>
+          </div>
 
           <div className="pt-2 border-t border-border">
             <label className="block text-xs text-muted font-body mb-1.5">Parar de enviar em (data e horário, opcional)</label>
@@ -524,6 +555,7 @@ export default function NewCampaign() {
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Loja</span><span className="text-white">{selectedNumber?.label || '—'}</span></div>
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Total de contatos</span><span className="text-accent font-medium">{contacts.length}</span></div>
             {form.send_mode === 'daily' && <div className="flex justify-between text-sm font-body"><span className="text-muted">Por dia</span><span className="text-white">{form.daily_limit} contatos/dia</span></div>}
+            <div className="flex justify-between text-sm font-body"><span className="text-muted">Janela de envio</span><span className="text-white">{form.daily_start_hour}h–{form.daily_end_hour}h{form.weekdays_only ? ', só dias úteis' : ', todo dia'}</span></div>
             {stopDTPreview && <div className="flex justify-between text-sm font-body"><span className="text-muted">Para de enviar em</span><span className="text-white">{stopDTPreview.toLocaleString('pt-BR')}</span></div>}
             {wantsFollowUp && <div className="flex justify-between text-sm font-body"><span className="text-muted">Follow-up</span><span className="text-white">{fuDelayDays} dia(s) depois, se não responder</span></div>}
             {wantsQuickReplies && <div className="flex justify-between text-sm font-body"><span className="text-muted">Botões de resposta</span><span className="text-white">{quickReplies.filter(q => q.label.trim()).length}</span></div>}

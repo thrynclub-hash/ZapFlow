@@ -338,7 +338,9 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   const [scheduledDate, setScheduledDate] = useState(toDatePart(campaign.scheduled_for))
   const [scheduledTime, setScheduledTime] = useState(toTimePart(campaign.scheduled_for))
   const [dailyLimit, setDailyLimit] = useState(campaign.daily_limit || 100)
-  const [dailyStartHour, setDailyStartHour] = useState(campaign.daily_start_hour || 9)
+  const [dailyStartHour, setDailyStartHour] = useState(campaign.daily_start_hour ?? 9)
+  const [dailyEndHour, setDailyEndHour] = useState(campaign.daily_end_hour ?? 18)
+  const [weekdaysOnly, setWeekdaysOnly] = useState(campaign.weekdays_only !== false)
   const [stopDate, setStopDate] = useState(toDatePart(campaign.stop_at))
   const [stopTime, setStopTime] = useState(toTimePart(campaign.stop_at))
   const [targetTags, setTargetTags] = useState(Array.isArray(campaign.target_tags) ? campaign.target_tags : [])
@@ -428,6 +430,9 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
     if (isBase && quickReplies.some(q => q.action === 'ask_choice' && (!q.question?.trim() || !(q.options || []).length || q.options.some(o => !o.label.trim())))) {
       return alert('Pra um botão do tipo "perguntar e continuar", preencha a pergunta e o texto de todas as sub-opções (ou remova as vazias).')
     }
+    if (isBase && (campaign.type === 'scheduled' || campaign.type === 'daily') && Number(dailyEndHour) <= Number(dailyStartHour)) {
+      return alert('O horário de fim da janela de envio precisa ser depois do horário de início.')
+    }
     setSaving(true)
     try {
       const scheduledDT = combineDateTime(scheduledDate, scheduledTime)
@@ -435,8 +440,13 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
       const updates = { name, caption }
       if (isBase) {
         if (campaign.type === 'scheduled') updates.scheduled_for = scheduledDT ? scheduledDT.toISOString() : null
-        if (campaign.type === 'daily') { updates.daily_limit = Number(dailyLimit); updates.daily_start_hour = Number(dailyStartHour) }
-        if (campaign.type === 'scheduled' || campaign.type === 'daily') updates.stop_at = stopDT ? stopDT.toISOString() : null
+        if (campaign.type === 'daily') updates.daily_limit = Number(dailyLimit)
+        if (campaign.type === 'scheduled' || campaign.type === 'daily') {
+          updates.stop_at = stopDT ? stopDT.toISOString() : null
+          updates.daily_start_hour = Number(dailyStartHour)
+          updates.daily_end_hour = Number(dailyEndHour)
+          updates.weekdays_only = weekdaysOnly
+        }
         // Reabrir uma campanha que já tinha parado por stop_at, se a data de término foi removida/adiada
         if (campaign.status === 'stopped' && (!stopDT || stopDT > new Date())) updates.status = 'scheduled'
         updates.target_tags = targetTags.length > 0 ? targetTags : null
@@ -532,23 +542,44 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
           )}
 
           {isBase && campaign.type === 'daily' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-muted font-body mb-1.5">Contatos por dia</label>
-                {editing ? (
-                  <input type="number" min={1} max={100} value={dailyLimit} onChange={e => setDailyLimit(e.target.value)}
-                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
-                ) : <p className="text-sm text-white font-body">{campaign.daily_limit || 100}/dia</p>}
-              </div>
-              <div>
-                <label className="block text-xs text-muted font-body mb-1.5">Horário início</label>
-                {editing ? (
-                  <select value={dailyStartHour} onChange={e => setDailyStartHour(e.target.value)}
-                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent">
-                    {[8,9,10,11,14,15,16,17,18].map(h => <option key={h} value={h}>{h}:00h</option>)}
-                  </select>
-                ) : <p className="text-sm text-white font-body">{campaign.daily_start_hour ?? 9}:00h</p>}
-              </div>
+            <div>
+              <label className="block text-xs text-muted font-body mb-1.5">Contatos por dia</label>
+              {editing ? (
+                <input type="number" min={1} max={100} value={dailyLimit} onChange={e => setDailyLimit(e.target.value)}
+                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
+              ) : <p className="text-sm text-white font-body">{campaign.daily_limit || 100}/dia</p>}
+            </div>
+          )}
+
+          {isBase && (campaign.type === 'scheduled' || campaign.type === 'daily') && (
+            <div>
+              <label className="block text-xs text-muted font-body mb-1.5">Janela de envio (espalha as mensagens ao longo do dia)</label>
+              {editing ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-muted font-body mb-1">Começa às</label>
+                      <select value={dailyStartHour} onChange={e => setDailyStartHour(e.target.value)}
+                        className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent">
+                        {Array.from({ length: 24 }, (_, h) => h).map(h => <option key={h} value={h}>{h}:00h</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted font-body mb-1">Termina às</label>
+                      <select value={dailyEndHour} onChange={e => setDailyEndHour(e.target.value)}
+                        className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent">
+                        {Array.from({ length: 24 }, (_, h) => h).map(h => <option key={h} value={h}>{h}:00h</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer mt-2">
+                    <input type="checkbox" checked={weekdaysOnly} onChange={e => setWeekdaysOnly(e.target.checked)} className="accent-accent" />
+                    <span className="text-xs text-white font-body">Só dias úteis (pula sábado e domingo)</span>
+                  </label>
+                </>
+              ) : (
+                <p className="text-sm text-white font-body">{campaign.daily_start_hour ?? 9}h–{campaign.daily_end_hour ?? 18}h{campaign.weekdays_only !== false ? ', só dias úteis' : ', todo dia'}</p>
+              )}
             </div>
           )}
 
