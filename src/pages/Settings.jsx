@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -169,6 +170,20 @@ export default function Settings() {
             className="flex items-center justify-center gap-2 border border-border text-muted hover:text-white px-4 py-2 rounded-lg text-xs font-body transition-colors">
             <MessageCircle size={12} /> Prefiro falar antes
           </a>
+        </div>
+      </div>
+
+      {/* Legal */}
+      <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+        <h3 className="font-display font-semibold text-white">Legal</h3>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm font-body text-muted">
+          <Link to="/termos" className="hover:text-white">Termos de Uso</Link>
+          <span>·</span>
+          <Link to="/privacidade" className="hover:text-white">Privacidade</Link>
+          <span>·</span>
+          <Link to="/cookies" className="hover:text-white">Cookies</Link>
+          <span>·</span>
+          <Link to="/contrato-assinatura" className="hover:text-white">Contrato de Assinatura</Link>
         </div>
       </div>
     </div>

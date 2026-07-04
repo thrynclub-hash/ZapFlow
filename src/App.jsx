@@ -11,6 +11,10 @@ import Layout from './components/Layout'
 // carregamento inicial (principal métrica de Core Web Vitals em mobile
 // com conexão mais lenta), sem mudar nenhuma funcionalidade.
 const Landing = lazy(() => import('./pages/Landing'))
+const Termos = lazy(() => import('./pages/Termos'))
+const Privacidade = lazy(() => import('./pages/Privacidade'))
+const CookiesPage = lazy(() => import('./pages/Cookies'))
+const ContratoAssinatura = lazy(() => import('./pages/ContratoAssinatura'))
 const Login = lazy(() => import('./pages/Login'))
 const AdminLogin = lazy(() => import('./pages/AdminLogin'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
@@ -61,6 +65,10 @@ export default function App() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<Landing />} />
+        <Route path="/termos" element={<Termos />} />
+        <Route path="/privacidade" element={<Privacidade />} />
+        <Route path="/cookies" element={<CookiesPage />} />
+        <Route path="/contrato-assinatura" element={<ContratoAssinatura />} />
         <Route path="/login" element={isAuthenticated && !isAdmin ? <Navigate to="/dashboard" /> : <Login />} />
         <Route path="/admin/login" element={isAdmin ? <Navigate to="/admin" /> : <AdminLogin />} />
         <Route path="/reset-password" element={<ResetPassword />} />

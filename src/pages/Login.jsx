@@ -32,7 +32,7 @@ export default function Login() {
           </div>
           <div>
             <h1 className="font-display font-bold text-white text-xl leading-none">ZapFlow</h1>
-            <p className="text-muted text-xs font-body mt-0.5">por TOQY</p>
+            <p className="text-muted text-xs font-body mt-0.5">por Marusso Produções</p>
           </div>
         </div>
 

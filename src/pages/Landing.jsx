@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Zap, CheckCircle, Send, Users, Cake, BarChart2, ArrowRight } from 'lucide-react'
+import { APP_VERSION, BUILD_ID } from '../lib/appInfo'
 
 // Pulso ambiente atrás do hero — um único momento de movimento na página
 // (não espalhado por vários lugares), evocando o envio/recebimento de
@@ -77,7 +78,7 @@ export default function Landing() {
             <Zap size={16} className="text-bg" fill="currentColor" />
           </div>
           <span className="font-display font-bold text-white">ZapFlow</span>
-          <span className="text-muted text-xs ml-1">por TOQY</span>
+          <span className="text-muted text-xs ml-1">por Marusso Produções</span>
         </div>
         <div className="flex items-center gap-4">
           <a href="#planos" className="text-muted text-sm hover:text-white transition-colors">Planos</a>
@@ -174,8 +175,19 @@ export default function Landing() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border px-8 py-6 text-center">
-        <p className="text-muted text-xs font-body">© {new Date().getFullYear()} ZapFlow by TOQY · Todos os direitos reservados</p>
+      <footer className="border-t border-border px-8 py-8 max-w-2xl mx-auto text-center">
+        <p className="font-bold text-white text-sm font-display">ZapFlow</p>
+        <p className="text-muted text-xs font-body mt-1">Um produto de Marusso Produções · Leonardo Marusso · CPF 473.503.798-54 · Indaiatuba - SP</p>
+        <p className="text-muted text-xs font-body mt-1">leonardomarusso1@gmail.com · (19) 99705-1919</p>
+        <p className="text-muted text-xs font-body mt-3 flex flex-wrap justify-center gap-x-2 gap-y-1">
+          <Link to="/termos" className="hover:text-white">Termos de Uso</Link> ·
+          <Link to="/privacidade" className="hover:text-white">Privacidade</Link> ·
+          <Link to="/cookies" className="hover:text-white">Cookies</Link> ·
+          <Link to="/contrato-assinatura" className="hover:text-white">Contrato de Assinatura</Link>
+        </p>
+        <p className="text-muted text-xs font-body mt-3">
+          © {new Date().getFullYear()} Marusso Produções. Todos os direitos reservados. · v{APP_VERSION} · build {BUILD_ID}
+        </p>
       </footer>
     </div>
   )
