@@ -4,6 +4,7 @@ import { Plus, Megaphone, CheckCircle, Clock, XCircle, Loader, Send, CalendarClo
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import Modal from '../components/Modal'
+import { generateId } from '../lib/zapi'
 
 const statusConfig = {
   draft: { label: 'Rascunho — aguardando você disparar', icon: Clock, color: 'text-muted bg-muted/10' },
@@ -349,7 +350,7 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
     setQuickReplies(list => list.map((q, i) => i === idx ? { ...q, ...patch } : q))
   }
   function addQuickReply() {
-    setQuickReplies(list => [...list, { id: `opt_${list.length + 1}`, label: '', action: 'trigger_flow' }])
+    setQuickReplies(list => [...list, { id: generateId('opt'), label: '', action: 'trigger_flow' }])
   }
   function removeQuickReply(idx) {
     setQuickReplies(list => list.filter((_, i) => i !== idx))
@@ -361,7 +362,7 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   }
   function addSubOption(idx) {
     setQuickReplies(list => list.map((q, i) => i === idx
-      ? { ...q, options: [...(q.options || []), { id: `sub_${(q.options || []).length + 1}`, label: '' }] }
+      ? { ...q, options: [...(q.options || []), { id: generateId('sub'), label: '' }] }
       : q))
   }
   function removeSubOption(idx, subIdx) {
