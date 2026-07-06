@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Upload, Image, AlertCircle, CheckCircle, X, Clock, Calendar } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { sleep } from '../lib/zapi'
+import { sleep, generateId } from '../lib/zapi'
 
 const DAILY_CAP = 100
 
@@ -71,7 +71,7 @@ export default function NewCampaign() {
     setQuickReplies(list => list.map((q, i) => i === idx ? { ...q, ...patch } : q))
   }
   function addQuickReply() {
-    setQuickReplies(list => [...list, { id: `opt_${list.length + 1}`, label: '', action: 'trigger_flow' }])
+    setQuickReplies(list => [...list, { id: generateId('opt'), label: '', action: 'trigger_flow' }])
   }
   function removeQuickReply(idx) {
     setQuickReplies(list => list.filter((_, i) => i !== idx))
@@ -83,7 +83,7 @@ export default function NewCampaign() {
   }
   function addSubOption(idx) {
     setQuickReplies(list => list.map((q, i) => i === idx
-      ? { ...q, options: [...(q.options || []), { id: `sub_${(q.options || []).length + 1}`, label: '' }] }
+      ? { ...q, options: [...(q.options || []), { id: generateId('sub'), label: '' }] }
       : q))
   }
   function removeSubOption(idx, subIdx) {
