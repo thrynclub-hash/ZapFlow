@@ -49,12 +49,17 @@ export default function Dashboard() {
     const today = new Date()
     const mm = String(today.getMonth() + 1).padStart(2, '0')
     const dd = String(today.getDate()).padStart(2, '0')
-    const { data: withBirthdate } = await supabase
-      .from('contacts')
-      .select('birth_date')
-      .eq('client_id', clientId)
-      .not('birth_date', 'is', null)
-    const birthdays = (withBirthdate || []).filter(c => { const p = c.birth_date.split('-'); return p[1] === mm && p[2] === dd }).length
+    // Paginado (2026-07-06) — mesmo teto de 1000 linhas já corrigido em
+    // Contacts.jsx/Reports.jsx/Birthdays.jsx, senão o card subestimava o
+    // total em clientes com mais de 1000 contatos com data de nascimento.
+    let withBirthdate = [], bdFrom = 0
+    while (true) {
+      const { data } = await supabase.from('contacts').select('birth_date').eq('client_id', clientId).not('birth_date', 'is', null).range(bdFrom, bdFrom + 999)
+      withBirthdate = withBirthdate.concat(data || [])
+      if (!data || data.length < 1000) break
+      bdFrom += 1000
+    }
+    const birthdays = withBirthdate.filter(c => { const p = c.birth_date.split('-'); return p[1] === mm && p[2] === dd }).length
 
     // Campanhas recentes
     const { data: recentData } = await supabase
