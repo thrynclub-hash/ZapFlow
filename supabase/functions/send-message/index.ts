@@ -73,11 +73,17 @@ async function sendTextMessage(instanceId: string, token: string, phone: string,
     headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({ phone, message }),
   });
+  const bodyText = await res.text();
+  // DEBUG temporário (2026-07-06) — diagnosticar caso real de "relatório diz
+  // enviado, mas não chega no WhatsApp" mesmo após corrigir formatPhone.
+  // Loga o telefone formatado (sem dado sensível de credencial) e o corpo
+  // completo da resposta da Z-API, sucesso ou erro.
+  console.log("send-message: resposta da Z-API (send-text)", { phone, status: res.status, body: bodyText });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
+    const err = JSON.parse(bodyText || "{}");
     throw new Error(err.message || `Z-API error: ${res.status}`);
   }
-  return res.json();
+  return JSON.parse(bodyText || "{}");
 }
 
 async function sendImageMessage(instanceId: string, token: string, phone: string, image: string, caption: string) {

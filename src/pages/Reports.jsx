@@ -5,6 +5,27 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import * as XLSX from 'xlsx'
 
+// PostgREST/Supabase devolve no máximo 1000 linhas por select, mesmo sem
+// LIMIT explícito (mesmo teto documentado e já tratado em
+// supabase/functions/run-automations/index.ts:fetchAllPages). Sem paginar,
+// message_logs/inbound_messages de um cliente com histórico grande (ex.
+// 1190 contatos × campanhas semanais) vinham truncados e o relatório de
+// "quem respondeu" ficava incompleto — além de mais lento por acumular tudo
+// de uma vez sem necessidade real de trazer mais que 1000 por chamada.
+const PAGE_SIZE = 1000
+async function fetchAllPages(buildQuery) {
+  let all = []
+  let from = 0
+  while (true) {
+    const { data, error } = await buildQuery(from, from + PAGE_SIZE - 1)
+    if (error) { console.error('Erro paginando query:', error); break }
+    all = all.concat(data || [])
+    if (!data || data.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+  return all
+}
+
 export default function Reports() {
   const { profile } = useAuth()
   const [campaigns, setCampaigns] = useState([])
@@ -22,18 +43,43 @@ export default function Reports() {
     const clientId = profile.client_id
     fetchReplyStats(clientId)
 
-    const [{ data: camps }, { count: totalContacts }] = await Promise.all([
-      supabase.from('campaigns').select('*, number:client_numbers(label)').eq('client_id', clientId).eq('status', 'completed').order('created_at', { ascending: false }),
-      supabase.from('contacts').select('id', { count: 'exact' }).eq('client_id', clientId),
+    // Bug real corrigido em 2026-07-06: só buscava campanhas com
+    // status='completed', então uma campanha "scheduled"/"daily" ainda em
+    // andamento (o normal pra quem espalha o envio ao longo do dia) nunca
+    // aparecia aqui — ficava tudo zerado até ela terminar 100%, o que pode
+    // levar dias. Agora busca TODAS (exceto rascunho, que ainda não
+    // disparou nada) e calcula enviados/erros de verdade a partir de
+    // message_logs, em vez de confiar em campaigns.sent_count/error_count
+    // (colunas que o motor de campanhas agendadas/diárias nunca atualiza —
+    // só message_logs é fonte confiável pra quem já está rodando).
+    const [camps, logs, { count: totalContacts }] = await Promise.all([
+      fetchAllPages((from, to) =>
+        supabase.from('campaigns').select('*, number:client_numbers(label)').eq('client_id', clientId).neq('status', 'draft').order('created_at', { ascending: false }).range(from, to)
+      ),
+      fetchAllPages((from, to) =>
+        supabase.from('message_logs').select('campaign_id, status').eq('client_id', clientId).range(from, to)
+      ),
+      supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('client_id', clientId),
     ])
 
-    const allCamps = camps || []
-    const totalSent = allCamps.reduce((s, c) => s + (c.sent_count || 0), 0)
+    const countsByCampaign = {}
+    for (const l of logs || []) {
+      if (!l.campaign_id) continue
+      const c = (countsByCampaign[l.campaign_id] ||= { sent: 0, error: 0 })
+      if (l.status === 'sent') c.sent++
+      else if (l.status === 'error') c.error++
+    }
+    const allCamps = (camps || []).map(c => ({
+      ...c,
+      sent_count: countsByCampaign[c.id]?.sent || 0,
+      error_count: countsByCampaign[c.id]?.error || 0,
+    }))
+    const totalSent = allCamps.reduce((s, c) => s + c.sent_count, 0)
     const totalTotal = allCamps.reduce((s, c) => s + (c.total_count || 0), 0)
 
     setTotals({
       sent: totalSent,
-      campaigns: allCamps.length,
+      campaigns: allCamps.filter(c => c.status === 'completed').length,
       contacts: totalContacts || 0,
       rate: totalTotal > 0 ? Math.round((totalSent / totalTotal) * 100) : 0,
     })
@@ -43,7 +89,7 @@ export default function Reports() {
     const byMonth = {}
     allCamps.forEach(c => {
       const key = new Date(c.created_at).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
-      byMonth[key] = (byMonth[key] || 0) + (c.sent_count || 0)
+      byMonth[key] = (byMonth[key] || 0) + c.sent_count
     })
     setMonthlyData(Object.entries(byMonth).slice(-6).map(([name, enviados]) => ({ name, enviados })))
     setLoading(false)
@@ -55,10 +101,16 @@ export default function Reports() {
   // de volta) — sem query por contato, então funciona bem mesmo com a
   // base toda.
   async function fetchReplyStats(clientId) {
-    const [{ data: allLogs }, { data: inbound }, { data: allCampaigns }] = await Promise.all([
-      supabase.from('message_logs').select('campaign_id, contact_id, status, sent_at').eq('client_id', clientId),
-      supabase.from('inbound_messages').select('contact_id, received_at').eq('client_id', clientId),
-      supabase.from('campaigns').select('id, name, type, follow_up_of').eq('client_id', clientId),
+    const [allLogs, inbound, allCampaigns] = await Promise.all([
+      fetchAllPages((from, to) =>
+        supabase.from('message_logs').select('campaign_id, contact_id, status, sent_at').eq('client_id', clientId).range(from, to)
+      ),
+      fetchAllPages((from, to) =>
+        supabase.from('inbound_messages').select('contact_id, received_at').eq('client_id', clientId).range(from, to)
+      ),
+      fetchAllPages((from, to) =>
+        supabase.from('campaigns').select('id, name, type, follow_up_of').eq('client_id', clientId).range(from, to)
+      ),
     ])
 
     const inboundByContact = {}
