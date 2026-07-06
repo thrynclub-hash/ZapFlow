@@ -31,8 +31,19 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Bug real corrigido em 2026-07-06: só tratava o prefixo "0" antigo de
+// discagem interurbana, mas contatos salvos direto como DDD+número (ex:
+// "19997051919", sem código do país — o formato mais comum de import/
+// cadastro manual) nunca ganhavam o "55". A Z-API aceita a chamada mesmo
+// assim (por isso o Histórico mostrava "enviado"), só que a mensagem não
+// roteia pra lugar nenhum de verdade. Número BR sem código do país tem
+// 10 (DDD + 8 dígitos) ou 11 (DDD + 9 dígitos) dígitos — com código do
+// país vira 12 ou 13. Só prefixa "55" quando ainda não tem.
 function formatPhone(phone: string): string {
-  return phone.replace(/\D/g, "").replace(/^0/, "55");
+  let digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("0")) digits = digits.replace(/^0+/, "");
+  if (digits.length === 10 || digits.length === 11) digits = "55" + digits;
+  return digits;
 }
 
 // Variação de mensagens (spintax) — mesma lógica de run-automations/index.ts.
