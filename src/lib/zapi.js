@@ -15,3 +15,14 @@
 export function sleep(ms) {
   return new Promise(r => setTimeout(r, ms))
 }
+
+// Bug real corrigido em 2026-07-06: os ids de botão/sub-opção de resposta
+// rápida (Campaigns.jsx e NewCampaign.jsx) eram gerados como `opt_${length+1}`
+// / `sub_${length+1}` — baseado no TAMANHO atual da lista, não num contador
+// que nunca repete. Adicionar 3 sub-opções, remover uma do meio e adicionar
+// outra gera o MESMO id de uma que já existe (aconteceu de verdade: duas
+// opções "Harmonização" e "Outro" ficaram com id "sub_3" na mesma campanha),
+// o que confunde qual foi escolhida quando o cliente responde pelo botão.
+export function generateId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+}
