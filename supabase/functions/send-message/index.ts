@@ -21,6 +21,9 @@ const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
 const ZAPI_BASE = "https://api.z-api.io/instances";
 const DAILY_CAP = 100;
+// Token de Segurança da Conta (Z-API Dashboard > Segurança) — ver nota
+// detalhada em zapi-status/index.ts. Header Client-Token != token de instância.
+const ZAPI_CLIENT_TOKEN = Deno.env.get("ZAPI_CLIENT_TOKEN") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -56,7 +59,7 @@ function resolveSpintax(text: string): string {
 async function sendTextMessage(instanceId: string, token: string, phone: string, message: string) {
   const res = await fetch(`${ZAPI_BASE}/${instanceId}/token/${token}/send-text`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Client-Token": token },
+    headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({ phone, message }),
   });
   if (!res.ok) {
@@ -69,7 +72,7 @@ async function sendTextMessage(instanceId: string, token: string, phone: string,
 async function sendImageMessage(instanceId: string, token: string, phone: string, image: string, caption: string) {
   const res = await fetch(`${ZAPI_BASE}/${instanceId}/token/${token}/send-image`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Client-Token": token },
+    headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({ phone, image, caption }),
   });
   if (!res.ok) {

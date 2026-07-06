@@ -18,6 +18,14 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 const ZAPI_BASE = "https://api.z-api.io/instances";
+// Token de Segurança da Conta (Z-API Dashboard > Segurança > "Token de
+// Segurança da Conta") — descoberto em 2026-07-06 quando o primeiro número
+// real (Clínica Hassum) foi pago/conectado: é um token de CONTA, diferente
+// do token de instância (client_numbers.zapi_token). O header Client-Token
+// precisa ser este, não o token da instância — a Z-API rejeita silenciosamente
+// (connected: false / erro genérico) quando esse recurso de segurança da
+// conta está ativado e o header vem com o valor errado.
+const ZAPI_CLIENT_TOKEN = Deno.env.get("ZAPI_CLIENT_TOKEN") ?? "";
 
 Deno.serve(async (req: Request) => {
   try {
@@ -50,7 +58,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const res = await fetch(`${ZAPI_BASE}/${number.zapi_instance_id}/token/${number.zapi_token}/status`, {
-      headers: { "Client-Token": number.zapi_token },
+      headers: { "Client-Token": ZAPI_CLIENT_TOKEN },
     });
     if (!res.ok) {
       return new Response(JSON.stringify({ ok: true, connected: false }), { headers: { "Content-Type": "application/json" } });
