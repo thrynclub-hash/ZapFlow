@@ -37,6 +37,9 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 const ZAPI_BASE = "https://api.z-api.io/instances";
 const DAILY_CAP = 100;
+// Token de Segurança da Conta (Z-API Dashboard > Segurança) — ver nota
+// detalhada em zapi-status/index.ts. Header Client-Token != token de instância.
+const ZAPI_CLIENT_TOKEN = Deno.env.get("ZAPI_CLIENT_TOKEN") ?? "";
 
 // Verificação leve de autenticidade do webhook (2026-07-03) — OPCIONAL, só
 // entra em vigor se a env var ZAPI_WEBHOOK_SECRET estiver configurada. Sem
@@ -102,7 +105,7 @@ async function sendButtonMessage(
   }
   const res = await fetch(`${ZAPI_BASE}/${instanceId}/token/${token}/send-button-list`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Client-Token": token },
+    headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({
       phone: formatPhone(phone),
       message,
@@ -121,7 +124,7 @@ async function sendViaBudget(numberId: string, instanceId: string, token: string
   }
   const res = await fetch(`${ZAPI_BASE}/${instanceId}/token/${token}/send-text`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Client-Token": token },
+    headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({ phone: formatPhone(phone), message }),
   });
   if (!res.ok) console.error("Erro ao enviar resposta automática:", await res.text().catch(() => ""));
