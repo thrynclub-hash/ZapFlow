@@ -15,6 +15,12 @@ export default function NewCampaign() {
   const navigate = useNavigate()
   const [numbers, setNumbers] = useState([])
   const [contacts, setContacts] = useState([])
+  // Público-alvo por tag (2026-07-06) — pedido do Leonardo pra poder taguear
+  // o próprio número de teste e disparar só pra essa tag, sem mandar pra
+  // toda a lista. Mesmo padrão já usado na edição de campanha (Campaigns.jsx)
+  // e já consumido no motor (run-automations faz .overlaps('tags', target_tags)).
+  const [availableTags, setAvailableTags] = useState([])
+  const [targetTags, setTargetTags] = useState([])
   const [form, setForm] = useState({
     name: '', number_id: '', caption: '',
     send_mode: 'scheduled', // 'scheduled' | 'daily'
@@ -101,7 +107,7 @@ export default function NewCampaign() {
   const clientId = profile?.client_id
 
   useEffect(() => { if (clientId) fetchNumbers() }, [clientId])
-  useEffect(() => { if (form.number_id) fetchContacts() }, [form.number_id])
+  useEffect(() => { if (form.number_id) { fetchContacts(); fetchAvailableTags() } }, [form.number_id])
 
   async function fetchNumbers() {
     // Não seleciona zapi_token/zapi_instance_id: o envio é 100% no
@@ -114,6 +120,22 @@ export default function NewCampaign() {
   async function fetchContacts() {
     const { data } = await supabase.from('contacts').select('*').eq('client_id', clientId).eq('number_id', form.number_id)
     setContacts(data || [])
+  }
+
+  // Tags em uso nos contatos desta loja — paginado porque select() sem
+  // range() trava em 1000 linhas por padrão no Supabase (mesmo bug já
+  // corrigido no Histórico).
+  async function fetchAvailableTags() {
+    let all = [], from = 0
+    while (true) {
+      const { data } = await supabase.from('contacts').select('tags').eq('client_id', clientId).eq('number_id', form.number_id).range(from, from + 999)
+      all = all.concat(data || [])
+      if (!data || data.length < 1000) break
+      from += 1000
+    }
+    const found = Array.from(new Set(all.flatMap(c => Array.isArray(c.tags) ? c.tags : [])))
+    const ordered = [...['Antigo', 'Novo'].filter(t => found.includes(t)), ...found.filter(t => t !== 'Antigo' && t !== 'Novo').sort()]
+    setAvailableTags(ordered)
   }
 
   function handleImage(e) {
@@ -143,7 +165,7 @@ export default function NewCampaign() {
   async function handleSend(e) {
     e.preventDefault()
     if (!form.number_id) return alert('Selecione uma loja.')
-    if (contacts.length === 0) return alert('Nenhum contato nesta loja.')
+    if (filteredContacts.length === 0) return alert(targetTags.length > 0 ? 'Nenhum contato com essa(s) tag(s) nesta loja.' : 'Nenhum contato nesta loja.')
     if (!form.caption.trim()) return alert('Escreva a mensagem.')
     if (form.send_mode === 'scheduled' && !form.scheduled_date) return alert('Escolha a data e hora do disparo (ou deixe como rascunho e agende depois pelo Histórico).')
     if (wantsFollowUp && !fuCaption.trim()) return alert('Escreva a mensagem do follow-up (ou desative o follow-up).')
@@ -162,7 +184,8 @@ export default function NewCampaign() {
       client_id: clientId, number_id: form.number_id,
       name: form.name || `Disparo ${new Date().toLocaleDateString('pt-BR')}`,
       caption: form.caption, type: form.send_mode, status: 'scheduled',
-      total_count: contacts.length, sent_count: 0, error_count: 0,
+      total_count: filteredContacts.length, sent_count: 0, error_count: 0,
+      target_tags: targetTags.length > 0 ? targetTags : null,
       daily_limit: form.send_mode === 'daily' ? Math.min(DAILY_CAP, form.daily_limit) : null,
       daily_start_hour: form.daily_start_hour,
       daily_end_hour: form.daily_end_hour,
@@ -225,7 +248,11 @@ export default function NewCampaign() {
   }
 
   const selectedNumber = numbers.find(n => n.id === form.number_id)
-  const estimatedDays = form.send_mode === 'daily' ? Math.ceil(contacts.length / Math.min(DAILY_CAP, form.daily_limit)) : null
+  // Contatos que realmente vão receber o disparo — se alguma tag estiver
+  // marcada, filtra pra bater exatamente com o que o run-automations vai
+  // aplicar depois (.overlaps('tags', target_tags)).
+  const filteredContacts = targetTags.length > 0 ? contacts.filter(c => Array.isArray(c.tags) && c.tags.some(t => targetTags.includes(t))) : contacts
+  const estimatedDays = form.send_mode === 'daily' ? Math.ceil(filteredContacts.length / Math.min(DAILY_CAP, form.daily_limit)) : null
   const stopDTPreview = combineDateTime(form.stop_date, form.stop_time)
 
   return (
@@ -255,7 +282,7 @@ export default function NewCampaign() {
             ) : (
               <div className="flex gap-3 flex-wrap">
                 {numbers.map(n => (
-                  <button key={n.id} type="button" onClick={() => setForm(f => ({ ...f, number_id: n.id }))}
+                  <button key={n.id} type="button" onClick={() => { setForm(f => ({ ...f, number_id: n.id })); setTargetTags([]) }}
                     className={`flex-1 border rounded-lg px-4 py-3 text-sm font-body transition-all text-left min-w-[140px] ${form.number_id === n.id ? 'border-accent bg-accent/10 text-accent' : 'border-border text-muted hover:border-muted'}`}>
                     <div className="font-medium">{n.label}</div>
                     <div className="text-xs opacity-70 mt-0.5">{n.phone || 'WPP configurado'}</div>
@@ -265,6 +292,27 @@ export default function NewCampaign() {
             )}
             {form.number_id && <p className="text-xs text-muted font-body mt-2 flex items-center gap-1"><CheckCircle size={12} className="text-green-400" /> {contacts.length} contatos nesta loja</p>}
           </div>
+
+          {form.number_id && (
+            <div className="pt-3 border-t border-border">
+              <label className="block text-xs text-muted font-body mb-2">Público-alvo (por tag do contato)</label>
+              <div className="flex flex-wrap gap-2">
+                {availableTags.length === 0 && <span className="text-xs text-muted font-body">Nenhuma tag em uso ainda nos contatos desta loja.</span>}
+                {availableTags.map(t => (
+                  <button key={t} type="button"
+                    onClick={() => setTargetTags(ts => ts.includes(t) ? ts.filter(x => x !== t) : [...ts, t])}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-body border transition-colors ${targetTags.includes(t) ? 'bg-accent text-bg border-accent font-bold' : 'border-border text-muted hover:text-white'}`}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted font-body mt-1.5">
+                {targetTags.length === 0
+                  ? 'Nenhuma tag marcada — vai pra todos os contatos ativos desta loja.'
+                  : `Vai só pra quem tem ${targetTags.length > 1 ? 'QUALQUER uma das tags marcadas' : `a tag "${targetTags[0]}"`} — ${filteredContacts.length} contato(s).`}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Criativo */}
@@ -340,8 +388,8 @@ export default function NewCampaign() {
                 <input type="time" value={form.scheduled_time} onChange={e => setForm(f => ({ ...f, scheduled_time: e.target.value }))}
                   className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
               </div>
-              {contacts.length > DAILY_CAP && (
-                <p className="text-xs text-amber-300 font-body mt-2">⚠️ {contacts.length} contatos, mas o limite é {DAILY_CAP}/dia — vai levar ~{Math.ceil(contacts.length / DAILY_CAP)} dias pra alcançar todo mundo, começando na data/horário marcados.</p>
+              {filteredContacts.length > DAILY_CAP && (
+                <p className="text-xs text-amber-300 font-body mt-2">⚠️ {filteredContacts.length} contatos, mas o limite é {DAILY_CAP}/dia — vai levar ~{Math.ceil(filteredContacts.length / DAILY_CAP)} dias pra alcançar todo mundo, começando na data/horário marcados.</p>
               )}
             </div>
           )}
@@ -353,10 +401,10 @@ export default function NewCampaign() {
                 <input type="number" min={10} max={DAILY_CAP} value={form.daily_limit} onChange={e => setForm(f => ({ ...f, daily_limit: Math.min(DAILY_CAP, Number(e.target.value)) }))}
                   className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
               </div>
-              {contacts.length > 0 && (
+              {filteredContacts.length > 0 && (
                 <div className="bg-surface rounded-xl p-4 space-y-1">
                   <p className="text-xs text-muted font-body">📊 Com {form.daily_limit} contatos/dia:</p>
-                  <p className="text-sm text-white font-body">→ {estimatedDays} dias para enviar para todos os {contacts.length} contatos</p>
+                  <p className="text-sm text-white font-body">→ {estimatedDays} dias para enviar para todos os {filteredContacts.length} contatos</p>
                 </div>
               )}
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
@@ -553,7 +601,8 @@ export default function NewCampaign() {
           <h3 className="font-display font-semibold text-white text-sm uppercase tracking-wide">6. Confirmar</h3>
           <div className="bg-surface rounded-xl p-4 space-y-2">
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Loja</span><span className="text-white">{selectedNumber?.label || '—'}</span></div>
-            <div className="flex justify-between text-sm font-body"><span className="text-muted">Total de contatos</span><span className="text-accent font-medium">{contacts.length}</span></div>
+            <div className="flex justify-between text-sm font-body"><span className="text-muted">Total de contatos</span><span className="text-accent font-medium">{filteredContacts.length}</span></div>
+            {targetTags.length > 0 && <div className="flex justify-between text-sm font-body"><span className="text-muted">Filtrado por tag</span><span className="text-white">{targetTags.join(', ')}</span></div>}
             {form.send_mode === 'daily' && <div className="flex justify-between text-sm font-body"><span className="text-muted">Por dia</span><span className="text-white">{form.daily_limit} contatos/dia</span></div>}
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Janela de envio</span><span className="text-white">{form.daily_start_hour}h–{form.daily_end_hour}h{form.weekdays_only ? ', só dias úteis' : ', todo dia'}</span></div>
             {stopDTPreview && <div className="flex justify-between text-sm font-body"><span className="text-muted">Para de enviar em</span><span className="text-white">{stopDTPreview.toLocaleString('pt-BR')}</span></div>}
@@ -561,7 +610,7 @@ export default function NewCampaign() {
             {wantsQuickReplies && <div className="flex justify-between text-sm font-body"><span className="text-muted">Botões de resposta</span><span className="text-white">{quickReplies.filter(q => q.label.trim()).length}</span></div>}
           </div>
 
-          <button type="submit" disabled={!form.number_id || contacts.length === 0 || saving}
+          <button type="submit" disabled={!form.number_id || filteredContacts.length === 0 || saving}
             className="w-full bg-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed text-bg font-display font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-colors text-base">
             {saving ? 'Salvando...' : form.send_mode === 'daily' ? <><Clock size={18} /> Agendar disparo ({estimatedDays} dias)</> : <><Calendar size={18} /> Agendar disparo</>}
           </button>
