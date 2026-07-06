@@ -502,7 +502,12 @@ async function processScheduledCampaigns() {
     const endH = campaign.daily_end_hour ?? 18;
     if (hourBR < startH || hourBR >= endH) continue; // fora da janela de hoje
 
-    const dailyCap = campaign.type === "daily" ? (campaign.daily_limit ?? 100) : DAILY_CAP;
+    // Bug real corrigido em 2026-07-06: só campanhas "daily" respeitavam
+    // daily_limit configurado — "scheduled" sempre mirava no teto de 100/dia
+    // inteiro, sem opção de escolher um ritmo mais devagar (10/20/30/50) por
+    // segurança extra. Agora ambos os tipos respeitam daily_limit, caindo
+    // pro teto de 100 se nunca foi configurado (campanha antiga).
+    const dailyCap = Math.min(DAILY_CAP, campaign.daily_limit ?? DAILY_CAP);
     const isNewDay = campaign.last_daily_run !== todayBR;
     const sentToday = isNewDay ? 0 : (campaign.daily_sent_today ?? 0);
 
