@@ -383,7 +383,15 @@ async function executeAction(run: any, step: any) {
     if (!allowed) throw new Error(`limite diário de ${DAILY_CAP} mensagens atingido para este número — tenta de novo amanhã`);
 
     const message = personalize(step.config?.message || "", contact.name);
-    await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message);
+    try {
+      await sendTextMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message);
+    } catch (e) {
+      // Ver nota completa em send-message/index.ts (mesmo bug, corrigido
+      // 2026-07-06): devolve a vaga se o envio falhar de verdade, senão
+      // tentativas falhas esgotam o limite diário sem entregar nada.
+      await supabase.rpc("refund_daily_send_budget", { p_number_id: number.id });
+      throw e;
+    }
     await humanDelay();
   } else if (step.block === "add_tag") {
     const tag = step.config?.tag;
@@ -567,6 +575,9 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
         status: "sent", sent_at: new Date().toISOString(),
       });
     } catch (e) {
+      // Ver nota completa em send-message/index.ts (mesmo bug, corrigido
+      // 2026-07-06): devolve a vaga se o envio falhar de verdade.
+      await supabase.rpc("refund_daily_send_budget", { p_number_id: number.id });
       await supabase.from("message_logs").insert({
         campaign_id: campaign.id, client_id: campaign.client_id, contact_id: contact.id,
         status: "error", error_detail: String(e),
@@ -652,6 +663,9 @@ async function processFollowUpCampaigns() {
           status: "sent", sent_at: new Date().toISOString(),
         });
       } catch (e) {
+        // Ver nota completa em send-message/index.ts (mesmo bug, corrigido
+        // 2026-07-06): devolve a vaga se o envio falhar de verdade.
+        await supabase.rpc("refund_daily_send_budget", { p_number_id: number.id });
         await supabase.from("message_logs").insert({
           campaign_id: followUp.id, client_id: followUp.client_id, contact_id: contact.id,
           status: "error", error_detail: String(e),

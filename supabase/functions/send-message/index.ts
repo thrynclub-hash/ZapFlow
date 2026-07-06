@@ -157,6 +157,12 @@ Deno.serve(async (req: Request) => {
       }
       return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     } catch (sendErr) {
+      // Bug real corrigido em 2026-07-06: a vaga do limite diário era
+      // consumida ANTES de saber se o envio ia dar certo, e nunca voltava
+      // se a Z-API recusasse depois (Client-Token errado, telefone mal
+      // formatado, etc.) — um dia inteiro de tentativas falhas conseguia
+      // esgotar o limite de 100/dia sem entregar UMA mensagem sequer.
+      await adminClient.rpc("refund_daily_send_budget", { p_number_id: number_id });
       if (contact_id) {
         await adminClient.from("message_logs").insert({
           campaign_id: campaign_id ?? null, client_id: number.client_id, contact_id,
