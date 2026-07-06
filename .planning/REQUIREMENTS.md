@@ -45,15 +45,62 @@ Requirements para a Fase 2. Cada um mapeia para exatamente uma fase do roadmap.
 
 Reconhecidos mas propositalmente adiados — não entram no roadmap desta fase.
 
+> Itens `-03` em diante nesta seção vêm de `research/HELENA-VIDEO-ANALYSIS.md` (análise de vídeo de demonstração
+> de concorrente, 2026-07-06) — confiança ALTA (visualmente confirmado em tela real de produto, não marketing).
+> Ver o documento pra detalhe completo de cada feature e frame de referência.
+
 ### CRM Avançado
 
 - **CRM-V2-01**: Funil visual Kanban (arrastar/soltar) para lifecycle de contato
-- **CRM-V2-02**: "Carteiras" — atribuição de dono de lead a atendentes
+- **CRM-V2-02**: "Carteiras" — atribuição de dono de lead a atendentes (confirmado por concorrente como campo
+  "Responsável" simples + filtro "todos" vs "meus itens" — mecanismo mais simples do que o nome sugere)
+- **CRM-V2-03**: Marcação de Ganho/Perda em card do funil, com lista de motivos de perda configurável pelo
+  cliente e marcação automática de perda após N dias configuráveis sem movimentação no card
+- **CRM-V2-04**: Campos personalizados configuráveis por funil (não um conjunto global único — cada funil/pipeline
+  tem os próprios campos)
+- **CRM-V2-05**: Dashboard de relatório do funil — taxa de conversão por etapa, ticket médio, ciclo médio de
+  venda, motivos de perda mais frequentes, conversão por atendente/vendedor (distinto do relatório de campanha
+  que o ZapFlow já tem)
+- **CRM-V2-06**: Classificação estruturada ao encerrar um atendimento (categorias tipo "Objetivo atingido" /
+  "Objetivo perdido" / "Dúvidas" / "Outro", cada uma com sub-motivos configuráveis) — alimenta o dashboard de
+  CRM-V2-05
 
 ### Atendimento
 
 - **ATND-V2-01**: Inbox multiatendente/multicanal (Instagram, Messenger)
 - **ATND-V2-02**: Agentes de IA / supervisor de conversas
+- **ATND-V2-03**: Sequências multi-etapa (generalização do follow-up único atual): cada etapa com seu próprio
+  atraso, janela de dia-da-semana/horário e métricas próprias (disparos/movimentação/engajamento); mapeia
+  naturalmente para `follow_up_delay_days`/`follow_up_of` já existente em `campaigns`, generalizado pra N etapas
+- **ATND-V2-04**: Mensagem agendada avulsa por contato (fora do fluxo de campanha em massa) — atendente escolhe
+  1 contato + data/horário pra lembrete pontual, sem precisar criar uma campanha inteira
+
+### IA / Automação Avançada
+
+- **IA-V2-01**: Agente de IA configurável por papel (Vendedor/SDR/Suporte/Onboarding/Recepcionista) + tom de
+  comunicação (presets) — refina `ATND-V2-02` com estrutura concreta confirmada por concorrente
+- **IA-V2-02**: Agente "Supervisor" — camada de roteamento que decide qual agente especializado deve assumir
+  cada conversa, em vez de um único agente genérico tratando tudo
+- **IA-V2-03**: Base de conhecimento (RAG) alimentando os agentes de IA (existência confirmada como aba
+  separada em concorrente; conteúdo/mecanismo não capturado — baixa confiança nos detalhes, alta confiança na
+  existência do conceito)
+- **IA-V2-04**: Chatbot determinístico (regras/condições/webhooks) como produto distinto do Agente de IA
+  generativo — o motor de `automations`/`automation_runs` do ZapFlow já é o embrião desse lado determinístico
+
+### Modelo de Negócio (decisão do Leonardo, não requirement de produto)
+
+- **BIZ-V2-01**: Programa de revenda white-label (parceiro rebrandeia a plataforma inteira) — confirmado como
+  padrão usado por 2 concorrentes de referência (Bolten e, agora confirmado também, o produto por trás da marca
+  "GOL"/Helena)
+
+### Not Portable (explicitamente fora de cogitação, por incompatibilidade de arquitetura)
+
+- Fluxo de campanha baseado em "modelo de mensagem" pré-aprovado — é um requisito da API oficial da Meta
+  (Cloud API), que o ZapFlow não usa (usa Z-API, WhatsApp Web não-oficial, mensagem livre). Adotar esse padrão
+  de UI seria regressão de flexibilidade, não avanço, a menos que o ZapFlow decida migrar de Z-API para a API
+  oficial da Meta — isso seria uma decisão de arquitetura/negócio muito maior, fora de qualquer fase de produto
+  atual (ver conversa registrada em sessão de 2026-07-06 sobre trade-offs de custo/aprovação de template vs.
+  risco de bloqueio).
 
 ## Out of Scope
 
