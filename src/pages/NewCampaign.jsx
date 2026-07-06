@@ -203,7 +203,7 @@ export default function NewCampaign() {
       caption: form.caption, type: form.send_mode, status: 'scheduled',
       total_count: filteredContacts.length, sent_count: 0, error_count: 0,
       target_tags: targetTags.length > 0 ? targetTags : null,
-      daily_limit: form.send_mode === 'daily' ? Math.min(DAILY_CAP, form.daily_limit) : null,
+      daily_limit: Math.min(DAILY_CAP, form.daily_limit),
       daily_start_hour: form.daily_start_hour,
       daily_end_hour: form.daily_end_hour,
       weekdays_only: form.weekdays_only,
@@ -333,7 +333,8 @@ export default function NewCampaign() {
   // marcada, filtra pra bater exatamente com o que o run-automations vai
   // aplicar depois (.overlaps('tags', target_tags)).
   const filteredContacts = targetTags.length > 0 ? contacts.filter(c => Array.isArray(c.tags) && c.tags.some(t => targetTags.includes(t))) : contacts
-  const estimatedDays = form.send_mode === 'daily' ? Math.ceil(filteredContacts.length / Math.min(DAILY_CAP, form.daily_limit)) : null
+  const estimatedDays = form.daily_limit > 0 ? Math.ceil(filteredContacts.length / Math.min(DAILY_CAP, form.daily_limit)) : 0
+  const estimatedWeeks = (estimatedDays / 7).toFixed(1)
   const stopDTPreview = combineDateTime(form.stop_date, form.stop_time)
 
   return (
@@ -469,30 +470,37 @@ export default function NewCampaign() {
                 <input type="time" value={form.scheduled_time} onChange={e => setForm(f => ({ ...f, scheduled_time: e.target.value }))}
                   className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
               </div>
-              {filteredContacts.length > DAILY_CAP && (
-                <p className="text-xs text-amber-300 font-body mt-2">⚠️ {filteredContacts.length} contatos, mas o limite é {DAILY_CAP}/dia — vai levar ~{Math.ceil(filteredContacts.length / DAILY_CAP)} dias pra alcançar todo mundo, começando na data/horário marcados.</p>
-              )}
             </div>
           )}
 
-          {form.send_mode === 'daily' && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-muted font-body mb-1.5">Contatos por dia</label>
-                <input type="number" min={10} max={DAILY_CAP} value={form.daily_limit} onChange={e => setForm(f => ({ ...f, daily_limit: Math.min(DAILY_CAP, Number(e.target.value)) }))}
-                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+          {/* Contatos por dia — vale pros dois modos (Agendado e Por dia).
+              Pedido do Leonardo: poder escolher um ritmo mais devagar que o
+              teto de 100/dia (10/20/30/50) por segurança extra, e ver quanto
+              tempo (dias/semanas) vai levar pra alcançar todo mundo. */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-muted font-body mb-1.5">Contatos por dia (segurança — máximo {DAILY_CAP})</label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {[10, 20, 30, 50, 75, 100].map(n => (
+                  <button key={n} type="button" onClick={() => setForm(f => ({ ...f, daily_limit: n }))}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-body border transition-colors ${Number(form.daily_limit) === n ? 'bg-accent text-bg border-accent font-bold' : 'border-border text-muted hover:text-white'}`}>
+                    {n}
+                  </button>
+                ))}
               </div>
-              {filteredContacts.length > 0 && (
-                <div className="bg-surface rounded-xl p-4 space-y-1">
-                  <p className="text-xs text-muted font-body">📊 Com {form.daily_limit} contatos/dia:</p>
-                  <p className="text-sm text-white font-body">→ {estimatedDays} dias para enviar para todos os {filteredContacts.length} contatos</p>
-                </div>
-              )}
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-                <p className="text-amber-200 text-xs font-body">⚠️ Trava em no máximo {DAILY_CAP} mensagens por dia por número — mesmo somando com outras campanhas ou automações ativas ao mesmo tempo — pra esse número nunca correr risco de bloqueio no WhatsApp.</p>
-              </div>
+              <input type="number" min={1} max={DAILY_CAP} value={form.daily_limit} onChange={e => setForm(f => ({ ...f, daily_limit: Math.min(DAILY_CAP, Number(e.target.value)) }))}
+                className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
             </div>
-          )}
+            {filteredContacts.length > 0 && (
+              <div className="bg-surface rounded-xl p-4 space-y-1">
+                <p className="text-xs text-muted font-body">📊 Com {form.daily_limit} contatos/dia:</p>
+                <p className="text-sm text-white font-body">→ {estimatedDays} dia(s) ({estimatedWeeks} semana(s)) para enviar para todos os {filteredContacts.length} contatos</p>
+              </div>
+            )}
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+              <p className="text-amber-200 text-xs font-body">⚠️ Trava em no máximo {DAILY_CAP} mensagens por dia por número — mesmo somando com outras campanhas ou automações ativas ao mesmo tempo — pra esse número nunca correr risco de bloqueio no WhatsApp.</p>
+            </div>
+          </div>
 
           {/* Janela de envio — vale pros dois modos (Agendado e Por dia):
               em vez de mandar tudo de rajada assim que a campanha vira
@@ -684,7 +692,7 @@ export default function NewCampaign() {
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Loja</span><span className="text-white">{selectedNumber?.label || '—'}</span></div>
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Total de contatos</span><span className="text-accent font-medium">{filteredContacts.length}</span></div>
             {targetTags.length > 0 && <div className="flex justify-between text-sm font-body"><span className="text-muted">Filtrado por tag</span><span className="text-white">{targetTags.join(', ')}</span></div>}
-            {form.send_mode === 'daily' && <div className="flex justify-between text-sm font-body"><span className="text-muted">Por dia</span><span className="text-white">{form.daily_limit} contatos/dia</span></div>}
+            <div className="flex justify-between text-sm font-body"><span className="text-muted">Por dia</span><span className="text-white">{form.daily_limit} contatos/dia (~{estimatedDays} dia(s))</span></div>
             <div className="flex justify-between text-sm font-body"><span className="text-muted">Janela de envio</span><span className="text-white">{form.daily_start_hour}h–{form.daily_end_hour}h{form.weekdays_only ? ', só dias úteis' : ', todo dia'}</span></div>
             {stopDTPreview && <div className="flex justify-between text-sm font-body"><span className="text-muted">Para de enviar em</span><span className="text-white">{stopDTPreview.toLocaleString('pt-BR')}</span></div>}
             {wantsFollowUp && <div className="flex justify-between text-sm font-body"><span className="text-muted">Follow-up</span><span className="text-white">{fuDelayDays} dia(s) depois, se não responder</span></div>}
@@ -693,7 +701,7 @@ export default function NewCampaign() {
 
           <button type="submit" disabled={!form.number_id || filteredContacts.length === 0 || saving}
             className="w-full bg-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed text-bg font-display font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-colors text-base">
-            {saving ? 'Salvando...' : form.send_mode === 'daily' ? <><Clock size={18} /> Agendar disparo ({estimatedDays} dias)</> : <><Calendar size={18} /> Agendar disparo</>}
+            {saving ? 'Salvando...' : <><Clock size={18} /> Agendar disparo (~{estimatedDays} dias)</>}
           </button>
 
           {targetTags.length > 0 && (
