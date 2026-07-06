@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Upload, Image, AlertCircle, CheckCircle, X, Clock, Calendar } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { sleep } from '../lib/zapi'
 
 const DAILY_CAP = 100
 
@@ -41,6 +42,12 @@ export default function NewCampaign() {
   const [imagePreview, setImagePreview] = useState(null)
   const [imageUrlInput, setImageUrlInput] = useState('')
   const [saving, setSaving] = useState(false)
+  // Envio de teste imediato (2026-07-06) — pedido do Leonardo pra poder
+  // taguear o próprio número e mandar na hora, sem esperar agendamento nem
+  // o ciclo do cron, pra validar a integração Z-API de ponta a ponta. Só
+  // habilitado quando alguma tag está marcada (nunca "todos os contatos"),
+  // pra não virar um jeito de furar o motor automático com a lista toda.
+  const [sendingNow, setSendingNow] = useState(false)
   const fileRef = useRef()
 
   // Botões de resposta rápida (2026-07-03) — além de escrever "eu quero" na
@@ -244,6 +251,70 @@ export default function NewCampaign() {
     alert((form.send_mode === 'scheduled'
       ? `✅ Campanha agendada! Dispara automaticamente a partir de ${scheduledDT.toLocaleString('pt-BR')}, no máximo ${DAILY_CAP}/dia.`
       : `✅ Campanha configurada! Envia até ${Math.min(DAILY_CAP, form.daily_limit)} contatos/dia a partir de amanhã.`) + fuNote)
+    navigate('/campaigns')
+  }
+
+  // Mesma substituição de {{nome}} que o run-automations faz (personalize())
+  // — precisa rodar ANTES de chamar send-message, porque lá o spintax
+  // {opção1|opção2} já roda em cima do texto, e {{nome}} sem substituir
+  // vira confusão com chave dupla.
+  function personalizeMessage(rawMessage, contactName) {
+    return (rawMessage || '').replace(/\{\{\s*nome\s*\}\}/gi, contactName || '')
+  }
+
+  // Envio de teste imediato — usa a mesma Edge Function send-message do
+  // disparo manual (token da Z-API nunca sai do servidor, mesmo limite
+  // diário de 100/dia por número vale aqui também). Só existe quando há
+  // tag marcada, de propósito, pra nunca virar um "manda pra todo mundo
+  // agora" por engano.
+  async function handleSendNow() {
+    if (!form.number_id) return alert('Selecione uma loja.')
+    if (targetTags.length === 0) return alert('O envio imediato só funciona com pelo menos uma tag marcada (é pra teste, não pra disparo em massa).')
+    if (filteredContacts.length === 0) return alert('Nenhum contato com essa(s) tag(s) nesta loja.')
+    if (!form.caption.trim()) return alert('Escreva a mensagem.')
+    if (!confirm(`Enviar AGORA (sem agendar) para ${filteredContacts.length} contato(s) com a tag "${targetTags.join(', ')}"?`)) return
+
+    setSendingNow(true)
+
+    let imageUrl = null
+    if (imageFile) {
+      try { imageUrl = await uploadImage(`teste-${Date.now()}`) }
+      catch (err) { alert('A imagem não subiu (' + err.message + ') — enviando só o texto.') }
+    } else if (imageUrlInput.trim()) {
+      imageUrl = imageUrlInput.trim()
+    }
+
+    const { data: campaign, error: campErr } = await supabase.from('campaigns').insert({
+      client_id: clientId, number_id: form.number_id,
+      name: form.name || `Teste (${targetTags.join(', ')}) - ${new Date().toLocaleDateString('pt-BR')}`,
+      caption: form.caption, type: 'scheduled', status: 'sending',
+      total_count: filteredContacts.length, sent_count: 0, error_count: 0,
+      scheduled_for: new Date().toISOString(),
+      target_tags: targetTags,
+      image_url: imageUrl,
+      quick_replies: wantsQuickReplies ? quickReplies.filter(q => q.label.trim()) : [],
+    }).select().single()
+
+    if (campErr) { alert('Erro ao criar a campanha de teste: ' + campErr.message); setSendingNow(false); return }
+
+    let sent = 0, errors = 0, capHit = false
+    for (const contact of filteredContacts) {
+      if (capHit) break
+      const message = personalizeMessage(form.caption, contact.name)
+      const { data } = await supabase.functions.invoke('send-message', {
+        body: { number_id: form.number_id, phone: contact.phone, message, image_url: imageUrl || undefined, contact_id: contact.id, campaign_id: campaign.id },
+      })
+      if (data?.error === 'LIMITE_DIARIO_ATINGIDO') { capHit = true; break }
+      if (!data?.error) sent++; else errors++
+      await sleep(3500)
+    }
+
+    await supabase.from('campaigns').update({ status: 'completed', sent_count: sent, error_count: errors }).eq('id', campaign.id)
+
+    setSendingNow(false)
+    alert(capHit
+      ? `Limite diário de ${DAILY_CAP} mensagens atingido neste número. ${sent} enviada(s) agora — o resto não foi enviado (tenta de novo amanhã).`
+      : `${sent} mensagem(ns) enviada(s) agora!${errors > 0 ? ` ${errors} com erro — confira no Histórico.` : ''}`)
     navigate('/campaigns')
   }
 
@@ -614,6 +685,14 @@ export default function NewCampaign() {
             className="w-full bg-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed text-bg font-display font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-colors text-base">
             {saving ? 'Salvando...' : form.send_mode === 'daily' ? <><Clock size={18} /> Agendar disparo ({estimatedDays} dias)</> : <><Calendar size={18} /> Agendar disparo</>}
           </button>
+
+          {targetTags.length > 0 && (
+            <button type="button" onClick={handleSendNow} disabled={filteredContacts.length === 0 || sendingNow || saving}
+              className="w-full bg-surface border border-accent/40 hover:border-accent disabled:opacity-40 disabled:cursor-not-allowed text-accent font-display font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors text-sm">
+              {sendingNow ? `Enviando... (${filteredContacts.length} contato(s))` : `⚡ Enviar agora, só pra tag "${targetTags.join(', ')}" (${filteredContacts.length} contato(s))`}
+            </button>
+          )}
+          {targetTags.length > 0 && <p className="text-xs text-muted font-body text-center -mt-2">Envio de teste imediato, sem agendar — passa pela mesma Edge Function e mesmo limite diário do disparo normal.</p>}
         </div>
       </form>
     </div>
