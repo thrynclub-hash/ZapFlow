@@ -344,7 +344,16 @@ Deno.serve(async (req: Request) => {
       .split(",")
       .map((k: string) => normalize(k))
       .filter((k: string) => k.length > 0);
-    const matchesKeyword = forceTriggerFlow || keywordVariants.some((k: string) => normalizedText.includes(k));
+    // Bug real corrigido em 2026-07-06: variantes genéricas e curtas ("ok",
+    // "isso", "com certeza") batiam via .includes() em QUALQUER mensagem que
+    // mencionasse essas palavras de passagem — um cliente escreveu uma frase
+    // longa explicando que estava em outro estado ("...estou em MtS."), que
+    // só por conter "ok" no meio disparou o fluxo de agendamento por engano.
+    // Agora só dispara se a mensagem inteira for curta (resposta direta tipo
+    // "Sim", "Bora", "Ok", "Quero sim" — até 5 palavras), não um parágrafo
+    // que por acaso contém uma dessas palavras.
+    const wordCount = normalizedText.split(/\s+/).filter(Boolean).length;
+    const matchesKeyword = forceTriggerFlow || (wordCount <= 5 && keywordVariants.some((k: string) => normalizedText.includes(k)));
 
     const { data: state } = await supabase
       .from("conversation_states")
