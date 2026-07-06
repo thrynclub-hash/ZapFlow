@@ -92,16 +92,55 @@ export default function Campaigns() {
 
   useEffect(() => { if (clientId) fetchCampaigns() }, [clientId])
 
-  function fetchCampaigns() {
+  // Paginado (mesmo teto de 1000 já corrigido em outras telas).
+  async function fetchAllPagesLocal(buildQuery) {
+    let all = [], from = 0
+    while (true) {
+      const { data } = await buildQuery(from, from + 999)
+      all = all.concat(data || [])
+      if (!data || data.length < 1000) break
+      from += 1000
+    }
+    return all
+  }
+
+  async function fetchCampaigns() {
     setLoading(true)
-    supabase.from('campaigns')
+    const { data: camps } = await supabase.from('campaigns')
       .select('*, number:client_numbers(label)')
       .eq('client_id', clientId)
       // Ordem cronológica de criação (Semana 1 -> Semana 4), e como cada
       // follow-up nasce logo depois da sua campanha-base no banco, isso
       // também os agrupa naturalmente (base primeiro, follow-up logo abaixo).
       .order('created_at', { ascending: true })
-      .then(({ data }) => { setCampaigns(data || []); setLoading(false) })
+
+    // Bug real corrigido em 2026-07-06: total_count/sent_count/error_count
+    // gravados na campanha na criação nunca são atualizados pelo motor de
+    // campanhas agendadas/diárias (run-automations só grava em message_logs)
+    // — então uma campanha em andamento sempre mostrava "0 de 0" ou dados
+    // congelados do dia da criação. Agora calcula ao vivo: enviados/erros
+    // de message_logs, e o "total alvo" contando os contatos reais que
+    // batem com número + tag da campanha (mesmo filtro que o motor usa).
+    const [logs, contacts] = await Promise.all([
+      fetchAllPagesLocal((from, to) => supabase.from('message_logs').select('campaign_id, status').eq('client_id', clientId).range(from, to)),
+      fetchAllPagesLocal((from, to) => supabase.from('contacts').select('number_id, tags, status').eq('client_id', clientId).range(from, to)),
+    ])
+    const countsByCampaign = {}
+    for (const l of logs) {
+      if (!l.campaign_id) continue
+      const c = (countsByCampaign[l.campaign_id] ||= { sent: 0, error: 0 })
+      if (l.status === 'sent') c.sent++
+      else if (l.status === 'error') c.error++
+    }
+    const enriched = (camps || []).map(c => {
+      const targetCount = contacts.filter(ct =>
+        ct.number_id === c.number_id && ct.status === 'Ativo' &&
+        (!c.target_tags?.length || (Array.isArray(ct.tags) && ct.tags.some(t => c.target_tags.includes(t)))),
+      ).length
+      return { ...c, sent_count: countsByCampaign[c.id]?.sent || 0, error_count: countsByCampaign[c.id]?.error || 0, total_count: targetCount }
+    })
+    setCampaigns(enriched)
+    setLoading(false)
   }
 
   // Só campanha-base em rascunho, sem data marcada, ganha os controles de
@@ -171,11 +210,16 @@ export default function Campaigns() {
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <p className="text-white font-body font-medium">{c.name || 'Disparo'}{c.follow_up_of && <span className="text-muted text-xs font-body ml-2">(follow-up automático)</span>}</p>
-                        <p className="text-muted text-xs font-body mt-0.5">{c.number?.label} · {new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                        <p className="text-muted text-xs font-body mt-0.5">
+                          {c.number?.label} · {new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          {/* Mostra a tag-alvo direto no card — pedido pra conferir sem
+                              precisar abrir Editar ("como sei que é só pra essa tag mesmo?") */}
+                          {c.target_tags?.length > 0 && <span className="text-accent"> · tag: {c.target_tags.join(', ')}</span>}
+                        </p>
                       </div>
                       <span className={`px-2.5 py-1 rounded-full text-xs font-body shrink-0 ${st.color}`}>{st.label}</span>
                     </div>
-                    {c.status !== 'draft' && c.total_count > 0 && (
+                    {c.status !== 'draft' && (
                       <div className="mt-3 space-y-1">
                         <div className="flex justify-between text-xs font-body">
                           <span className="text-green-400">{c.sent_count} enviados</span>
@@ -374,6 +418,11 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   // "Antigo"/"Novo" fixos. Bug reportado: contato com tag "vip" (ou
   // qualquer tag livre) não aparecia como opção de público-alvo aqui.
   const [availableTags, setAvailableTags] = useState([])
+  // Contatos ativos desta loja (number_id da campanha) — usado pra calcular
+  // ao vivo quantos dias/semanas o limite diário escolhido vai levar,
+  // reagindo em tempo real a mudança de tag ou de limite (pedido do
+  // Leonardo: "mostrar quanto tempo vou precisar deixar rodando").
+  const [numberContacts, setNumberContacts] = useState([])
   const [saving, setSaving] = useState(false)
 
   // Follow-up ligado a esta campanha-base (se houver)
@@ -400,17 +449,21 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
         setLoadingFu(false)
       })
     }
-    // Busca TODAS as tags em uso (paginado — cliente pode ter mais de 1000
-    // contatos, ver bug do teto de 1000 corrigido em Contacts.jsx).
+    // Busca TODOS os contatos ativos desta loja (paginado — cliente pode ter
+    // mais de 1000 contatos, ver bug do teto de 1000 corrigido em
+    // Contacts.jsx) — usado tanto pra listar as tags disponíveis quanto pra
+    // calcular ao vivo a estimativa de dias/semanas do limite diário.
     ;(async () => {
       let all = [], from = 0
       while (true) {
-        const { data } = await supabase.from('contacts').select('tags').eq('client_id', clientId).range(from, from + 999)
+        const { data } = await supabase.from('contacts').select('tags, status').eq('client_id', clientId).eq('number_id', campaign.number_id).range(from, from + 999)
         all = all.concat(data || [])
         if (!data || data.length < 1000) break
         from += 1000
       }
-      const found = Array.from(new Set(all.flatMap(c => Array.isArray(c.tags) ? c.tags : [])))
+      const ativos = all.filter(c => c.status === 'Ativo')
+      setNumberContacts(ativos)
+      const found = Array.from(new Set(ativos.flatMap(c => Array.isArray(c.tags) ? c.tags : [])))
       const ordered = [...['Antigo', 'Novo'].filter(t => found.includes(t)), ...found.filter(t => t !== 'Antigo' && t !== 'Novo').sort()]
       setAvailableTags(ordered)
     })()
@@ -441,8 +494,8 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
       const updates = { name, caption }
       if (isBase) {
         if (campaign.type === 'scheduled') updates.scheduled_for = scheduledDT ? scheduledDT.toISOString() : null
-        if (campaign.type === 'daily') updates.daily_limit = Number(dailyLimit)
         if (campaign.type === 'scheduled' || campaign.type === 'daily') {
+          updates.daily_limit = Math.min(100, Number(dailyLimit) || 100)
           updates.stop_at = stopDT ? stopDT.toISOString() : null
           updates.daily_start_hour = Number(dailyStartHour)
           updates.daily_end_hour = Number(dailyEndHour)
@@ -486,6 +539,15 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
       setSaving(false)
     }
   }
+
+  // Contatos que essa campanha realmente alcança com a tag marcada agora —
+  // reativo (recalcula a cada toggle de tag), usado na estimativa de
+  // dias/semanas do limite diário escolhido.
+  const filteredContacts = targetTags.length > 0
+    ? numberContacts.filter(c => Array.isArray(c.tags) && c.tags.some(t => targetTags.includes(t)))
+    : numberContacts
+  const estimatedDays = Number(dailyLimit) > 0 ? Math.ceil(filteredContacts.length / Number(dailyLimit)) : 0
+  const estimatedWeeks = (estimatedDays / 7).toFixed(1)
 
   return (
     <Modal>
@@ -542,13 +604,30 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
             </div>
           )}
 
-          {isBase && campaign.type === 'daily' && (
+          {isBase && (campaign.type === 'scheduled' || campaign.type === 'daily') && (
             <div>
-              <label className="block text-xs text-muted font-body mb-1.5">Contatos por dia</label>
+              <label className="block text-xs text-muted font-body mb-1.5">Contatos por dia (segurança — máximo 100)</label>
               {editing ? (
-                <input type="number" min={1} max={100} value={dailyLimit} onChange={e => setDailyLimit(e.target.value)}
-                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
-              ) : <p className="text-sm text-white font-body">{campaign.daily_limit || 100}/dia</p>}
+                <>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {[10, 20, 30, 50, 75, 100].map(n => (
+                      <button key={n} type="button" onClick={() => setDailyLimit(n)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-body border transition-colors ${Number(dailyLimit) === n ? 'bg-accent text-bg border-accent font-bold' : 'border-border text-muted hover:text-white'}`}>
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  <input type="number" min={1} max={100} value={dailyLimit} onChange={e => setDailyLimit(Math.min(100, Number(e.target.value)))}
+                    className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
+                  <p className="text-xs text-muted font-body mt-1.5">
+                    {filteredContacts.length > 0
+                      ? `Com ${dailyLimit}/dia: ~${estimatedDays} dia(s) (${estimatedWeeks} semana(s)) pra alcançar os ${filteredContacts.length} contato(s) alvo.`
+                      : 'Nenhum contato ativo bate com a tag marcada nesta loja ainda.'}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-white font-body">{campaign.daily_limit || 100}/dia</p>
+              )}
             </div>
           )}
 
