@@ -40,25 +40,37 @@ export default function Birthdays() {
     setLoading(false)
   }
 
+  // Paginado (2026-07-06) — mesmo bug do teto de 1000 linhas já corrigido em
+  // Contacts.jsx/Reports.jsx: sem isso, cliente com mais de 1000 contatos com
+  // data de nascimento perdia silenciosamente quem caísse depois da linha 1000.
+  async function fetchContactsWithBirthdate() {
+    let all = [], from = 0
+    while (true) {
+      const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).not('birth_date', 'is', null).range(from, from + 999)
+      all = all.concat(data || [])
+      if (!data || data.length < 1000) break
+      from += 1000
+    }
+    return all
+  }
+
   async function fetchBirthdays() {
     const today = new Date()
+    const data = await fetchContactsWithBirthdate()
     let list = []
     if (tab === 'today') {
       const mm = String(today.getMonth() + 1).padStart(2, '0')
       const dd = String(today.getDate()).padStart(2, '0')
-      const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).not('birth_date', 'is', null)
-      list = (data || []).filter(c => { const p = c.birth_date.split('-'); return p[1] === mm && p[2] === dd })
+      list = data.filter(c => { const p = c.birth_date.split('-'); return p[1] === mm && p[2] === dd })
     } else if (tab === 'week') {
       const days = Array.from({ length: 7 }, (_, i) => {
         const d = new Date(today); d.setDate(d.getDate() + i)
         return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       })
-      const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).not('birth_date', 'is', null)
-      list = (data || []).filter(c => { if (!c.birth_date) return false; const p = c.birth_date.split('-'); return days.includes(`${p[1]}-${p[2]}`) })
+      list = data.filter(c => { if (!c.birth_date) return false; const p = c.birth_date.split('-'); return days.includes(`${p[1]}-${p[2]}`) })
     } else {
       const month = String(today.getMonth() + 1).padStart(2, '0')
-      const { data } = await supabase.from('contacts').select('*, number:client_numbers(label)').eq('client_id', clientId).not('birth_date', 'is', null)
-      list = (data || []).filter(c => c.birth_date.split('-')[1] === month)
+      list = data.filter(c => c.birth_date.split('-')[1] === month)
     }
     setContacts(list)
     // Por padrão todo mundo vem selecionado (comportamento igual ao antigo

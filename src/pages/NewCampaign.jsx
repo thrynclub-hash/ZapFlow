@@ -124,9 +124,19 @@ export default function NewCampaign() {
     setNumbers(data || [])
   }
 
+  // Paginado (2026-07-06) — mesmo bug do teto de 1000 linhas já corrigido
+  // no Histórico (Reports.jsx): sem isso, cliente com mais de 1000 contatos
+  // nunca via os últimos (nem no total_count, nem no filtro por tag, nem
+  // em quem realmente recebe no "Enviar agora").
   async function fetchContacts() {
-    const { data } = await supabase.from('contacts').select('*').eq('client_id', clientId).eq('number_id', form.number_id)
-    setContacts(data || [])
+    let all = [], from = 0
+    while (true) {
+      const { data } = await supabase.from('contacts').select('*').eq('client_id', clientId).eq('number_id', form.number_id).range(from, from + 999)
+      all = all.concat(data || [])
+      if (!data || data.length < 1000) break
+      from += 1000
+    }
+    setContacts(all)
   }
 
   // Tags em uso nos contatos desta loja — paginado porque select() sem
