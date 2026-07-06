@@ -59,8 +59,14 @@ async function consumeBudget(numberId: string): Promise<boolean> {
   return !!allowed;
 }
 
+// Ver nota completa em send-message/index.ts (mesmo bug, corrigido 2026-07-06):
+// número BR sem código do país (10 ou 11 dígitos) precisa do "55" na frente,
+// não só quando começa com "0".
 function formatPhone(phone: string): string {
-  return phone.replace(/\D/g, "").replace(/^0/, "55");
+  let digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("0")) digits = digits.replace(/^0+/, "");
+  if (digits.length === 10 || digits.length === 11) digits = "55" + digits;
+  return digits;
 }
 
 // Brasil não observa horário de verão desde 2019 — UTC-3 fixo o ano todo,
