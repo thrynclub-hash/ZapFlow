@@ -27,7 +27,19 @@ const ZAPI_BASE = "https://api.z-api.io/instances";
 // conta está ativado e o header vem com o valor errado.
 const ZAPI_CLIENT_TOKEN = Deno.env.get("ZAPI_CLIENT_TOKEN") ?? "";
 
+// CORS — descoberto faltando em 2026-07-06: sem isso, o navegador bloqueia a
+// chamada real já no preflight OPTIONS (toda invocação aparecia nos logs como
+// "OPTIONS | 400", e a requisição POST de verdade nunca chegava a ser enviada
+// pelo navegador — por isso continuava "offline" mesmo após corrigir o
+// Client-Token). Mesmo padrão já usado em send-message/index.ts.
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     // Client com a ANON key + o JWT de quem chamou no Authorization — é
     // esse JWT (não a apikey) que o PostgREST usa pra aplicar RLS, então
@@ -41,7 +53,7 @@ Deno.serve(async (req: Request) => {
 
     const { number_id } = await req.json().catch(() => ({}));
     if (!number_id) {
-      return new Response(JSON.stringify({ ok: false, error: "number_id obrigatório" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: "number_id obrigatório" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const { data: number, error } = await supabaseAsUser
@@ -51,23 +63,34 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (error || !number) {
-      return new Response(JSON.stringify({ ok: false, error: "número não encontrado ou sem permissão" }), { status: 404, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: "número não encontrado ou sem permissão" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (!number.zapi_instance_id || !number.zapi_token) {
-      return new Response(JSON.stringify({ ok: true, connected: false, reason: "não configurado" }), { headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, connected: false, reason: "não configurado" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const res = await fetch(`${ZAPI_BASE}/${number.zapi_instance_id}/token/${number.zapi_token}/status`, {
       headers: { "Client-Token": ZAPI_CLIENT_TOKEN },
     });
     if (!res.ok) {
-      return new Response(JSON.stringify({ ok: true, connected: false }), { headers: { "Content-Type": "application/json" } });
+      const bodyText = await res.text().catch(() => "");
+      // DEBUG temporário (2026-07-06) — diagnosticar por que segue "offline"
+      // depois da correção do Client-Token. Ver logs desta function no
+      // Dashboard do Supabase. Não loga o token, só status/corpo da resposta.
+      console.error("zapi-status: Z-API respondeu não-ok", {
+        status: res.status,
+        statusText: res.statusText,
+        body: bodyText,
+        hasClientToken: Boolean(ZAPI_CLIENT_TOKEN),
+        clientTokenLength: ZAPI_CLIENT_TOKEN.length,
+      });
+      return new Response(JSON.stringify({ ok: true, connected: false }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     const data = await res.json();
     // Só devolve o que a tela precisa — nunca o token de volta pro navegador.
-    return new Response(JSON.stringify({ ok: true, connected: !!data.connected, phone: data.phone }), { headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, connected: !!data.connected, phone: data.phone }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     console.error("Erro em zapi-status:", e);
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
