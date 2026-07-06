@@ -74,34 +74,34 @@ Preenchido durante a criação do roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LNK-01 | TBD | Pending |
-| LNK-02 | TBD | Pending |
-| LNK-03 | TBD | Pending |
-| LNK-04 | TBD | Pending |
-| LNK-05 | TBD | Pending |
-| CONS-01 | TBD | Pending |
-| CONS-02 | TBD | Pending |
-| CONS-03 | TBD | Pending |
-| CONS-04 | TBD | Pending |
-| CONS-05 | TBD | Pending |
-| SUB-01 | TBD | Pending |
-| SUB-02 | TBD | Pending |
-| SUB-03 | TBD | Pending |
-| SUB-04 | TBD | Pending |
-| CRM-01 | TBD | Pending |
-| CRM-02 | TBD | Pending |
-| CRM-03 | TBD | Pending |
-| CRM-04 | TBD | Pending |
-| CRM-05 | TBD | Pending |
-| CRM-06 | TBD | Pending |
-| CRM-07 | TBD | Pending |
-| CRM-08 | TBD | Pending |
+| LNK-01 | Phase 2 (Import de Leads do LinkedIn) | Mapped |
+| LNK-02 | Phase 2 (Import de Leads do LinkedIn) | Mapped |
+| LNK-03 | Phase 2 (Import de Leads do LinkedIn) | Mapped |
+| LNK-04 | Phase 2 (Import de Leads do LinkedIn) | Mapped |
+| LNK-05 | Phase 2 (Import de Leads do LinkedIn) | Mapped |
+| CONS-01 | Phase 3 (Painel de Consumo por Plano) | Mapped |
+| CONS-02 | Phase 3 (Painel de Consumo por Plano) | Mapped |
+| CONS-03 | Phase 3 (Painel de Consumo por Plano) | Mapped |
+| CONS-04 | Phase 3 (Painel de Consumo por Plano) | Mapped |
+| CONS-05 | Phase 3 (Painel de Consumo por Plano) | Mapped |
+| SUB-01 | Phase 4 (Status de Assinatura) | Mapped |
+| SUB-02 | Phase 4 (Status de Assinatura) | Mapped |
+| SUB-03 | Phase 4 (Status de Assinatura) | Mapped |
+| SUB-04 | Phase 4 (Status de Assinatura) | Mapped |
+| CRM-01 | Phase 5 (Lifecycle de Contato - Mini-CRM) | Mapped |
+| CRM-02 | Phase 5 (Lifecycle de Contato - Mini-CRM) | Mapped |
+| CRM-03 | Phase 5 (Lifecycle de Contato - Mini-CRM) | Mapped |
+| CRM-04 | Phase 5 (Lifecycle de Contato - Mini-CRM) | Mapped |
+| CRM-05 | Phase 5 (Lifecycle de Contato - Mini-CRM) | Mapped |
+| CRM-06 | Phase 5 (Lifecycle de Contato - Mini-CRM) | Mapped |
+| CRM-07 | Phase 5 (Lifecycle de Contato - Mini-CRM) | Mapped |
+| CRM-08 | Phase 5 (Lifecycle de Contato - Mini-CRM) | Mapped |
 
 **Coverage:**
 - v1 requirements: 22 total
-- Mapeados para fases: 0 (pendente — próxima etapa: roadmap)
-- Não mapeados: 22 ⚠️
+- Mapeados para fases: 22 (Phase 1 é infraestrutura pura — sem REQ-ID próprio, pré-requisito de todas as demais)
+- Não mapeados: 0 ✅
 
 ---
 *Requirements defined: 2026-07-05*
-*Last updated: 2026-07-05 after initial definition*
+*Last updated: 2026-07-05 after roadmap creation — traceability complete, 22/22 mapped*
