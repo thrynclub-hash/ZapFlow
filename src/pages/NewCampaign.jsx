@@ -498,7 +498,7 @@ export default function NewCampaign() {
               </div>
             )}
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-              <p className="text-amber-200 text-xs font-body">⚠️ Trava em no máximo {DAILY_CAP} mensagens por dia por número — mesmo somando com outras campanhas ou automações ativas ao mesmo tempo — pra esse número nunca correr risco de bloqueio no WhatsApp.</p>
+              <p className="text-amber-200 text-xs font-body">⚠️ Trava em no máximo {DAILY_CAP} mensagens por dia por número — mesmo somando com outras campanhas ou automações ativas ao mesmo tempo — pra esse número nunca correr risco de bloqueio no WhatsApp. Desse total, o disparo em massa usa no máximo {DAILY_CAP - 10}/dia — as últimas 10 vagas ficam reservadas pra responder automaticamente quem interagir na hora (ex: clicar "eu quero").</p>
             </div>
           </div>
 
