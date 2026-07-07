@@ -21,12 +21,19 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
 // com --no-verify-jwt (o pg_cron não tem um JWT de usuário pra mandar) e não
 // checava NADA antes de rodar — qualquer pessoa que descobrisse a URL
 // conseguia disparar o motor de envio real (manda mensagem de verdade pra
-// clientes reais) quantas vezes quisesse, sem autorização nenhuma. O job do
-// pg_cron (ver `select * from cron.job`) já manda
-// `Authorization: Bearer <service_role_key>` — só nunca era validado aqui.
-// Passa a exigir exatamente esse header, sem quebrar o cron existente.
+// clientes reais) quantas vezes quisesse, sem autorização nenhuma.
+//
+// Incidente real, mesmo dia: a primeira versão comparava contra
+// SUPABASE_SERVICE_ROLE_KEY, assumindo que batia com o header que o job do
+// pg_cron já mandava — não batia (o header do cron.job estava desatualizado
+// em relação à service_role key atual do projeto), e isso derrubou 100% dos
+// envios agendados por ~6h sem ninguém perceber até o cliente notar que a
+// campanha das 9h não tinha começado. Corrigido trocando pra um segredo
+// dedicado (CRON_SHARED_SECRET), gerado só pra esse fim — evita reusar a
+// service_role key (privilégio total no banco) só pra provar "sou o cron".
 function isAuthorizedCronCall(req: Request): boolean {
-  return req.headers.get("Authorization") === `Bearer ${serviceRoleKey}`;
+  const expected = Deno.env.get("CRON_SHARED_SECRET");
+  return !!expected && req.headers.get("Authorization") === `Bearer ${expected}`;
 }
 
 const ZAPI_BASE = "https://api.z-api.io/instances";
@@ -149,6 +156,29 @@ function sleep(ms: number) {
 }
 async function humanDelay() {
   await sleep(600 + Math.floor(Math.random() * 900)); // 600–1500ms
+}
+
+// Bug real descoberto em 2026-07-07 (campanha Semana 1, Dra. Thaís): números
+// antigos/inválidos na base de contatos (sem WhatsApp de verdade) recebiam
+// resposta 200 da Z-API mesmo assim — a validação real de existência do
+// número parece acontecer de forma assíncrona do lado da Z-API/WhatsApp, e
+// nunca voltava pro nosso sistema, então ficavam marcados "sent" pra sempre
+// sem nunca ter chegado. Some com isso checando ANTES de mandar: se o
+// número não existe no WhatsApp, marca o contato como inválido (exclui do
+// "Ativo", nunca mais entra em campanha/follow-up, ver filtro por status
+// mais abaixo) e pula o envio, sem gastar orçamento diário nem gerar log de
+// sent/error. Fail-open: se a própria checagem falhar (erro de rede, etc.),
+// segue com o envio normal em vez de travar a campanha por causa do check.
+async function checkPhoneExists(instanceId: string, token: string, phone: string): Promise<boolean | null> {
+  try {
+    const url = `${ZAPI_BASE}/${instanceId}/token/${token}/phone-exists/${phone}`;
+    const res = await fetch(url, { headers: { "Client-Token": ZAPI_CLIENT_TOKEN } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Boolean(data?.exists);
+  } catch {
+    return null;
+  }
 }
 
 async function sendTextMessage(instanceId: string, token: string, phone: string, message: string) {
@@ -594,6 +624,17 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
   let attempted = 0; // conta sent + error — cada um é uma chamada real à Z-API, é isso que pauta o ritmo (ver daily_sent_today em processScheduledCampaigns)
   for (const contact of batch) {
     if (budgetExhausted) break;
+
+    const exists = await checkPhoneExists(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone));
+    if (exists === false) {
+      // "Inativo" é o único valor do enum (contacts_status_check) que cabe
+      // aqui — não existe "inválido" no check constraint. A tag guarda o
+      // motivo real, pra não confundir com outros tipos de inatividade.
+      const newTags = Array.from(new Set([...(contact.tags ?? []), "sem-whatsapp"]));
+      await supabase.from("contacts").update({ status: "Inativo", tags: newTags }).eq("id", contact.id);
+      continue; // não conta pro orçamento diário, não gera log de sent/error
+    }
+
     // Disparo em massa nunca consome a reserva de resposta (ver REPLY_RESERVE).
     const allowed = await consumeBudget(number.id, DAILY_CAP - REPLY_RESERVE);
     if (!allowed) { budgetExhausted = true; break; }

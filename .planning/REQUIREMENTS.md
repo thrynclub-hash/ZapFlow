@@ -74,6 +74,13 @@ Reconhecidos mas propositalmente adiados — não entram no roadmap desta fase.
   naturalmente para `follow_up_delay_days`/`follow_up_of` já existente em `campaigns`, generalizado pra N etapas
 - **ATND-V2-04**: Mensagem agendada avulsa por contato (fora do fluxo de campanha em massa) — atendente escolhe
   1 contato + data/horário pra lembrete pontual, sem precisar criar uma campanha inteira
+- **ATND-V2-05**: Canal de e-mail como alternativa/complemento ao WhatsApp — hoje o ZapFlow é 100% Z-API
+  (WhatsApp), sem nenhum conceito de "canal" no schema; exigiria um provider de e-mail separado (ex. Resend,
+  já em uso no PhotoForge) rodando em paralelo, mais um campo de canal em campanhas/automações, e uma régua de
+  limite diferente (o orçamento diário atual existe pra evitar ban de WhatsApp, não se aplica a e-mail).
+  Motivação é diferencial competitivo (concorrentes mapeados — Bolten, Helena — também são só-WhatsApp), não
+  necessidade imediata; surgiu em conversa de 2026-07-07 sobre a esteira do ecossistema pessoal do Leonardo,
+  fora do escopo do ZapFlow em si
 
 ### IA / Automação Avançada
 
