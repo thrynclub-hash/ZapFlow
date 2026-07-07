@@ -19,6 +19,16 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 const ZAPI_BASE = "https://api.z-api.io/instances";
 const DAILY_CAP = 100;
+// Bug real reportado em 2026-07-06 (Raquel Rocha Consul, campanha Semana 1):
+// disparo em massa e resposta automática pra quem responde na hora competiam
+// pelo MESMO limite de 100/dia, sem prioridade — quando a campanha usava as
+// 100 vagas até 16h40, um cliente respondendo às 17h18 ("Eu quero a
+// limpeza") não recebia a pergunta automática de horário, e a equipe teve
+// que intervir na mão. Reserva 10 vagas exclusivas pro lado de resposta
+// (fluxo "eu quero", escolha de sub-opção, opt-out, etc.) — disparo em
+// massa (campanha/follow-up) agora trava em DAILY_CAP - RESERVA, nunca
+// consome as últimas 10 vagas do dia.
+const REPLY_RESERVE = 10;
 // Token de Segurança da Conta (Z-API Dashboard > Segurança) — ver nota
 // detalhada em zapi-status/index.ts. Header Client-Token != token de instância.
 const ZAPI_CLIENT_TOKEN = Deno.env.get("ZAPI_CLIENT_TOKEN") ?? "";
@@ -50,8 +60,11 @@ async function fetchAllPages<T>(buildQuery: (from: number, to: number) => any): 
 // Único ponto de decisão "posso mandar mais uma mensagem hoje por este
 // número?" — compartilhado com send-message e zapi-webhook via a mesma
 // função Postgres. Ver supabase_automacoes_avancadas.sql.
-async function consumeBudget(numberId: string): Promise<boolean> {
-  const { data: allowed, error } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: numberId, p_daily_cap: DAILY_CAP });
+// cap opcional — chamadas de disparo em massa (campanha/follow-up) passam
+// DAILY_CAP - REPLY_RESERVE pra nunca consumir a reserva; chamadas de
+// resposta (fluxo "eu quero" etc.) usam o default (DAILY_CAP cheio).
+async function consumeBudget(numberId: string, cap: number = DAILY_CAP): Promise<boolean> {
+  const { data: allowed, error } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: numberId, p_daily_cap: cap });
   if (error) {
     console.error("Erro checando limite diário:", error);
     return false;
@@ -569,7 +582,8 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
   let attempted = 0; // conta sent + error — cada um é uma chamada real à Z-API, é isso que pauta o ritmo (ver daily_sent_today em processScheduledCampaigns)
   for (const contact of batch) {
     if (budgetExhausted) break;
-    const allowed = await consumeBudget(number.id);
+    // Disparo em massa nunca consome a reserva de resposta (ver REPLY_RESERVE).
+    const allowed = await consumeBudget(number.id, DAILY_CAP - REPLY_RESERVE);
     if (!allowed) { budgetExhausted = true; break; }
     attempted++;
     try {
@@ -657,7 +671,9 @@ async function processFollowUpCampaigns() {
       const { data: contact } = await supabase.from("contacts").select("*").eq("id", baseSend.contact_id).single();
       if (!contact || contact.status !== "Ativo") continue;
 
-      const allowed = await consumeBudget(number.id);
+      // Follow-up também é disparo em massa (não resposta em tempo real) —
+      // mesma reserva de resposta se aplica.
+      const allowed = await consumeBudget(number.id, DAILY_CAP - REPLY_RESERVE);
       if (!allowed) break; // orçamento do dia acabou — resto tenta na próxima execução
 
       const message = personalize(followUp.caption || "", contact.name);

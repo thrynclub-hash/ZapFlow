@@ -623,6 +623,7 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
                     {filteredContacts.length > 0
                       ? `Com ${dailyLimit}/dia: ~${estimatedDays} dia(s) (${estimatedWeeks} semana(s)) pra alcançar os ${filteredContacts.length} contato(s) alvo.`
                       : 'Nenhum contato ativo bate com a tag marcada nesta loja ainda.'}
+                    {' '}O disparo em massa usa no máximo 90/dia — as últimas 10 vagas do limite de 100 ficam reservadas pra responder automaticamente quem interagir na hora.
                   </p>
                 </>
               ) : (
