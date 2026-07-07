@@ -17,6 +17,18 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+// Bug real de segurança corrigido em 2026-07-07: esta function é deployada
+// com --no-verify-jwt (o pg_cron não tem um JWT de usuário pra mandar) e não
+// checava NADA antes de rodar — qualquer pessoa que descobrisse a URL
+// conseguia disparar o motor de envio real (manda mensagem de verdade pra
+// clientes reais) quantas vezes quisesse, sem autorização nenhuma. O job do
+// pg_cron (ver `select * from cron.job`) já manda
+// `Authorization: Bearer <service_role_key>` — só nunca era validado aqui.
+// Passa a exigir exatamente esse header, sem quebrar o cron existente.
+function isAuthorizedCronCall(req: Request): boolean {
+  return req.headers.get("Authorization") === `Bearer ${serviceRoleKey}`;
+}
+
 const ZAPI_BASE = "https://api.z-api.io/instances";
 const DAILY_CAP = 100;
 // Bug real reportado em 2026-07-06 (Raquel Rocha Consul, campanha Semana 1):
@@ -700,7 +712,10 @@ async function processFollowUpCampaigns() {
 }
 
 // ---------------------------------------------------------------------
-Deno.serve(async (_req: Request) => {
+Deno.serve(async (req: Request) => {
+  if (!isAuthorizedCronCall(req)) {
+    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+  }
   try {
     await enrollBirthdayTriggers();
     await processRuns();
