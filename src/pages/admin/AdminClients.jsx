@@ -6,8 +6,17 @@ import Modal from '../../components/Modal'
 const PLANS = ['Starter', 'Growth', 'Scale', 'Enterprise']
 const SEGMENTS = ['Alimentação', 'Saúde/Clínica', 'Beleza', 'Educação', 'Varejo', 'Serviços', 'Outro']
 
+// Bug real de segurança corrigido em 2026-07-07: Math.random() não é
+// criptograficamente seguro (PRNG previsível em tese) — access_key é a
+// credencial de login real do cliente (troca por sessão de verdade em
+// client-login). Usa crypto.getRandomValues (Web Crypto API), disponível
+// nativamente no navegador, sem dependência nova. Mesmo formato de antes
+// (4 grupos de 4 caracteres separados por hífen).
 function generateKey() {
-  return Array.from({ length: 4 }, () => Math.random().toString(36).substring(2, 6)).join('-')
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+  const randomBytes = crypto.getRandomValues(new Uint8Array(16))
+  const key = Array.from(randomBytes, b => chars[b % chars.length]).join('')
+  return key.match(/.{4}/g).join('-')
 }
 
 export default function AdminClients() {
