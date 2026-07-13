@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MessageCircle, CheckCircle2, EyeOff, RotateCcw } from 'lucide-react'
+import { MessageCircle, CheckCircle2, EyeOff, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -11,21 +11,14 @@ import { useAuth } from '../contexts/AuthContext'
 // o número interno quando não reconhece a mensagem (ver notifyUnrecognized);
 // esta tela é o lugar de conferir com calma e marcar o que foi tratado.
 //
-// Mesmo teto de 1000 linhas por select do resto do projeto (Contacts.jsx,
-// Reports.jsx, run-automations) — paginado com o mesmo padrão.
-const PAGE_SIZE = 1000
-async function fetchAllPages(buildQuery) {
-  let all = []
-  let from = 0
-  while (true) {
-    const { data, error } = await buildQuery(from, from + PAGE_SIZE - 1)
-    if (error) { console.error('Erro paginando query:', error); break }
-    all = all.concat(data || [])
-    if (!data || data.length < PAGE_SIZE) break
-    from += PAGE_SIZE
-  }
-  return all
-}
+// Só mostra resposta de CAMPANHA de verdade (campaign_id não nulo, gravado
+// pelo webhook — ver supabase_inbound_campaign_origin.sql) — mensagem
+// avulsa de quem nunca recebeu nada nosso fica de fora, pedido do Leonardo
+// pra não misturar contato desconhecido com quem respondeu a Semana 1.
+//
+// Paginado no servidor (20 por página, não carrega tudo de uma vez) — com
+// o histórico crescendo, carregar tudo de uma vez travaria a tela.
+const PAGE_SIZE = 20
 
 const STATUS_TABS = [
   { key: 'novo', label: 'Novas', hint: 'Ainda não foram lidas/tratadas.' },
@@ -39,52 +32,62 @@ export default function Conversations() {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('novo')
+  const [page, setPage] = useState(0)
+  const [pageCount, setPageCount] = useState(0) // quantas linhas vieram nesta página (pra saber se tem "próxima")
+  const [counts, setCounts] = useState({ novo: 0, resolvido: 0, ignorado: 0, todas: 0 })
   const [updatingId, setUpdatingId] = useState(null)
 
   useEffect(() => {
-    if (profile?.client_id) fetchData()
-  }, [profile])
+    if (profile?.client_id) { setPage(0); fetchCounts() }
+  }, [profile, tab])
 
-  async function fetchData() {
+  useEffect(() => {
+    if (profile?.client_id) fetchPage()
+  }, [profile, tab, page])
+
+  async function fetchCounts() {
+    const clientId = profile.client_id
+    const base = () => supabase.from('inbound_messages').select('id', { count: 'exact', head: true }).eq('client_id', clientId).not('campaign_id', 'is', null)
+    const [novo, resolvido, ignorado, todas] = await Promise.all([
+      base().eq('status', 'novo'),
+      base().eq('status', 'resolvido'),
+      base().eq('status', 'ignorado'),
+      base(),
+    ])
+    setCounts({ novo: novo.count || 0, resolvido: resolvido.count || 0, ignorado: ignorado.count || 0, todas: todas.count || 0 })
+  }
+
+  async function fetchPage() {
     setLoading(true)
     const clientId = profile.client_id
+    const from = page * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
 
-    const [inbound, contacts, sentLogs, campaigns] = await Promise.all([
-      fetchAllPages((from, to) =>
-        supabase.from('inbound_messages').select('id, contact_id, phone, message, received_at, status').eq('client_id', clientId).order('received_at', { ascending: false }).range(from, to)
-      ),
-      fetchAllPages((from, to) => supabase.from('contacts').select('id, name, phone').eq('client_id', clientId).range(from, to)),
-      fetchAllPages((from, to) =>
-        supabase.from('message_logs').select('contact_id, campaign_id, sent_at').eq('client_id', clientId).eq('status', 'sent').range(from, to)
-      ),
-      fetchAllPages((from, to) => supabase.from('campaigns').select('id, name').eq('client_id', clientId).range(from, to)),
+    let query = supabase.from('inbound_messages').select('id, contact_id, campaign_id, phone, message, received_at, status')
+      .eq('client_id', clientId).not('campaign_id', 'is', null)
+      .order('received_at', { ascending: false }).range(from, to)
+    if (tab !== 'todas') query = query.eq('status', tab)
+
+    const { data: inbound, error } = await query
+    if (error) { console.error('Erro buscando conversas:', error); setMessages([]); setPageCount(0); setLoading(false); return }
+
+    // Só resolve nome do contato e nome da campanha pras linhas desta
+    // página (não pro histórico inteiro) — é isso que mantém a tela leve.
+    const contactIds = [...new Set((inbound || []).map(m => m.contact_id).filter(Boolean))]
+    const campaignIds = [...new Set((inbound || []).map(m => m.campaign_id).filter(Boolean))]
+    const [{ data: contacts }, { data: campaigns }] = await Promise.all([
+      contactIds.length ? supabase.from('contacts').select('id, name').in('id', contactIds) : Promise.resolve({ data: [] }),
+      campaignIds.length ? supabase.from('campaigns').select('id, name').in('id', campaignIds) : Promise.resolve({ data: [] }),
     ])
+    const contactById = new Map((contacts || []).map(c => [c.id, c]))
+    const campaignById = new Map((campaigns || []).map(c => [c.id, c]))
 
-    const contactById = new Map(contacts.map(c => [c.id, c]))
-    const campaignById = new Map(campaigns.map(c => [c.id, c]))
-    // Pra achar "de qual campanha veio essa resposta": a última mensagem
-    // enviada pra este contato ANTES do horário da resposta — mesma lógica
-    // que zapi-webhook usa pra resolver campaignId de verdade.
-    const logsByContact = {}
-    for (const l of sentLogs) {
-      if (!l.contact_id) continue
-      ;(logsByContact[l.contact_id] ||= []).push(l)
-    }
-    for (const arr of Object.values(logsByContact)) arr.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at))
-
-    function originCampaign(contactId, receivedAt) {
-      const logs = logsByContact[contactId] || []
-      const match = logs.find(l => l.sent_at <= receivedAt)
-      return match ? campaignById.get(match.campaign_id)?.name : null
-    }
-
-    const enriched = inbound.map(m => ({
+    setMessages((inbound || []).map(m => ({
       ...m,
       contactName: contactById.get(m.contact_id)?.name || null,
-      campaignName: m.contact_id ? originCampaign(m.contact_id, m.received_at) : null,
-    }))
-
-    setMessages(enriched)
+      campaignName: campaignById.get(m.campaign_id)?.name || null,
+    })))
+    setPageCount((inbound || []).length)
     setLoading(false)
   }
 
@@ -93,20 +96,25 @@ export default function Conversations() {
     const { error } = await supabase.from('inbound_messages').update({ status }).eq('id', id)
     setUpdatingId(null)
     if (error) { alert('Erro ao atualizar: ' + error.message); return }
-    setMessages(list => list.map(m => m.id === id ? { ...m, status } : m))
+    // Sai da lista atual se não pertence mais a este filtro (ex: marcou
+    // resolvido enquanto olhava "Novas") — senão só atualiza o status ali.
+    if (tab !== 'todas' && tab !== status) {
+      setMessages(list => list.filter(m => m.id !== id))
+      setPageCount(c => Math.max(0, c - 1))
+    } else {
+      setMessages(list => list.map(m => m.id === id ? { ...m, status } : m))
+    }
+    fetchCounts()
   }
 
-  const filtered = tab === 'todas' ? messages : messages.filter(m => (m.status || 'novo') === tab)
-  const counts = STATUS_TABS.reduce((acc, t) => {
-    acc[t.key] = t.key === 'todas' ? messages.length : messages.filter(m => (m.status || 'novo') === t.key).length
-    return acc
-  }, {})
+  const hasNext = pageCount === PAGE_SIZE
+  const hasPrev = page > 0
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-display font-bold text-3xl text-white">Conversas</h1>
-        <p className="text-muted text-sm font-body mt-1">Tudo que os contatos responderam — inclusive o que o robô não reconheceu automaticamente.</p>
+        <p className="text-muted text-sm font-body mt-1">Respostas de quem recebeu campanha — inclusive o que o robô não reconheceu automaticamente. Mensagem avulsa de quem nunca recebeu nada nosso não aparece aqui.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -120,15 +128,15 @@ export default function Conversations() {
 
       {loading ? (
         <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>
-      ) : filtered.length === 0 ? (
+      ) : messages.length === 0 ? (
         <div className="bg-card border border-border rounded-xl p-16 text-center">
           <MessageCircle size={32} className="text-muted mx-auto mb-3" />
           <p className="text-white font-body font-medium mb-1">Nada por aqui</p>
-          <p className="text-muted text-sm font-body">{STATUS_TABS.find(t => t.key === tab)?.hint}</p>
+          <p className="text-muted text-sm font-body">{page > 0 ? 'Não tem mais nada nas próximas páginas.' : STATUS_TABS.find(t => t.key === tab)?.hint}</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map(m => (
+          {messages.map(m => (
             <div key={m.id} className="bg-card border border-border rounded-xl p-4 sm:p-5">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="min-w-0">
@@ -162,6 +170,18 @@ export default function Conversations() {
               <p className="text-sm text-white font-body mt-3 whitespace-pre-wrap bg-surface rounded-lg p-3">{m.message}</p>
             </div>
           ))}
+
+          <div className="flex items-center justify-between pt-2">
+            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={!hasPrev}
+              className="flex items-center gap-1.5 border border-border text-muted hover:text-white px-3 py-2 rounded-lg text-xs font-body transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+              <ChevronLeft size={14} /> Anterior
+            </button>
+            <span className="text-xs text-muted font-body">Página {page + 1}</span>
+            <button onClick={() => setPage(p => p + 1)} disabled={!hasNext}
+              className="flex items-center gap-1.5 border border-border text-muted hover:text-white px-3 py-2 rounded-lg text-xs font-body transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+              Próxima <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       )}
     </div>

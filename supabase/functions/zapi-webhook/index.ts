@@ -218,15 +218,40 @@ Deno.serve(async (req: Request) => {
     const { data: candidates } = await supabase.from("contacts").select("*").eq("client_id", number.client_id);
     const contact = (candidates ?? []).find((c: any) => last8(c.phone) === last8(inboundPhone));
 
+    // Campanha mais recente enviada a este contato (pra associar o estado da
+    // conversa, resolver a ação configurada do botão clicado, E — desde
+    // 2026-07-13 — gravar de qual campanha essa resposta veio. Movido pra
+    // ANTES do insert de inbound_messages (antes só era calculado depois,
+    // só pro fluxo) porque a tela Conversas precisa filtrar "só resposta de
+    // campanha de verdade" sem recalcular isso a cada carregamento — pedido
+    // do Leonardo depois de ver gente que mandou mensagem avulsa (nunca
+    // recebeu nenhuma campanha) aparecendo misturada com quem respondeu a
+    // Semana 1 de verdade.
+    let campaignId: string | null = null;
+    if (contact) {
+      const { data: lastLog } = await supabase
+        .from("message_logs")
+        .select("campaign_id, sent_at")
+        .eq("contact_id", contact.id)
+        .eq("status", "sent")
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      campaignId = lastLog?.campaign_id ?? null;
+    }
+
     // 1. Loga sempre — mesmo sem contato reconhecido, mesmo sem match de
-    // fluxo. Isso vale IGUAL pra clique de botão: é o que garante que o
-    // follow-up automático nunca dispara pra quem já interagiu (ver
+    // fluxo, mesmo sem campanha de origem (campaign_id fica null nesses
+    // casos — mensagem avulsa, não é resposta a nada que mandamos). Isso
+    // vale IGUAL pra clique de botão: é o que garante que o follow-up
+    // automático nunca dispara pra quem já interagiu (ver
     // processFollowUpCampaigns em run-automations, que checa inbound_messages
     // desde o envio da campanha-base) — independente da ação configurada
     // pro botão, tocar em qualquer um deles já conta como resposta.
     await supabase.from("inbound_messages").insert({
       client_id: number.client_id,
       contact_id: contact?.id ?? null,
+      campaign_id: campaignId,
       number_id: number.id,
       phone: inboundPhone,
       message: inboundText,
@@ -237,18 +262,6 @@ Deno.serve(async (req: Request) => {
     }
 
     const normalizedText = normalize(inboundText);
-
-    // Campanha mais recente enviada a este contato (pra associar o estado da
-    // conversa, e também pra resolver a ação configurada do botão clicado).
-    const { data: lastLog } = await supabase
-      .from("message_logs")
-      .select("campaign_id, sent_at")
-      .eq("contact_id", contact.id)
-      .eq("status", "sent")
-      .order("sent_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const campaignId = lastLog?.campaign_id ?? null;
 
     // 2a. Resposta a uma sub-pergunta de "ask_choice" (2026-07-03) — se o
     // contato já estava esperando escolher entre as sub-opções (ver
