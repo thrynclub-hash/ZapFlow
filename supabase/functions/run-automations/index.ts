@@ -673,7 +673,30 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
 // ---------------------------------------------------------------------
 // PARTE 4 — FOLLOW-UPS: campanha B só vai pra quem recebeu a campanha A
 // há N dias e não respondeu nada desde então (inbound_messages).
+//
+// Bug real reportado em 2026-07-13 (Leonardo, follow-ups "Semana 1-4" da
+// Hassum): 2 problemas distintos, achados com dado real de produção —
+//
+// 1. Os 4 follow-ups da Hassum estavam com status='stopped' no banco
+//    (provavelmente alterado manualmente durante o setup inicial) e nunca
+//    tinham disparado UMA mensagem sequer — o filtro `.in("status", [...])`
+//    abaixo exclui 'stopped' silenciosamente, sem nenhum caminho de volta
+//    (a tela de Histórico também escondia isso, ver Campaigns.jsx groupOf).
+//    Corrigido separadamente: UI ganhou botão Pausar/Retomar pra
+//    campanha-base E follow-up (antes só a base tinha).
+//
+// 2. Follow-up nunca respeitava daily_limit/janela/dias-úteis — ao ficar
+//    elegível, disparava pra TODOS os contatos elegíveis de uma vez no
+//    mesmo ciclo de cron (só limitado pelo orçamento diário GLOBAL do
+//    número), bem mais "rajada" que o disparo normal, que já espalha ao
+//    longo do dia desde 2026-07-03. Agora segue o MESMO padrão de
+//    `processScheduledCampaigns` (daily_limit, janela daily_start_hour/
+//    daily_end_hour, weekdays_only, teto de 15/ciclo) — com default de
+//    50/dia (mais conservador que os 100 da campanha principal, pedido
+//    explícito do Leonardo), configurável por follow-up igual à campanha.
 // ---------------------------------------------------------------------
+const FOLLOWUP_DEFAULT_DAILY_LIMIT = 50;
+
 async function processFollowUpCampaigns() {
   const { data: followUps, error } = await supabase
     .from("campaigns")
@@ -686,9 +709,38 @@ async function processFollowUpCampaigns() {
     return;
   }
 
+  const brNow = brazilNow();
+  const todayBR = brazilDateKey(brNow);
+  const hourBR = brNow.getUTCHours();
+  const minuteBR = brNow.getUTCMinutes();
+  const dowBR = brNow.getUTCDay(); // 0=domingo, 6=sábado
+
   for (const followUp of followUps ?? []) {
     const number = (followUp as any).client_numbers;
     if (!number || !followUp.follow_up_of) continue;
+
+    // Mesma janela comercial / dias úteis que a campanha principal já
+    // respeita — segue os valores próprios do follow-up (a tela de
+    // criação copia os da campanha-base ao criar, mas dá pra divergir).
+    if (followUp.weekdays_only !== false && (dowBR === 0 || dowBR === 6)) continue;
+    const startH = followUp.daily_start_hour ?? 9;
+    const endH = followUp.daily_end_hour ?? 18;
+    if (hourBR < startH || hourBR >= endH) continue;
+
+    const dailyCap = Math.min(DAILY_CAP, followUp.daily_limit ?? FOLLOWUP_DEFAULT_DAILY_LIMIT);
+    const isNewDay = followUp.last_daily_run !== todayBR;
+    const sentToday = isNewDay ? 0 : (followUp.daily_sent_today ?? 0);
+
+    const windowMinutes = Math.max(1, (endH - startH) * 60);
+    const elapsedMinutes = (hourBR - startH) * 60 + minuteBR;
+    const proportion = Math.min(1, Math.max(0, elapsedMinutes / windowMinutes));
+    const targetByNow = Math.ceil(proportion * dailyCap);
+    const due = Math.max(0, Math.min(targetByNow - sentToday, 15));
+
+    if (due === 0) {
+      if (isNewDay) await supabase.from("campaigns").update({ last_daily_run: todayBR, daily_sent_today: 0 }).eq("id", followUp.id);
+      continue;
+    }
 
     const delayDays = followUp.follow_up_delay_days ?? 2;
     const cutoff = new Date();
@@ -701,7 +753,10 @@ async function processFollowUpCampaigns() {
       supabase.from("message_logs").select("contact_id, sent_at").eq("campaign_id", followUp.follow_up_of).eq("status", "sent").lte("sent_at", cutoff.toISOString()).range(from, to)
     );
 
-    if (baseSends.length === 0) continue;
+    if (baseSends.length === 0) {
+      if (isNewDay) await supabase.from("campaigns").update({ last_daily_run: todayBR, daily_sent_today: 0 }).eq("id", followUp.id);
+      continue;
+    }
 
     // Quem já recebeu ESTE follow-up (não reenviar) — mesmo cuidado de paginação.
     const alreadyFollowedUp = await fetchAllPages<{ contact_id: string }>((from, to) =>
@@ -709,7 +764,9 @@ async function processFollowUpCampaigns() {
     );
     const alreadyIds = new Set(alreadyFollowedUp.map((r) => r.contact_id));
 
+    let attempted = 0; // conta sent + error, igual sendCampaignBatch — é isso que pauta o ritmo diário
     for (const baseSend of baseSends) {
+      if (attempted >= due) break;
       if (alreadyIds.has(baseSend.contact_id)) continue;
 
       // Respondeu qualquer coisa desde que recebeu a campanha-base? Se sim, pula.
@@ -729,6 +786,7 @@ async function processFollowUpCampaigns() {
       const allowed = await consumeBudget(number.id, DAILY_CAP - REPLY_RESERVE);
       if (!allowed) break; // orçamento do dia acabou — resto tenta na próxima execução
 
+      attempted++;
       const message = personalize(followUp.caption || "", contact.name);
       try {
         await sendCampaignMessage(number.zapi_instance_id, number.zapi_token, formatPhone(contact.phone), message, followUp.image_url, followUp.quick_replies);
@@ -748,7 +806,9 @@ async function processFollowUpCampaigns() {
       await humanDelay();
     }
 
-    await supabase.from("campaigns").update({ status: "sending" }).eq("id", followUp.id);
+    await supabase.from("campaigns").update({
+      status: "sending", last_daily_run: todayBR, daily_sent_today: sentToday + attempted,
+    }).eq("id", followUp.id);
   }
 }
 

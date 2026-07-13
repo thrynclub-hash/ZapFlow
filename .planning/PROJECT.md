@@ -68,5 +68,18 @@ Fase 2 entrega uma camada leve de CRM (status de contato, consumo por plano, cob
 | GSD usado para planejar Fase 2 (ao invés de plano ad-hoc na conversa) | Trabalho multi-sessão, precisa ser retomável; regra do projeto (RULE-GSD-MANDATORY) | — Pending |
 | Pesquisa de mercado real (Bolten/HelenaCRM + domínio WhatsApp-CRM) antes de fechar requirements | Usuário pediu pra ir além do documento de referência dele | — Pending |
 
+## Ideas Backlog (2026-07-13)
+
+Leonardo trouxe uma pesquisa própria (via Perplexity) sobre criar um micro-SaaS B2B nichado (ticket R$49-149/mês) de "recuperação/reengajamento automático de clientes" via WhatsApp — score de risco de churn, sequências automáticas pra quem sumiu, playbooks prontos por nicho (academia, clínica, infoproduto).
+
+**Diagnóstico:** isso não é um produto novo — é, quase ponto a ponto, a **Phase 5 (Lifecycle de Contato)** já desenhada no `ROADMAP.md` deste mesmo projeto, rodando sobre o motor de disparo/follow-up que já existe e roda em produção (Hassum). O que a pesquisa descreve como "diferencial de mercado" (score Novo/Dormindo/VIP, sequência automática pra quem parou de responder) é literalmente o success criteria da Phase 5.
+
+**Genuinamente novo em relação ao que já está planejado:**
+- Ticket de entrada mais baixo (R$49-149) — hoje os planos ZapFlow começam em R$149; é decisão comercial, não técnica, de criar um tier abaixo do Starter atual
+- Playbooks prontos por nicho como produto (não só configuração livre) — não existe, seria construído em cima da Phase 5 uma vez pronta
+- Framing de "produto de churn/retenção" como posicionamento de venda, mais amplo que "CRM de WhatsApp" — mercado/marketing, não arquitetura
+
+**Como aplicar:** antes de tratar isso como iniciativa separada, validar a tese terminando a Phase 5 do roadmap atual (que já está isolada da V1 por causa da Phase 1 — Ambiente Isolado). Reavaliar preço de entrada e "modo playbook" só depois de ter o lifecycle rodando de verdade com um cliente real.
+
 ---
-*Last updated: 2026-07-05 after initialization*
+*Last updated: 2026-07-13 — ideas backlog added after V1 bug triage session*

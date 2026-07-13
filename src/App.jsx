@@ -23,6 +23,7 @@ const Contacts = lazy(() => import('./pages/Contacts'))
 const NewCampaign = lazy(() => import('./pages/NewCampaign'))
 const Campaigns = lazy(() => import('./pages/Campaigns'))
 const Birthdays = lazy(() => import('./pages/Birthdays'))
+const Conversations = lazy(() => import('./pages/Conversations'))
 const Automations = lazy(() => import('./pages/Automations'))
 const Reports = lazy(() => import('./pages/Reports'))
 const Creatives = lazy(() => import('./pages/Creatives'))
@@ -80,6 +81,7 @@ export default function App() {
           <Route path="campaigns" element={<Campaigns />} />
           <Route path="campaigns/new" element={<NewCampaign />} />
           <Route path="birthdays" element={<Birthdays />} />
+          <Route path="conversations" element={<Conversations />} />
           <Route path="creatives" element={<Creatives />} />
           <Route path="automations" element={<Automations />} />
           <Route path="reports" element={<Reports />} />

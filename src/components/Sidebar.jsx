@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Megaphone, Plus, Cake,
-  BarChart2, Settings, LogOut, Shield, Building2, Tag, Smartphone, Workflow, Image, X
+  BarChart2, Settings, LogOut, Shield, Building2, Tag, Smartphone, Workflow, Image, X, MessageCircle
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -12,6 +12,7 @@ const clientNav = [
   { to: '/campaigns/new', icon: Plus, label: 'Novo Disparo', highlight: true },
   { to: '/campaigns', icon: Megaphone, label: 'Histórico' },
   { to: '/birthdays', icon: Cake, label: 'Aniversários' },
+  { to: '/conversations', icon: MessageCircle, label: 'Conversas' },
   { to: '/creatives', icon: Image, label: 'Criativos' },
   { to: '/automations', icon: Workflow, label: 'Automações' },
   { to: '/reports', icon: BarChart2, label: 'Relatórios' },

@@ -106,6 +106,15 @@ export default function NewCampaign() {
   // já existia pra follow-up, só que agora configurável na hora de criar).
   const [wantsFollowUp, setWantsFollowUp] = useState(false)
   const [fuDelayDays, setFuDelayDays] = useState(2)
+  // Limite diário + controle de início do follow-up (2026-07-13, pedido do
+  // Leonardo depois de achar os follow-ups da Hassum travados sem nenhum
+  // limite configurável): default 50/dia, mais conservador que os 100 da
+  // campanha principal, e configurável igual a ela. fuStartActive=false
+  // cria o follow-up já pausado ('stopped'), pra poder ativar quando quiser
+  // pelo botão "Retomar" no Histórico, em vez de começar sozinho assim que
+  // os primeiros contatos baterem o prazo de dias sem resposta.
+  const [fuDailyLimit, setFuDailyLimit] = useState(50)
+  const [fuStartActive, setFuStartActive] = useState(true)
   const [fuCaption, setFuCaption] = useState('')
   const [fuImageFile, setFuImageFile] = useState(null)
   const [fuImagePreview, setFuImagePreview] = useState(null)
@@ -233,8 +242,14 @@ export default function NewCampaign() {
       const { data: followUp, error: fuErr } = await supabase.from('campaigns').insert({
         client_id: clientId, number_id: form.number_id,
         name: `${form.name || 'Disparo'} - Follow-up (${fuDelayDays} dias)`,
-        caption: fuCaption, type: 'followup', status: 'scheduled',
+        caption: fuCaption, type: 'followup', status: fuStartActive ? 'scheduled' : 'stopped',
         follow_up_of: campaign.id, follow_up_delay_days: Number(fuDelayDays) || 2,
+        // Mesmo limite/janela/dias-úteis que a campanha principal usa como
+        // ponto de partida — dá pra ajustar depois pelo Histórico > Editar.
+        daily_limit: Math.min(100, Number(fuDailyLimit) || 50),
+        daily_start_hour: form.daily_start_hour,
+        daily_end_hour: form.daily_end_hour,
+        weekdays_only: form.weekdays_only,
       }).select().single()
 
       if (fuErr) {
@@ -638,11 +653,25 @@ export default function NewCampaign() {
 
           {wantsFollowUp && (
             <div className="space-y-4 pt-2 border-t border-border">
-              <div>
-                <label className="block text-xs text-muted font-body mb-1.5">Quantos dias depois do envio principal</label>
-                <input type="number" min={1} max={30} value={fuDelayDays} onChange={e => setFuDelayDays(e.target.value)}
-                  className="w-32 bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+              <div className="flex flex-wrap gap-4">
+                <div>
+                  <label className="block text-xs text-muted font-body mb-1.5">Quantos dias depois do envio principal</label>
+                  <input type="number" min={1} max={30} value={fuDelayDays} onChange={e => setFuDelayDays(e.target.value)}
+                    className="w-32 bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted font-body mb-1.5">Limite de mensagens por dia</label>
+                  <input type="number" min={1} max={100} value={fuDailyLimit} onChange={e => setFuDailyLimit(e.target.value)}
+                    className="w-32 bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent transition-colors" />
+                </div>
               </div>
+
+              <label className="flex items-center gap-2 cursor-pointer w-fit">
+                <input type="checkbox" checked={fuStartActive} onChange={e => setFuStartActive(e.target.checked)}
+                  className="w-4 h-4 rounded border-border bg-surface accent-accent" />
+                <span className="text-xs text-muted font-body">Ativar o follow-up assim que a campanha principal for criada</span>
+              </label>
+              {!fuStartActive && <p className="text-xs text-muted font-body -mt-2">O follow-up fica criado mas pausado — ative quando quiser pelo botão "Retomar" no Histórico.</p>}
 
               <div>
                 <label className="block text-xs text-muted font-body mb-1.5">Mensagem do follow-up *</label>
