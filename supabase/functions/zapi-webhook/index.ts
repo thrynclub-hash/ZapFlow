@@ -137,25 +137,6 @@ async function sendViaBudget(numberId: string, instanceId: string, token: string
   return res.ok;
 }
 
-// Notifica o número interno (reply_flows.notify_phone) quando a mensagem
-// recebida NÃO bateu com nenhum fluxo conhecido (não é clique de botão, não
-// é "eu quero"/variação, não é opt-out) — pedido real do Leonardo
-// (2026-07-13, achado com dado de produção real da Hassum: 211 mensagens
-// recebidas, boa parte perguntas genuínas tipo "qual o valor pra colocar um
-// dente", "poderia me mandar um orçamento" — iam pro banco (inbound_messages)
-// e ficavam invisíveis, o robô não fazia nada e ninguém da clínica sabia que
-// tinha gente perguntando preço. Antes disso, só as confirmações de
-// agendamento e escolha de sub-opção notificavam a clínica; qualquer outra
-// coisa ficava muda. Reusa o mesmo sendViaBudget (mesmo orçamento diário
-// global) — se não tiver notify_phone configurado, não faz nada (fail-open,
-// igual o resto do fluxo).
-async function notifyUnrecognized(number: any, flow: any, contact: any, text: string) {
-  if (!flow?.notify_phone) return;
-  const preview = text.length > 300 ? text.slice(0, 300) + "…" : text;
-  const msg = `💬 Resposta não reconhecida pelo robô:\n${contact.name || "(sem nome)"}\n${contact.phone}\n"${preview}"\n\nVeja em Conversas no ZapFlow pra responder na mão.`;
-  await sendViaBudget(number.id, number.zapi_instance_id, number.zapi_token, flow.notify_phone, msg);
-}
-
 // Descadastro completo — reusado tanto pela palavra-chave (PARAR/SAIR/...)
 // quanto por um botão configurado com action='opt_out'.
 async function optOutContact(contact: any, number: any) {
@@ -363,7 +344,6 @@ Deno.serve(async (req: Request) => {
     // 4. Fluxo "EU QUERO" (se habilitado para este cliente)
     const { data: flow } = await supabase.from("reply_flows").select("*").eq("client_id", number.client_id).single();
     if (!flow || !flow.enabled) {
-      await notifyUnrecognized(number, flow, contact, inboundText);
       return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, reply_flow: "desabilitado" }), { headers: { "Content-Type": "application/json" } });
     }
 
@@ -429,9 +409,11 @@ Deno.serve(async (req: Request) => {
 
     // Chegou até aqui = nada reconheceu a mensagem (não é botão, não é
     // "eu quero"/variação, não é opt-out, não é resposta de manhã/tarde
-    // esperada). Antes disso, essa mensagem só era logada e ninguém da
-    // clínica ficava sabendo — ver notifyUnrecognized() acima.
-    await notifyUnrecognized(number, flow, contact, inboundText);
+    // esperada). Fica só logada (já com campaign_id resolvido acima) pra
+    // conferir na tela Conversas — pedido do Leonardo (2026-07-13) pra NÃO
+    // mandar WhatsApp de verdade pro número interno a cada mensagem não
+    // reconhecida (isso existiu por um dia; virou ruído no WhatsApp da
+    // própria Dra. assim que a tela Conversas ficou pronta pra esse fim).
     return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, no_flow_action: true }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
     console.error("Erro no webhook:", e);
