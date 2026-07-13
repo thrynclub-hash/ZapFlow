@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Megaphone, CheckCircle, Clock, XCircle, Loader, Send, CalendarClock, Image as ImageIcon, Eye, Pencil, Trash2, X, MessageCircle, Clock3 } from 'lucide-react'
+import { Plus, Megaphone, CheckCircle, Clock, XCircle, Loader, Send, CalendarClock, Image as ImageIcon, Eye, Pencil, Trash2, X, MessageCircle, Clock3, PauseCircle, PlayCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import Modal from '../components/Modal'
@@ -11,9 +11,12 @@ const statusConfig = {
   scheduled: { label: 'Agendado', icon: CalendarClock, color: 'text-blue-300 bg-blue-400/10' },
   sending: { label: 'Enviando', icon: Loader, color: 'text-accent bg-accent/10' },
   completed: { label: 'Concluído', icon: CheckCircle, color: 'text-green-400 bg-green-400/10' },
-  // Parou por causa da data de término (stop_at) antes de alcançar toda a
-  // lista — diferente de "completed", que significa que alcançou todo mundo.
-  stopped: { label: 'Parado (data de término)', icon: XCircle, color: 'text-amber-300 bg-amber-400/10' },
+  // 'stopped' cobre dois motivos possíveis, distinguidos na hora de exibir
+  // (ver renderCard): parou sozinha por causa da data de término (stop_at)
+  // antes de alcançar toda a lista, OU foi pausada manualmente (botão
+  // Pausar, 2026-07-13) — diferente de "completed", que significa que
+  // alcançou todo mundo.
+  stopped: { label: 'Parado', icon: XCircle, color: 'text-amber-300 bg-amber-400/10' },
   error: { label: 'Erro', icon: XCircle, color: 'text-red-400 bg-red-400/10' },
 }
 
@@ -36,18 +39,24 @@ function weekNum(c) {
 // processFollowUpCampaigns no run-automations). Antes disso cair na regra
 // "scheduled sem data futura = rodando", TODO follow-up aparecia em "Rodando
 // agora" mesmo com a campanha-base ainda em rascunho, sem nunca ter
-// disparado pra ninguém — nada era enviado de verdade antes da hora (o motor
-// só age quando existe message_log real da base), mas a etiqueta na tela
-// mentia. Corrigido: follow-up agora sempre usa o MESMO grupo da sua
-// campanha-base (se a base é rascunho, o follow-up também aparece como
-// rascunho; se a base já está rodando/concluída, o follow-up acompanha).
+// disparado pra ninguém. Corrigido: follow-up sem status explícito próprio
+// (scheduled/sending "neutro") usa o MESMO grupo da campanha-base.
+//
+// Bug real corrigido em 2026-07-13 (Leonardo, follow-ups "Semana 1-4" da
+// Hassum): os 4 follow-ups estavam com status='stopped' no banco (nunca
+// dispararam nada) mas apareciam agrupados em "🟢 Rodando agora" porque
+// herdavam o grupo da campanha-base (que estava mesmo rodando) — a tela
+// escondia exatamente o problema que precisava mostrar. Agora um status
+// PRÓPRIO e explícito do follow-up ('stopped' ou 'error', só alcançáveis
+// via ação manual — ver pauseCampaign/resumeCampaign) sempre vence a
+// herança da base, pra nunca mais esconder um follow-up parado.
 function groupOf(c, byId) {
+  if (c.status === 'error') return 'error'
+  if (c.status === 'stopped') return 'stopped'
   if (c.follow_up_of && byId) {
     const base = byId.get(c.follow_up_of)
     if (base) return groupOf(base, null) // base nunca é follow-up de outra coisa, sem risco de loop
   }
-  if (c.status === 'error') return 'error'
-  if (c.status === 'stopped') return 'stopped'
   if (c.status === 'completed') return 'completed'
   if (c.status === 'sending') return 'running'
   if (c.status === 'scheduled') {
@@ -63,7 +72,7 @@ const GROUPS = [
   { key: 'scheduled_future', title: '🕐 Agendado', hint: 'Vai disparar sozinho na data marcada — ainda não começou.' },
   { key: 'draft', title: '📝 Rascunho', hint: 'Ainda não foi disparado nem agendado — só você está vendo isso.' },
   { key: 'completed', title: '✅ Concluído', hint: 'Já terminou de enviar pra todo o público-alvo dela.' },
-  { key: 'stopped', title: '🛑 Parado (data de término)', hint: 'Parou sozinha na data marcada, mesmo com contatos ainda pendentes na lista.' },
+  { key: 'stopped', title: '🛑 Parado', hint: 'Parou sozinha na data marcada, ou foi pausada manualmente — use "Retomar" no card pra voltar a mandar.' },
   { key: 'error', title: '⚠️ Com erro', hint: 'Teve problema no envio — dá uma olhada.' },
 ]
 
@@ -167,6 +176,24 @@ export default function Campaigns() {
     fetchCampaigns()
   }
 
+  // Pausar/Retomar (2026-07-13) — pedido do Leonardo pra poder mudar status
+  // direto no site (rascunho/parado/agendado), sem precisar mexer no
+  // Supabase. Vale pra QUALQUER campanha, base ou follow-up (antes só a
+  // base tinha um jeito de reabrir depois de parada, e só via stop_at).
+  // Reusa 'stopped' (mesmo valor que já existia pra "parou por stop_at") —
+  // groupOf() já trata isso como pausa explícita, mostrando na seção certa.
+  async function pauseCampaign(c) {
+    if (!confirm(`Pausar "${c.name}"? Ela para de mandar mensagem até você retomar — ninguém é removido da lista, só fica esperando.`)) return
+    const { error } = await supabase.from('campaigns').update({ status: 'stopped' }).eq('id', c.id)
+    if (error) { alert('Erro ao pausar: ' + error.message); return }
+    fetchCampaigns()
+  }
+  async function resumeCampaign(c) {
+    const { error } = await supabase.from('campaigns').update({ status: 'scheduled' }).eq('id', c.id)
+    if (error) { alert('Erro ao retomar: ' + error.message); return }
+    fetchCampaigns()
+  }
+
   async function handleImageChange(c, e) {
     const file = e.target.files[0]
     if (!file) return
@@ -261,6 +288,26 @@ export default function Campaigns() {
                     className="flex items-center gap-1.5 border border-border text-muted hover:text-white px-3 py-2 rounded-lg text-xs font-body transition-colors disabled:opacity-50">
                     <ImageIcon size={13} /> {uploadingId === c.id ? 'Enviando...' : c.image_url ? 'Trocar imagem' : 'Adicionar imagem'}
                   </button>
+
+                  {/* Pausar/Retomar — disponível em TODA campanha ativa ou
+                      parada (base ou follow-up), pra mudar status direto no
+                      site sem precisar mexer no Supabase (pedido do Leonardo,
+                      2026-07-13). Rascunho/Concluído/Erro não entram aqui:
+                      rascunho já tem seus próprios controles de disparo
+                      (launchable abaixo), concluído/erro não fazem sentido
+                      pausar. */}
+                  {(c.status === 'scheduled' || c.status === 'sending') && (
+                    <button onClick={() => pauseCampaign(c)}
+                      className="flex items-center gap-1.5 border border-amber-400/40 text-amber-300 hover:bg-amber-400/10 px-3 py-2 rounded-lg text-xs font-body transition-colors">
+                      <PauseCircle size={13} /> Pausar
+                    </button>
+                  )}
+                  {c.status === 'stopped' && (
+                    <button onClick={() => resumeCampaign(c)}
+                      className="flex items-center gap-1.5 border border-green-400/40 text-green-400 hover:bg-green-400/10 px-3 py-2 rounded-lg text-xs font-body transition-colors">
+                      <PlayCircle size={13} /> Retomar
+                    </button>
+                  )}
 
                   {launchable && (
                     <>
@@ -429,6 +476,7 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   const [followUp, setFollowUp] = useState(null)
   const [fuCaption, setFuCaption] = useState('')
   const [fuDelayDays, setFuDelayDays] = useState(2)
+  const [fuDailyLimit, setFuDailyLimit] = useState(50)
   const [loadingFu, setLoadingFu] = useState(isBase)
 
   // Fluxo de resposta ("EU QUERO") — hoje é 1 configuração POR CLIENTE
@@ -441,11 +489,21 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   const [rfEnabled, setRfEnabled] = useState(true)
   const [loadingRf, setLoadingRf] = useState(true)
 
+  // Pausar/Retomar o follow-up direto (não mexe na campanha-base) — mesma
+  // ideia do pauseCampaign/resumeCampaign da lista, só que local ao modal
+  // pra atualizar a UI na hora sem fechar a edição em andamento.
+  async function toggleFollowUpStatus() {
+    const next = followUp.status === 'stopped' ? 'scheduled' : 'stopped'
+    const { error } = await supabase.from('campaigns').update({ status: next }).eq('id', followUp.id)
+    if (error) { alert('Erro ao mudar status do follow-up: ' + error.message); return }
+    setFollowUp(f => ({ ...f, status: next }))
+  }
+
   useEffect(() => {
     if (isBase) {
       supabase.from('campaigns').select('*').eq('follow_up_of', campaign.id).maybeSingle().then(({ data }) => {
         setFollowUp(data)
-        if (data) { setFuCaption(data.caption || ''); setFuDelayDays(data.follow_up_delay_days ?? 2) }
+        if (data) { setFuCaption(data.caption || ''); setFuDelayDays(data.follow_up_delay_days ?? 2); setFuDailyLimit(data.daily_limit ?? 50) }
         setLoadingFu(false)
       })
     }
@@ -520,7 +578,10 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
       if (followUp) {
         // Follow-up sempre manda pro mesmo público-alvo da campanha-base —
         // não faz sentido a base ir só pra "Antigo" e o follow-up ir pra todo mundo.
-        const { error: fuErr } = await supabase.from('campaigns').update({ caption: fuCaption, follow_up_delay_days: Number(fuDelayDays), target_tags: updates.target_tags }).eq('id', followUp.id)
+        const { error: fuErr } = await supabase.from('campaigns').update({
+          caption: fuCaption, follow_up_delay_days: Number(fuDelayDays), target_tags: updates.target_tags,
+          daily_limit: Math.min(100, Number(fuDailyLimit) || 50),
+        }).eq('id', followUp.id)
         if (fuErr) throw fuErr
       }
 
@@ -775,12 +836,21 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
         {isBase && !loadingFu && followUp && (
           <div className="space-y-3 border-t border-border pt-4">
             <p className="text-xs text-muted font-body uppercase tracking-wide font-medium">Follow-up automático</p>
-            <div>
-              <label className="block text-xs text-muted font-body mb-1.5">Dispara depois de quantos dias sem resposta</label>
-              {editing ? (
-                <input type="number" min={1} value={fuDelayDays} onChange={e => setFuDelayDays(e.target.value)}
-                  className="w-full bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
-              ) : <p className="text-sm text-white font-body">{followUp.follow_up_delay_days ?? 2} dias</p>}
+            <div className="flex flex-wrap gap-4">
+              <div>
+                <label className="block text-xs text-muted font-body mb-1.5">Dispara depois de quantos dias sem resposta</label>
+                {editing ? (
+                  <input type="number" min={1} value={fuDelayDays} onChange={e => setFuDelayDays(e.target.value)}
+                    className="w-32 bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
+                ) : <p className="text-sm text-white font-body">{followUp.follow_up_delay_days ?? 2} dias</p>}
+              </div>
+              <div>
+                <label className="block text-xs text-muted font-body mb-1.5">Limite de mensagens por dia</label>
+                {editing ? (
+                  <input type="number" min={1} max={100} value={fuDailyLimit} onChange={e => setFuDailyLimit(e.target.value)}
+                    className="w-32 bg-surface border border-border rounded-lg px-4 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent" />
+                ) : <p className="text-sm text-white font-body">{followUp.daily_limit ?? 50}/dia</p>}
+              </div>
             </div>
             <div>
               <label className="block text-xs text-muted font-body mb-1.5">Mensagem do follow-up</label>
@@ -791,7 +861,23 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
                 <p className="text-sm text-white font-body whitespace-pre-wrap">{followUp.caption}</p>
               )}
             </div>
-            <p className="text-xs text-muted font-body">Status: {statusConfig[followUp.status]?.label || followUp.status} · {followUp.sent_count || 0} enviados</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted font-body">Status: {statusConfig[followUp.status]?.label || followUp.status} · {followUp.sent_count || 0} enviados</p>
+              {/* Pausar/Retomar direto o follow-up, independente da campanha-base
+                  (2026-07-13) — antes só existia jeito de mudar status da base. */}
+              {(followUp.status === 'scheduled' || followUp.status === 'sending') && (
+                <button type="button" onClick={toggleFollowUpStatus}
+                  className="flex items-center gap-1.5 border border-amber-400/40 text-amber-300 hover:bg-amber-400/10 px-3 py-1.5 rounded-lg text-xs font-body transition-colors shrink-0">
+                  <PauseCircle size={13} /> Pausar follow-up
+                </button>
+              )}
+              {followUp.status === 'stopped' && (
+                <button type="button" onClick={toggleFollowUpStatus}
+                  className="flex items-center gap-1.5 border border-green-400/40 text-green-400 hover:bg-green-400/10 px-3 py-1.5 rounded-lg text-xs font-body transition-colors shrink-0">
+                  <PlayCircle size={13} /> Retomar follow-up
+                </button>
+              )}
+            </div>
           </div>
         )}
         {isBase && !loadingFu && !followUp && (
