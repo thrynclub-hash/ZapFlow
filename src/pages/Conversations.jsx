@@ -16,6 +16,13 @@ import { useAuth } from '../contexts/AuthContext'
 // avulsa de quem nunca recebeu nada nosso fica de fora, pedido do Leonardo
 // pra não misturar contato desconhecido com quem respondeu a Semana 1.
 //
+// Uma linha por CONTATO, não por mensagem (2026-07-13) — pedido do
+// Leonardo depois de ver o mesmo contato repetido várias vezes na lista
+// (cada mensagem que a pessoa manda vira uma linha nova em inbound_messages,
+// mas ele só quer ver o estado atual da conversa). Consulta a view
+// `inbound_messages_latest` (supabase_inbound_latest_per_contact.sql), que
+// já traz só a mensagem mais recente de cada contato.
+//
 // Paginado no servidor (20 por página, não carrega tudo de uma vez) — com
 // o histórico crescendo, carregar tudo de uma vez travaria a tela.
 const PAGE_SIZE = 20
@@ -47,7 +54,7 @@ export default function Conversations() {
 
   async function fetchCounts() {
     const clientId = profile.client_id
-    const base = () => supabase.from('inbound_messages').select('id', { count: 'exact', head: true }).eq('client_id', clientId).not('campaign_id', 'is', null)
+    const base = () => supabase.from('inbound_messages_latest').select('id', { count: 'exact', head: true }).eq('client_id', clientId)
     const [novo, resolvido, ignorado, todas] = await Promise.all([
       base().eq('status', 'novo'),
       base().eq('status', 'resolvido'),
@@ -63,8 +70,8 @@ export default function Conversations() {
     const from = page * PAGE_SIZE
     const to = from + PAGE_SIZE - 1
 
-    let query = supabase.from('inbound_messages').select('id, contact_id, campaign_id, phone, message, received_at, status')
-      .eq('client_id', clientId).not('campaign_id', 'is', null)
+    let query = supabase.from('inbound_messages_latest').select('id, contact_id, campaign_id, phone, message, received_at, status')
+      .eq('client_id', clientId)
       .order('received_at', { ascending: false }).range(from, to)
     if (tab !== 'todas') query = query.eq('status', tab)
 
@@ -114,7 +121,7 @@ export default function Conversations() {
     <div className="space-y-6">
       <div>
         <h1 className="font-display font-bold text-3xl text-white">Conversas</h1>
-        <p className="text-muted text-sm font-body mt-1">Respostas de quem recebeu campanha — inclusive o que o robô não reconheceu automaticamente. Mensagem avulsa de quem nunca recebeu nada nosso não aparece aqui.</p>
+        <p className="text-muted text-sm font-body mt-1">Última mensagem de cada contato que respondeu campanha — inclusive o que o robô não reconheceu automaticamente. Mensagem avulsa de quem nunca recebeu nada nosso não aparece aqui.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
