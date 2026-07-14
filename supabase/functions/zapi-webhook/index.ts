@@ -269,8 +269,18 @@ Deno.serve(async (req: Request) => {
         );
 
         if (subMatch) {
-          await supabase.from("conversation_states").update({ state: "confirmed", preference: subMatch.label, updated_at: new Date().toISOString() })
+          // Bug real corrigido em 2026-07-14: conversation_states nunca teve
+          // constraint UNIQUE(contact_id, campaign_id) até agora — os
+          // upserts/updates falhavam 100% das vezes, em silêncio (supabase-js
+          // não lança exceção, só devolve {error}), porque nada aqui checava
+          // o retorno. A pergunta era enviada normalmente, mas o estado
+          // nunca salvava, e a resposta seguinte da pessoa nunca era
+          // processada. Agora todo write nesta tabela loga erro se acontecer
+          // de novo — não bloqueia o fluxo (mensagem continua sendo
+          // mandada), mas fica visível nos logs da function em vez de sumir.
+          const { error: stateErr } = await supabase.from("conversation_states").update({ state: "confirmed", preference: subMatch.label, updated_at: new Date().toISOString() })
             .eq("contact_id", contact.id).eq("campaign_id", campaignId);
+          if (stateErr) console.error("Erro ao atualizar conversation_states (ask_choice confirmed):", stateErr);
 
           await sendViaBudget(
             number.id, number.zapi_instance_id, number.zapi_token, contact.phone,
@@ -318,10 +328,11 @@ Deno.serve(async (req: Request) => {
       if (matched?.action === "ask_choice" && matched.question && Array.isArray(matched.options) && matched.options.length > 0) {
         // Manda a 2ª pergunta com as sub-opções como botões, e marca que
         // este contato está esperando escolher uma delas (ver 2a acima).
-        await supabase.from("conversation_states").upsert(
+        const { error: awaitingChoiceErr } = await supabase.from("conversation_states").upsert(
           { client_id: number.client_id, contact_id: contact.id, campaign_id: campaignId, state: "awaiting_choice", updated_at: new Date().toISOString() },
           { onConflict: "contact_id,campaign_id" },
         );
+        if (awaitingChoiceErr) console.error("Erro ao salvar conversation_states (awaiting_choice):", awaitingChoiceErr);
         await sendButtonMessage(number.id, number.zapi_instance_id, number.zapi_token, contact.phone, matched.question, matched.options);
         return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, button_action: "ask_choice_asked" }), { headers: { "Content-Type": "application/json" } });
       }
@@ -376,10 +387,11 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (matchesKeyword && (!state || state.state === "initial")) {
-      await supabase.from("conversation_states").upsert(
+      const { error: askedScheduleErr } = await supabase.from("conversation_states").upsert(
         { client_id: number.client_id, contact_id: contact.id, campaign_id: campaignId, state: "asked_schedule", updated_at: new Date().toISOString() },
         { onConflict: "contact_id,campaign_id" },
       );
+      if (askedScheduleErr) console.error("Erro ao salvar conversation_states (asked_schedule):", askedScheduleErr);
       const msg = (flow.ask_period_message || "").replace("{{nome}}", contact.name || "");
       await sendViaBudget(number.id, number.zapi_instance_id, number.zapi_token, contact.phone, msg);
       return new Response(JSON.stringify({ ok: true, step: "asked_schedule" }), { headers: { "Content-Type": "application/json" } });
@@ -391,8 +403,9 @@ Deno.serve(async (req: Request) => {
       else if (normalizedText.includes("tard")) preference = "tarde";
 
       if (preference) {
-        await supabase.from("conversation_states").update({ state: "confirmed", preference, updated_at: new Date().toISOString() })
+        const { error: confirmedErr } = await supabase.from("conversation_states").update({ state: "confirmed", preference, updated_at: new Date().toISOString() })
           .eq("contact_id", contact.id).eq("campaign_id", campaignId);
+        if (confirmedErr) console.error("Erro ao atualizar conversation_states (confirmed):", confirmedErr);
 
         await sendViaBudget(number.id, number.zapi_instance_id, number.zapi_token, contact.phone, flow.confirm_message || "");
 
