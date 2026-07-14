@@ -134,6 +134,9 @@ Deno.serve(async (req: Request) => {
     if (!number.zapi_instance_id || !number.zapi_token) {
       return new Response(JSON.stringify({ error: "Número sem Z-API configurado." }), { status: 422, headers: corsHeaders });
     }
+    if (number.active === false) {
+      return new Response(JSON.stringify({ error: "Este número está marcado como inativo." }), { status: 422, headers: corsHeaders });
+    }
 
     // Teto REAL por número (2026-07-15) — antes usava sempre o DAILY_CAP
     // global fixo (100) aqui, então um envio manual avulso ("mandar agora")

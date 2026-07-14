@@ -17,7 +17,21 @@ export default function AdminNumbers() {
   const [editing, setEditing] = useState(null)
   const [saving, setSaving] = useState(false)
   const [statuses, setStatuses] = useState({})
-  const [form, setForm] = useState({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true, daily_send_cap: '' })
+  const [form, setForm] = useState({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true, daily_send_cap: '', warmup_enabled: true })
+
+  // Mesma tabela de rampa de warmup_enabled do run-automations/index.ts
+  // (resolveWarmupCap) — só pra EXIBIR o teto efetivo aqui, o cálculo real
+  // (que vale de verdade) é sempre feito no servidor.
+  const WARMUP_STEPS = [{ maxDays: 3, cap: 15 }, { maxDays: 7, cap: 25 }, { maxDays: 14, cap: 40 }, { maxDays: 21, cap: 70 }]
+  function effectiveCap(n) {
+    if (n.daily_send_cap != null) return n.daily_send_cap
+    if (n.warmup_enabled && n.created_at) {
+      const daysOld = Math.floor((Date.now() - new Date(n.created_at).getTime()) / 86400000)
+      const step = WARMUP_STEPS.find(s => daysOld <= s.maxDays)
+      if (step) return `${step.cap} (warm-up, dia ${daysOld})`
+    }
+    return '100 (padrão)'
+  }
 
   useEffect(() => { fetchAll() }, [])
 
@@ -32,13 +46,13 @@ export default function AdminNumbers() {
 
   function openNew() {
     setEditing(null)
-    setForm({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true, daily_send_cap: '' })
+    setForm({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true, daily_send_cap: '', warmup_enabled: true })
     setShowModal(true)
   }
 
   function openEdit(n) {
     setEditing(n)
-    setForm({ client_id: n.client_id, label: n.label, phone: n.phone || '', zapi_instance_id: n.zapi_instance_id || '', zapi_token: n.zapi_token || '', active: n.active, daily_send_cap: n.daily_send_cap ?? '' })
+    setForm({ client_id: n.client_id, label: n.label, phone: n.phone || '', zapi_instance_id: n.zapi_instance_id || '', zapi_token: n.zapi_token || '', active: n.active, daily_send_cap: n.daily_send_cap ?? '', warmup_enabled: n.warmup_enabled ?? true })
     setShowModal(true)
   }
 
@@ -126,12 +140,20 @@ export default function AdminNumbers() {
                   </div>
                   <p className="text-muted text-xs font-body mt-0.5">{n.client?.name} · {n.phone || 'Sem telefone'}</p>
                   <p className="text-muted/50 text-xs font-body mt-0.5 truncate">ID: {n.zapi_instance_id || 'não configurado'}</p>
-                  <p className="text-muted/50 text-xs font-body mt-0.5">Teto diário: {n.daily_send_cap ?? '100 (padrão)'} msgs/dia</p>
+                  <p className="text-muted/50 text-xs font-body mt-0.5">Teto diário: {effectiveCap(n)} msgs/dia</p>
+                  {n.connection_status === 'disconnected' && (
+                    <p className="text-red-400 text-xs font-body mt-0.5 font-bold">⚠ Detectado desconectado pelo monitoramento automático — envios pausados até reconectar</p>
+                  )}
+                  {n.last_status_check_at && (
+                    <p className="text-muted/40 text-xs font-body mt-0.5">Última checagem automática: {new Date(n.last_status_check_at).toLocaleString('pt-BR')}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   {st === 'checking' && <RefreshCw size={14} className="text-accent animate-spin" />}
                   {st === 'connected' && <span className="flex items-center gap-1 text-green-400 text-xs font-body"><CheckCircle size={12} /> Online</span>}
                   {st === 'disconnected' && <span className="flex items-center gap-1 text-red-400 text-xs font-body"><XCircle size={12} /> Offline</span>}
+                  {!st && n.connection_status === 'connected' && <span className="flex items-center gap-1 text-green-400/70 text-xs font-body"><CheckCircle size={12} /> Online (auto)</span>}
+                  {!st && n.connection_status === 'disconnected' && <span className="flex items-center gap-1 text-red-400 text-xs font-body"><XCircle size={12} /> Offline (auto)</span>}
                   <button onClick={() => checkStatus(n)} className="text-xs text-muted hover:text-accent font-body transition-colors">Testar</button>
                   <button onClick={() => openEdit(n)} className="text-muted hover:text-white transition-colors p-1"><Edit2 size={14} /></button>
                   <button onClick={() => handleDelete(n)} className="text-muted hover:text-red-400 transition-colors p-1"><Trash2 size={14} /></button>
@@ -169,7 +191,11 @@ export default function AdminNumbers() {
                   <label className="block text-xs text-muted font-body mb-1.5">Teto diário de mensagens (anti-bloqueio)</label>
                   <input type="number" min="1" value={form.daily_send_cap} onChange={e => setForm(f => ({ ...f, daily_send_cap: e.target.value }))} placeholder="Vazio = padrão do sistema (100)"
                     className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
-                  <p className="text-muted/60 text-xs font-body mt-1.5">Teto REAL por número — soma campanha + follow-up + automação + resposta automática, nunca passa disso. Número novo/recém-conectado: comece baixo (15-20) e suba aos poucos nas primeiras semanas.</p>
+                  <p className="text-muted/60 text-xs font-body mt-1.5">Teto REAL por número — soma campanha + follow-up + automação + resposta automática, nunca passa disso. Deixe vazio pra usar warm-up automático (abaixo) em número novo.</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input type="checkbox" id="warmup" checked={form.warmup_enabled} onChange={e => setForm(f => ({ ...f, warmup_enabled: e.target.checked }))} className="accent-yellow-400 w-4 h-4" />
+                  <label htmlFor="warmup" className="text-sm text-white font-body cursor-pointer">Warm-up automático (só entra em vigor se o teto acima estiver vazio — sobe sozinho: 15/dia → 25 → 40 → 70 → padrão, ao longo de 3 semanas desde a criação do número)</label>
                 </div>
                 <div className="flex items-center gap-3">
                   <input type="checkbox" id="active" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} className="accent-yellow-400 w-4 h-4" />

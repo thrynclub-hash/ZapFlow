@@ -94,8 +94,29 @@ async function fetchAllPages<T>(buildQuery: (from: number, to: number) => any): 
 // campanha + follow-up + automação + resposta automática dividem o MESMO
 // orçamento real, nunca somam mais que isso juntos (nulo = mantém o
 // comportamento antigo, teto global de 100).
+// Warm-up automático (2026-07-15, pedido do Leonardo depois do bloqueio da
+// Hassum): número recém-conectado mandando volume alto desde o primeiro
+// dia é bem mais arriscado que um número com histórico (já documentado no
+// CHANGELOG-BUGFIXES-ANTIBLOQUEIO — antes disso era decisão manual, ninguém
+// de fato reduzia o volume na 1ª semana). Só entra em vigor quando
+// warmup_enabled=true E daily_send_cap está vazio — configuração explícita
+// do admin sempre vence a rampa automática.
+const WARMUP_STEPS: Array<{ maxDays: number; cap: number }> = [
+  { maxDays: 3, cap: 15 },
+  { maxDays: 7, cap: 25 },
+  { maxDays: 14, cap: 40 },
+  { maxDays: 21, cap: 70 },
+];
+function resolveWarmupCap(number: any): number | null {
+  if (!number?.warmup_enabled || !number?.created_at) return null;
+  const daysSinceConnected = Math.floor((Date.now() - new Date(number.created_at).getTime()) / 86400000);
+  const step = WARMUP_STEPS.find((s) => daysSinceConnected <= s.maxDays);
+  return step ? step.cap : null; // null = passou da rampa, cai no cap normal
+}
+
 function resolveNumberCap(number: any): number {
-  return number?.daily_send_cap ?? DAILY_CAP;
+  if (number?.daily_send_cap != null) return number.daily_send_cap;
+  return resolveWarmupCap(number) ?? DAILY_CAP;
 }
 // Reserva uma fatia (proporcional ao teto do número, nunca mais que
 // REPLY_RESERVE) pra resposta automática nunca ficar sem vaga só porque o
@@ -114,6 +135,56 @@ async function consumeBudget(numberId: string, cap: number = DAILY_CAP): Promise
     return false;
   }
   return !!allowed;
+}
+
+// Monitoramento de conexão (2026-07-15, pedido do Leonardo depois do
+// bloqueio da Hassum) — a checagem de status (zapi-status) já existia,
+// mas só rodava manualmente (botão "Testar" em Números WhatsApp).
+// Ninguém descobria uma desconexão/bloqueio até um cliente perceber e
+// avisar — foi assim que o bloqueio da Hassum foi descoberto. Isso é
+// DIFERENTE de checkPhoneExists (que valida se o CONTATO tem WhatsApp,
+// não se o número do CLIENTE que está mandando continua conectado).
+//
+// Throttled a 1x/hora por número — bater na Z-API a cada 5min (cada
+// execução do cron) pra cada número é sobrecarga desnecessária.
+const STATUS_CHECK_THROTTLE_MS = 60 * 60 * 1000;
+
+async function checkAndUpdateNumberStatus(number: any): Promise<void> {
+  if (!number?.zapi_instance_id || !number?.zapi_token) return;
+  const lastCheck = number.last_status_check_at ? new Date(number.last_status_check_at).getTime() : 0;
+  if (Date.now() - lastCheck < STATUS_CHECK_THROTTLE_MS) return;
+
+  try {
+    const res = await fetch(`${ZAPI_BASE}/${number.zapi_instance_id}/token/${number.zapi_token}/status`, {
+      headers: { "Client-Token": ZAPI_CLIENT_TOKEN },
+    });
+    // Falha de rede/timeout/resposta não-ok NÃO vira "disconnected" — evita
+    // falso positivo que pausaria um número saudável só por instabilidade
+    // momentânea da Z-API. Só marca disconnected quando a Z-API respondeu
+    // de verdade dizendo connected:false.
+    if (!res.ok) return;
+    const data = await res.json().catch(() => null);
+    if (!data || typeof data.connected !== "boolean") return;
+
+    const status = data.connected ? "connected" : "disconnected";
+    const checkedAt = new Date().toISOString();
+    number.connection_status = status; // já vale pro resto DESTE ciclo do cron
+    number.last_status_check_at = checkedAt;
+    await supabase.from("client_numbers").update({ connection_status: status, last_status_check_at: checkedAt }).eq("id", number.id);
+    if (status === "disconnected") {
+      console.warn(`Número ${number.id} (${number.label}) detectado DESCONECTADO — novos envios pausados até reconectar.`);
+    }
+  } catch (e) {
+    console.error(`Erro checando status de conexão do número ${number.id}:`, e);
+  }
+}
+
+// Gate único usado antes de qualquer tentativa de envio — reusa o toggle
+// "Número ativo" que já existia na UI (client_numbers.active) mas nunca
+// era checado aqui (bug real encontrado junto: desativar um número no
+// admin não impedia campanhas/automações de continuar mandando por ele).
+function isNumberSendable(number: any): boolean {
+  return number?.active !== false && number?.connection_status !== "disconnected";
 }
 
 // Ver nota completa em send-message/index.ts (mesmo bug, corrigido 2026-07-06):
@@ -459,6 +530,9 @@ async function executeAction(run: any, step: any) {
     const { data: number } = await supabase.from("client_numbers").select("*").eq("id", automation?.number_id).single();
     if (!contact || !number) throw new Error("contato ou número não encontrado");
 
+    await checkAndUpdateNumberStatus(number);
+    if (!isNumberSendable(number)) throw new Error("número inativo ou desconectado — envio pausado até reconectar");
+
     const allowed = await consumeBudget(number.id, resolveBulkCap(number));
     if (!allowed) throw new Error(`limite diário de ${resolveNumberCap(number)} mensagens atingido para este número — tenta de novo amanhã`);
 
@@ -558,6 +632,9 @@ async function processScheduledCampaigns() {
   for (const campaign of campaigns ?? []) {
     const number = (campaign as any).client_numbers;
     if (!number) continue;
+
+    await checkAndUpdateNumberStatus(number);
+    if (!isNumberSendable(number)) continue; // número inativo ou desconectado — pausa até reconectar, sem tocar em campaign.status
 
     // Data/hora de término (stop_at, opcional) — pedido do Leonardo pra
     // conseguir dizer "para de mandar a partir do dia X" mesmo com gente
@@ -749,6 +826,9 @@ async function processFollowUpCampaigns() {
   for (const followUp of followUps ?? []) {
     const number = (followUp as any).client_numbers;
     if (!number || !followUp.follow_up_of) continue;
+
+    await checkAndUpdateNumberStatus(number);
+    if (!isNumberSendable(number)) continue; // número inativo ou desconectado — pausa até reconectar
 
     // Mesma janela comercial / dias úteis que a campanha principal já
     // respeita — segue os valores próprios do follow-up (a tela de
