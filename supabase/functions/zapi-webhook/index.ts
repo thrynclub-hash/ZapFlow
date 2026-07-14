@@ -105,6 +105,13 @@ async function sendButtonMessage(
   message: string,
   buttons: Array<{ id: string; label: string }>,
 ) {
+  // Bug real encontrado junto (2026-07-15): desativar "Número ativo" no
+  // admin nunca era checado em lugar nenhum — resposta automática
+  // continuava saindo de um número que o admin tinha marcado inativo.
+  if (number.active === false) {
+    console.warn(`Número ${number.id} está inativo — mensagem com botões não enviada.`);
+    return false;
+  }
   // Mesmo orçamento diário do número que todo o resto do sistema usa
   // (try_consume_daily_send_budget) — uma resposta automática com botões
   // não pode furar o limite anti-bloqueio.
@@ -128,6 +135,10 @@ async function sendButtonMessage(
 }
 
 async function sendViaBudget(number: any, phone: string, message: string) {
+  if (number.active === false) {
+    console.warn(`Número ${number.id} está inativo — resposta automática não enviada.`);
+    return false;
+  }
   const dailyCap = number.daily_send_cap ?? DAILY_CAP;
   const { data: allowed } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: number.id, p_daily_cap: dailyCap });
   if (!allowed) {
