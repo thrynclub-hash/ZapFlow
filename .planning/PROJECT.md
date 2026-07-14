@@ -81,5 +81,18 @@ Leonardo trouxe uma pesquisa própria (via Perplexity) sobre criar um micro-SaaS
 
 **Como aplicar:** antes de tratar isso como iniciativa separada, validar a tese terminando a Phase 5 do roadmap atual (que já está isolada da V1 por causa da Phase 1 — Ambiente Isolado). Reavaliar preço de entrada e "modo playbook" só depois de ter o lifecycle rodando de verdade com um cliente real.
 
+## Incidente real — Bloqueio WhatsApp Hassum (2026-07-15)
+
+O número da Dra Thais Hassum (conectado 2026-06-30) foi bloqueado pelo WhatsApp mesmo com o cliente configurando "50/dia". Causa raiz confirmada com dado real de produção: a campanha "Semana 1" (`daily_limit=50`) e o follow-up dela (`daily_limit` vazio, caindo no default de 50 também) rodavam em paralelo no MESMO número, cada uma se achando com teto próprio de 50 — mas o único hard-stop compartilhado de verdade era um valor global fixo (`DAILY_CAP - REPLY_RESERVE = 90`), igual pra qualquer número do sistema. Resultado: 45+44=89 mensagens no número em 13/07, 44+44=88 em 14/07 — quase o dobro do pretendido. **Não foi causado por múltiplas campanhas (Semana 2/3/4 nunca chegaram a rodar) nem por "automação longa"** — hipóteses levantadas na conversa e descartadas depois de checar o dado real.
+
+**Fixes shipados na V1 em produção** (fora do escopo/isolamento da Fase 2 — correção de bug real, não feature nova):
+- `client_numbers.daily_send_cap`: teto REAL por número, compartilhado entre campanha + follow-up + automação + resposta automática (PR #46)
+- Opt-out reconhece frase livre, não só 3 palavras-chave exatas (PR #46)
+- Warm-up automático de número novo (rampa 15→25→40→70→padrão ao longo de 3 semanas, só quando `daily_send_cap` vazio) (PR #46)
+- Monitoramento automático de conexão (cron detecta desconexão/bloqueio sozinho, throttled 1x/hora, pausa envios) (PR #46)
+- Bug achado junto: toggle "Número ativo" nunca era checado em lugar nenhum — corrigido (PR #46)
+
+**Decisão de priorização (2026-07-15):** não acelerar pra Fase 4 (Agentes de IA) mesmo com a pesquisa da Helena mais rica agora (`research/HELENA-SITE-VISUALS-2026-07-14.md`, PR #47) — é o item mais caro de construir de todo o roadmap, e ZapFlow ainda tem só 1 cliente real rodando (Hassum) com a Fase 1 (Ambiente Isolado) ainda não iniciada. Ordem recomendada e aceita: seguir Fases 1→5 como já roadmapado, validar CRM básico com uso real antes de investir em canvas visual de agentes.
+
 ---
-*Last updated: 2026-07-13 — ideas backlog added after V1 bug triage session*
+*Last updated: 2026-07-15 — incidente de bloqueio WhatsApp (Hassum) documentado, decisão de manter ordem das fases apesar de nova pesquisa de Agentes de IA*
