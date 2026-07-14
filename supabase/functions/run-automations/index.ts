@@ -82,6 +82,31 @@ async function fetchAllPages<T>(buildQuery: (from: number, to: number) => any): 
 // cap opcional — chamadas de disparo em massa (campanha/follow-up) passam
 // DAILY_CAP - REPLY_RESERVE pra nunca consumir a reserva; chamadas de
 // resposta (fluxo "eu quero" etc.) usam o default (DAILY_CAP cheio).
+// Teto REAL por número (2026-07-15, bug real: campanha "Semana 1" da
+// Hassum tinha daily_limit=50, e o follow-up dela tinha daily_limit vazio
+// (caindo no default de 50 também) — as duas rodam em paralelo, cada uma
+// pensando ter seu próprio teto de 50 mensagens/dia, mas o único hard-stop
+// de verdade compartilhado entre elas era DAILY_CAP-REPLY_RESERVE (90),
+// fixo e igual pra QUALQUER número do sistema. Resultado real: 45+44=89 e
+// 44+44=88 mensagens no MESMO número em 2 dias — quase o dobro do que o
+// cliente configurou, e foi o que levou ao bloqueio do WhatsApp.
+// client_numbers.daily_send_cap agora é o teto de verdade POR NÚMERO —
+// campanha + follow-up + automação + resposta automática dividem o MESMO
+// orçamento real, nunca somam mais que isso juntos (nulo = mantém o
+// comportamento antigo, teto global de 100).
+function resolveNumberCap(number: any): number {
+  return number?.daily_send_cap ?? DAILY_CAP;
+}
+// Reserva uma fatia (proporcional ao teto do número, nunca mais que
+// REPLY_RESERVE) pra resposta automática nunca ficar sem vaga só porque o
+// disparo em massa consumiu tudo primeiro (mesmo motivo da REPLY_RESERVE
+// original, ver comentário dela acima).
+function resolveBulkCap(number: any): number {
+  const cap = resolveNumberCap(number);
+  const reserve = Math.min(REPLY_RESERVE, Math.floor(cap * 0.2));
+  return Math.max(1, cap - reserve);
+}
+
 async function consumeBudget(numberId: string, cap: number = DAILY_CAP): Promise<boolean> {
   const { data: allowed, error } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: numberId, p_daily_cap: cap });
   if (error) {
@@ -434,8 +459,8 @@ async function executeAction(run: any, step: any) {
     const { data: number } = await supabase.from("client_numbers").select("*").eq("id", automation?.number_id).single();
     if (!contact || !number) throw new Error("contato ou número não encontrado");
 
-    const allowed = await consumeBudget(number.id);
-    if (!allowed) throw new Error(`limite diário de ${DAILY_CAP} mensagens atingido para este número — tenta de novo amanhã`);
+    const allowed = await consumeBudget(number.id, resolveBulkCap(number));
+    if (!allowed) throw new Error(`limite diário de ${resolveNumberCap(number)} mensagens atingido para este número — tenta de novo amanhã`);
 
     const message = personalize(step.config?.message || "", contact.name);
     try {
@@ -561,8 +586,12 @@ async function processScheduledCampaigns() {
     // daily_limit configurado — "scheduled" sempre mirava no teto de 100/dia
     // inteiro, sem opção de escolher um ritmo mais devagar (10/20/30/50) por
     // segurança extra. Agora ambos os tipos respeitam daily_limit, caindo
-    // pro teto de 100 se nunca foi configurado (campanha antiga).
-    const dailyCap = Math.min(DAILY_CAP, campaign.daily_limit ?? DAILY_CAP);
+    // pro teto REAL do número (resolveNumberCap) se nunca foi configurado
+    // na campanha — antes caía sempre no DAILY_CAP global fixo, então o
+    // ritmo de uma campanha sem daily_limit ignorava qualquer teto mais
+    // baixo que o cliente tivesse configurado pro número (ver bug grande
+    // documentado em resolveNumberCap acima).
+    const dailyCap = Math.min(resolveNumberCap(number), campaign.daily_limit ?? resolveNumberCap(number));
     const isNewDay = campaign.last_daily_run !== todayBR;
     const sentToday = isNewDay ? 0 : (campaign.daily_sent_today ?? 0);
 
@@ -635,8 +664,10 @@ async function sendCampaignBatch(campaign: any, number: any, limit: number | nul
       continue; // não conta pro orçamento diário, não gera log de sent/error
     }
 
-    // Disparo em massa nunca consome a reserva de resposta (ver REPLY_RESERVE).
-    const allowed = await consumeBudget(number.id, DAILY_CAP - REPLY_RESERVE);
+    // Disparo em massa nunca consome a reserva de resposta (ver REPLY_RESERVE)
+    // e sempre respeita o teto REAL do número (resolveBulkCap), não mais um
+    // valor fixo global igual pra todo mundo.
+    const allowed = await consumeBudget(number.id, resolveBulkCap(number));
     if (!allowed) { budgetExhausted = true; break; }
     attempted++;
     try {
@@ -727,7 +758,13 @@ async function processFollowUpCampaigns() {
     const endH = followUp.daily_end_hour ?? 18;
     if (hourBR < startH || hourBR >= endH) continue;
 
-    const dailyCap = Math.min(DAILY_CAP, followUp.daily_limit ?? FOLLOWUP_DEFAULT_DAILY_LIMIT);
+    // Bounded pelo teto REAL do número (resolveNumberCap) — antes caía no
+    // DAILY_CAP global fixo (100) via Math.min, então o "default de 50 mais
+    // conservador" citado acima só valia se ninguém tivesse configurado
+    // daily_limit em NENHUMA campanha do número; combinado com a campanha
+    // base (que também mira seu próprio ~50), as duas juntas passavam de
+    // 90/dia no mesmo número (ver resolveNumberCap para o caso real).
+    const dailyCap = Math.min(resolveNumberCap(number), followUp.daily_limit ?? FOLLOWUP_DEFAULT_DAILY_LIMIT);
     const isNewDay = followUp.last_daily_run !== todayBR;
     const sentToday = isNewDay ? 0 : (followUp.daily_sent_today ?? 0);
 
@@ -782,8 +819,11 @@ async function processFollowUpCampaigns() {
       if (!contact || contact.status !== "Ativo") continue;
 
       // Follow-up também é disparo em massa (não resposta em tempo real) —
-      // mesma reserva de resposta se aplica.
-      const allowed = await consumeBudget(number.id, DAILY_CAP - REPLY_RESERVE);
+      // mesma reserva de resposta se aplica, e o mesmo teto REAL do número
+      // (resolveBulkCap) — é exatamente esta linha que deixava a campanha
+      // base + o follow-up somarem ~90/dia no número da Hassum, cada uma
+      // pensando ter seu próprio teto de 50 (ver resolveNumberCap acima).
+      const allowed = await consumeBudget(number.id, resolveBulkCap(number));
       if (!allowed) break; // orçamento do dia acabou — resto tenta na próxima execução
 
       attempted++;
