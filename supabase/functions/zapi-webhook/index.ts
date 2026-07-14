@@ -93,23 +93,28 @@ function last8(phone: string): string {
 // projeto é publicada isoladamente, sem pasta `_shared` — mesmo padrão já
 // usado no resto do arquivo (formatPhone, normalize, etc. também são
 // próprios de cada function).
+// Recebe o `number` inteiro (não só id/instanceId/token) desde
+// 2026-07-15 — precisa de `number.daily_send_cap` pra respeitar o teto
+// REAL por número (ver nota grande em run-automations/index.ts sobre o
+// bug do "50/dia" da Hassum: o antigo DAILY_CAP fixo era compartilhado
+// por TODOS os números, então nenhum cliente conseguia configurar um
+// teto mais baixo de verdade pro próprio número).
 async function sendButtonMessage(
-  numberId: string,
-  instanceId: string,
-  token: string,
+  number: any,
   phone: string,
   message: string,
   buttons: Array<{ id: string; label: string }>,
 ) {
-  // Mesmo orçamento diário global do número que todo o resto do sistema usa
+  // Mesmo orçamento diário do número que todo o resto do sistema usa
   // (try_consume_daily_send_budget) — uma resposta automática com botões
   // não pode furar o limite anti-bloqueio.
-  const { data: allowed } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: numberId, p_daily_cap: DAILY_CAP });
+  const dailyCap = number.daily_send_cap ?? DAILY_CAP;
+  const { data: allowed } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: number.id, p_daily_cap: dailyCap });
   if (!allowed) {
-    console.warn(`Limite diário atingido para número ${numberId}, mensagem com botões não enviada agora.`);
+    console.warn(`Limite diário (${dailyCap}) atingido para número ${number.id}, mensagem com botões não enviada agora.`);
     return false;
   }
-  const res = await fetch(`${ZAPI_BASE}/${instanceId}/token/${token}/send-button-list`, {
+  const res = await fetch(`${ZAPI_BASE}/${number.zapi_instance_id}/token/${number.zapi_token}/send-button-list`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({
@@ -122,13 +127,14 @@ async function sendButtonMessage(
   return res.ok;
 }
 
-async function sendViaBudget(numberId: string, instanceId: string, token: string, phone: string, message: string) {
-  const { data: allowed } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: numberId, p_daily_cap: DAILY_CAP });
+async function sendViaBudget(number: any, phone: string, message: string) {
+  const dailyCap = number.daily_send_cap ?? DAILY_CAP;
+  const { data: allowed } = await supabase.rpc("try_consume_daily_send_budget", { p_number_id: number.id, p_daily_cap: dailyCap });
   if (!allowed) {
-    console.warn(`Limite diário atingido para número ${numberId}, resposta automática não enviada agora.`);
+    console.warn(`Limite diário (${dailyCap}) atingido para número ${number.id}, resposta automática não enviada agora.`);
     return false;
   }
-  const res = await fetch(`${ZAPI_BASE}/${instanceId}/token/${token}/send-text`, {
+  const res = await fetch(`${ZAPI_BASE}/${number.zapi_instance_id}/token/${number.zapi_token}/send-text`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({ phone: formatPhone(phone), message }),
@@ -144,7 +150,7 @@ async function optOutContact(contact: any, number: any) {
   tags.add("Descadastrado");
   await supabase.from("contacts").update({ status: "Inativo", tags: Array.from(tags) }).eq("id", contact.id);
   await sendViaBudget(
-    number.id, number.zapi_instance_id, number.zapi_token, contact.phone,
+    number, contact.phone,
     "Combinado! Você não vai mais receber nossas mensagens. Se mudar de ideia, é só chamar por aqui de novo a qualquer momento.",
   );
 }
@@ -283,14 +289,14 @@ Deno.serve(async (req: Request) => {
           if (stateErr) console.error("Erro ao atualizar conversation_states (ask_choice confirmed):", stateErr);
 
           await sendViaBudget(
-            number.id, number.zapi_instance_id, number.zapi_token, contact.phone,
+            number, contact.phone,
             "Combinado! Já anotamos e alguém vai te chamar por aqui pra continuar.",
           );
 
           const { data: flowForNotify } = await supabase.from("reply_flows").select("notify_phone").eq("client_id", number.client_id).maybeSingle();
           if (flowForNotify?.notify_phone) {
             const notifyMsg = `🔔 Escolha via botão:\n${contact.name}\n${contact.phone}\nEscolheu: ${subMatch.label}`;
-            await sendViaBudget(number.id, number.zapi_instance_id, number.zapi_token, flowForNotify.notify_phone, notifyMsg);
+            await sendViaBudget(number, flowForNotify.notify_phone, notifyMsg);
           } else {
             console.warn(`reply_flows.notify_phone não configurado para client_id=${number.client_id} — notificação de escolha não enviada.`);
           }
@@ -320,7 +326,7 @@ Deno.serve(async (req: Request) => {
         // O follow-up já para sozinho por causa do insert em inbound_messages
         // acima (ver comentário lá) — aqui só confirma pro contato.
         await sendViaBudget(
-          number.id, number.zapi_instance_id, number.zapi_token, contact.phone,
+          number, contact.phone,
           "Combinado! Você não vai mais receber esse tipo de mensagem.",
         );
         return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, button_action: "stop_followup" }), { headers: { "Content-Type": "application/json" } });
@@ -333,7 +339,7 @@ Deno.serve(async (req: Request) => {
           { onConflict: "contact_id,campaign_id" },
         );
         if (awaitingChoiceErr) console.error("Erro ao salvar conversation_states (awaiting_choice):", awaitingChoiceErr);
-        await sendButtonMessage(number.id, number.zapi_instance_id, number.zapi_token, contact.phone, matched.question, matched.options);
+        await sendButtonMessage(number, contact.phone, matched.question, matched.options);
         return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, button_action: "ask_choice_asked" }), { headers: { "Content-Type": "application/json" } });
       }
       if (matched?.action === "trigger_flow") forceTriggerFlow = true;
@@ -345,7 +351,23 @@ Deno.serve(async (req: Request) => {
     // inbound_messages e continuava recebendo as próximas campanhas
     // normalmente — provável maior gatilho real de denúncia/bloqueio de
     // número no WhatsApp (mais do que volume puro).
-    const OPT_OUT_KEYWORDS = ["parar", "sair", "descadastrar", "cancelar", "remover", "nao quero mais", "pare de mandar", "stop"];
+    // Lista ampliada em 2026-07-15 (caso real: Débora Lorenzo, cliente da
+    // Hassum, escreveu "Não quero receber promoções da clinica!" — frase
+    // natural que NENHUMA das keywords antigas cobria; só não gerou
+    // problema porque alguém viu a mensagem na tela Conversas e
+    // descadastrou na mão). Continua sendo lista de substring (não regex
+    // solto) de propósito — falso positivo aqui (desinscrever quem não
+    // pediu) é pior que falso negativo (alguém aparecer na tela Conversas
+    // pra ação manual, que já é o fallback existente).
+    const OPT_OUT_KEYWORDS = [
+      "parar", "sair", "descadastrar", "cancelar", "remover", "stop", "unsubscribe",
+      "nao quero mais", "nao quero receber", "nao quero essas mensagens", "nao quero essa mensagem",
+      "nao quero mensagem", "nao quero promocao", "nao quero promocoes",
+      "pare de mandar", "pare de enviar", "para de mandar", "para de enviar",
+      "nao mandem mais", "nao me mandem mais", "nao enviem mais",
+      "tira meu numero", "tira meu contato", "retira meu numero", "retire meu contato",
+      "remove meu numero", "remova meu contato",
+    ];
     const isOptOut = !buttonReply && OPT_OUT_KEYWORDS.some((k) => normalizedText === k || normalizedText.includes(k));
     if (isOptOut && contact.status === "Ativo") {
       await optOutContact(contact, number);
@@ -393,7 +415,7 @@ Deno.serve(async (req: Request) => {
       );
       if (askedScheduleErr) console.error("Erro ao salvar conversation_states (asked_schedule):", askedScheduleErr);
       const msg = (flow.ask_period_message || "").replace("{{nome}}", contact.name || "");
-      await sendViaBudget(number.id, number.zapi_instance_id, number.zapi_token, contact.phone, msg);
+      await sendViaBudget(number, contact.phone, msg);
       return new Response(JSON.stringify({ ok: true, step: "asked_schedule" }), { headers: { "Content-Type": "application/json" } });
     }
 
@@ -407,12 +429,12 @@ Deno.serve(async (req: Request) => {
           .eq("contact_id", contact.id).eq("campaign_id", campaignId);
         if (confirmedErr) console.error("Erro ao atualizar conversation_states (confirmed):", confirmedErr);
 
-        await sendViaBudget(number.id, number.zapi_instance_id, number.zapi_token, contact.phone, flow.confirm_message || "");
+        await sendViaBudget(number, contact.phone, flow.confirm_message || "");
 
         if (flow.notify_phone) {
           const turnoLabel = preference === "manha" ? "manhã" : "tarde";
           const notifyMsg = `🔔 Novo agendamento pelo WhatsApp:\n${contact.name}\n${contact.phone}\nTurno: ${turnoLabel}`;
-          await sendViaBudget(number.id, number.zapi_instance_id, number.zapi_token, flow.notify_phone, notifyMsg);
+          await sendViaBudget(number, flow.notify_phone, notifyMsg);
         } else {
           console.warn(`reply_flows.notify_phone não configurado para client_id=${number.client_id} — notificação interna não enviada.`);
         }

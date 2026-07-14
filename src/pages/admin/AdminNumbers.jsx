@@ -17,7 +17,7 @@ export default function AdminNumbers() {
   const [editing, setEditing] = useState(null)
   const [saving, setSaving] = useState(false)
   const [statuses, setStatuses] = useState({})
-  const [form, setForm] = useState({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true })
+  const [form, setForm] = useState({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true, daily_send_cap: '' })
 
   useEffect(() => { fetchAll() }, [])
 
@@ -32,13 +32,13 @@ export default function AdminNumbers() {
 
   function openNew() {
     setEditing(null)
-    setForm({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true })
+    setForm({ client_id: '', label: '', phone: '', zapi_instance_id: '', zapi_token: '', active: true, daily_send_cap: '' })
     setShowModal(true)
   }
 
   function openEdit(n) {
     setEditing(n)
-    setForm({ client_id: n.client_id, label: n.label, phone: n.phone || '', zapi_instance_id: n.zapi_instance_id || '', zapi_token: n.zapi_token || '', active: n.active })
+    setForm({ client_id: n.client_id, label: n.label, phone: n.phone || '', zapi_instance_id: n.zapi_instance_id || '', zapi_token: n.zapi_token || '', active: n.active, daily_send_cap: n.daily_send_cap ?? '' })
     setShowModal(true)
   }
 
@@ -73,8 +73,11 @@ export default function AdminNumbers() {
     }
 
     setSaving(true)
-    if (editing) await supabase.from('client_numbers').update(form).eq('id', editing.id)
-    else await supabase.from('client_numbers').insert(form)
+    // daily_send_cap vem como string do input (ou vazio) — precisa virar
+    // inteiro ou null antes de salvar (coluna integer no banco).
+    const payload = { ...form, daily_send_cap: form.daily_send_cap === '' ? null : parseInt(form.daily_send_cap, 10) }
+    if (editing) await supabase.from('client_numbers').update(payload).eq('id', editing.id)
+    else await supabase.from('client_numbers').insert(payload)
     setSaving(false); setShowModal(false); fetchAll()
   }
 
@@ -123,6 +126,7 @@ export default function AdminNumbers() {
                   </div>
                   <p className="text-muted text-xs font-body mt-0.5">{n.client?.name} · {n.phone || 'Sem telefone'}</p>
                   <p className="text-muted/50 text-xs font-body mt-0.5 truncate">ID: {n.zapi_instance_id || 'não configurado'}</p>
+                  <p className="text-muted/50 text-xs font-body mt-0.5">Teto diário: {n.daily_send_cap ?? '100 (padrão)'} msgs/dia</p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   {st === 'checking' && <RefreshCw size={14} className="text-accent animate-spin" />}
@@ -161,6 +165,12 @@ export default function AdminNumbers() {
                 <F label="Telefone (ex: 5519999999999)" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="5519999999999" />
                 <F label="Z-API Instance ID *" value={form.zapi_instance_id} onChange={v => setForm(f => ({ ...f, zapi_instance_id: v }))} required />
                 <F label="Z-API Token *" value={form.zapi_token} onChange={v => setForm(f => ({ ...f, zapi_token: v }))} required />
+                <div>
+                  <label className="block text-xs text-muted font-body mb-1.5">Teto diário de mensagens (anti-bloqueio)</label>
+                  <input type="number" min="1" value={form.daily_send_cap} onChange={e => setForm(f => ({ ...f, daily_send_cap: e.target.value }))} placeholder="Vazio = padrão do sistema (100)"
+                    className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
+                  <p className="text-muted/60 text-xs font-body mt-1.5">Teto REAL por número — soma campanha + follow-up + automação + resposta automática, nunca passa disso. Número novo/recém-conectado: comece baixo (15-20) e suba aos poucos nas primeiras semanas.</p>
+                </div>
                 <div className="flex items-center gap-3">
                   <input type="checkbox" id="active" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} className="accent-yellow-400 w-4 h-4" />
                   <label htmlFor="active" className="text-sm text-white font-body cursor-pointer">Número ativo</label>

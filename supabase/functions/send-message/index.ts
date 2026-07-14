@@ -135,16 +135,22 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "Número sem Z-API configurado." }), { status: 422, headers: corsHeaders });
     }
 
-    const { data: allowed } = await adminClient.rpc("try_consume_daily_send_budget", { p_number_id: number_id, p_daily_cap: DAILY_CAP });
+    // Teto REAL por número (2026-07-15) — antes usava sempre o DAILY_CAP
+    // global fixo (100) aqui, então um envio manual avulso ("mandar agora")
+    // podia furar um teto mais baixo que o cliente tivesse configurado pro
+    // número (ver nota grande em run-automations/index.ts:resolveNumberCap
+    // sobre o bloqueio real do número da Hassum).
+    const dailyCap = number.daily_send_cap ?? DAILY_CAP;
+    const { data: allowed } = await adminClient.rpc("try_consume_daily_send_budget", { p_number_id: number_id, p_daily_cap: dailyCap });
     if (!allowed) {
       if (contact_id) {
         await adminClient.from("message_logs").insert({
           campaign_id: campaign_id ?? null, client_id: number.client_id, contact_id,
-          status: "error", error_detail: `Limite diário de ${DAILY_CAP} mensagens atingido para este número.`,
+          status: "error", error_detail: `Limite diário de ${dailyCap} mensagens atingido para este número.`,
         });
       }
       return new Response(
-        JSON.stringify({ error: `LIMITE_DIARIO_ATINGIDO`, message: `Limite de ${DAILY_CAP} mensagens/dia atingido para este número. O restante continua automaticamente amanhã.` }),
+        JSON.stringify({ error: `LIMITE_DIARIO_ATINGIDO`, message: `Limite de ${dailyCap} mensagens/dia atingido para este número. O restante continua automaticamente amanhã.` }),
         { status: 429, headers: corsHeaders },
       );
     }
