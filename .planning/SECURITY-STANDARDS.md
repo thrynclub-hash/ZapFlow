@@ -9,6 +9,20 @@
 > Cada item abaixo tem: o que significa (linguagem simples) → o que a
 > auditoria REAL encontrou no ZapFlow e no ToqyApp (não teoria — código lido
 > de verdade) → o que fazer.
+>
+> **Atualizado 2026-07-16 (mesmo dia)**: o Leonardo apontou que
+> `core/templates/qa-prompts/` (raiz do Mega Brain) já tinha prompts prontos
+> de QA — `seguranca-web-owasp.md` e `legal-lgpd-privacidade.md` — que a
+> primeira auditoria não usou como checklist. Rechecagem contra esses dois
+> templates específicos encontrou: (1) uma correção real — eu tinha
+> recomendado "adotar Sentry" e ele **já está integrado e configurado**
+> (`sentry.client/server/edge.config.ts`, DSN real, `@sentry/nextjs`) — erro
+> meu, não uma recomendação válida; (2) headers de segurança (CSP, HSTS,
+> X-Frame-Options, X-Content-Type-Options, Referrer-Policy,
+> Permissions-Policy) **já configurados corretamente** em `next.config.ts`,
+> item que a primeira auditoria nem tinha checado; (3) um gap novo real: sem
+> banner de consentimento de cookies (LGPD) apesar de já existir tracking de
+> analytics próprio.
 
 ## Legenda
 
@@ -212,7 +226,7 @@ tabela de negócio já registra incidentalmente (ex: `created_at`).
 | Domínio | Namecheap | **Manter registro, adicionar Cloudflare na frente** | Não precisa trocar de registrador — Cloudflare como proxy/DNS resolve DDoS + WAF + esconder IP de origem, é a peça que falta, não substitui o Namecheap |
 | Pagamento (planos normais) | Kiwify | **Manter pro Essencial/Freelancer** | Já integrado, resolve Pix/boleto bem, não há problema de segurança encontrado nele em si |
 | Pagamento (revenue-share Agência) | — | **Avaliar Stripe Connect OU Pagar.me/Asaas "split de pagamento"** | Isso é o que resolve a Fase 2 do roadmap (comissão 70/30 automática) — Kiwify não tem split dinâmico por transação de forma nativa. Stripe Connect é o padrão internacional pra isso, mas tem mais atrito com Pix/CPF no Brasil; Pagar.me/Asaas têm split feito pro mercado brasileiro especificamente — decisão pra aprofundar quando a Fase 2 for planejada de verdade, não decidir às pressas aqui |
-| Erro/monitoramento | — | **Adotar Sentry** | Resolve direto "nunca mandar stack trace pro cliente" (captura o erro real do seu lado) + "ser notificado antes do usuário" — é o item de maior custo-benefício de tudo isso, recomendo ser o primeiro a entrar |
+| Erro/monitoramento | **Sentry (ToqyApp)** — já integrado (`sentry.client/server/edge.config.ts`, `@sentry/nextjs`, DSN real configurado) | **Manter, e confirmar que ZapFlow também tem** — correção: eu tinha recomendado "adotar" sem checar, já existe no ToqyApp. Verificar se está capturando erro server-side (API routes) e não só client-side, e replicar no ZapFlow se não tiver |
 | Rate limiting | — | **Adotar Upstash Ratelimit** | Serverless-native, funciona direto na Vercel/Edge Function, resolve o gap mais sério encontrado (`verify-key` sem proteção) |
 | Email transacional | — | **Adotar Resend, se ainda não usa algo assim** | Supabase manda email básico, mas com limite de taxa baixo e pouco controle de entregabilidade — Resend é o padrão atual pra isso |
 | Analytics de produto | — | **PostHog é opcional** | Não é segurança, é produto — útil, mas menor prioridade que o resto desta lista |
@@ -220,14 +234,48 @@ tabela de negócio já registra incidentalmente (ex: `created_at`).
 | Hotmart | — | **Não é a peça certa aqui** | É mais uma plataforma de infoproduto/curso com afiliado embutido — se um dia o ebook/curso da Fase 9 (Conteúdo) for vendido separadamente, pode fazer sentido só pra ISSO, não como parte do core do SaaS |
 | GitHub | Já usa | **Ativar Dependabot + secret scanning** (config, não troca de ferramenta) | Resolve "vulnerabilidade de dependência" automaticamente, é grátis, só precisa ligar nas configurações do repo |
 
+## Headers de segurança (checado 2026-07-16, via template `seguranca-web-owasp.md`)
+
+**Achado real — ✅ ToqyApp já está muito bem feito** (`next.config.ts:34-46`):
+CSP configurada (`frame-ancestors 'none'`, `object-src 'none'`, restringe
+`connect-src` só pro Supabase/Sentry), `X-Frame-Options: DENY`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`
+(bloqueia câmera/microfone/geolocalização por padrão), HSTS com preload.
+Isso é melhor do que a maioria dos SaaS reais tem — nenhuma ação necessária.
+**Não verificado ainda no ZapFlow** (é Vite/SPA + Vercel, headers
+precisariam estar em `vercel.json`, não em `next.config` — checar depois).
+
+## CSRF (checado 2026-07-16)
+
+**Achado real — não é risco ativo hoje**: como a autenticação das APIs usa
+Bearer token no header `Authorization` (não cookie automático), CSRF
+clássico não se aplica do jeito tradicional — o navegador não anexa esse
+header sozinho em requisição cross-site. **Mas isso muda se a recomendação
+do item 1 (sessão em cookie httpOnly) for implementada** — cookie SIM é
+anexado automaticamente pelo navegador em request cross-site, então virar
+cookie sem adicionar proteção CSRF (`SameSite=Strict`/`Lax` no cookie, ou
+token CSRF em formulário) recriaria um problema novo pra resolver outro.
+**Registrar como parte do MESMO trabalho, não depois.**
+
+## LGPD (checado 2026-07-16, via template `legal-lgpd-privacidade.md`)
+
+**Achado real — ⚠️ parcial**: `/privacidade` (131 linhas) e `/cookies` (59
+linhas) existem com conteúdo real, não são páginas vazias — isso é bom.
+**Gap real**: não existe nenhum banner de consentimento de cookies
+interativo (só as páginas estáticas descrevendo a política) — como o
+ToqyApp agora tem analytics próprio (`toqy_analytics_events`, construído
+nesta mesma sessão), formalmente isso pede um aviso/consentimento na
+primeira visita, mesmo sendo analytics próprio (não é rastreamento de
+terceiro/ads, o que reduz a gravidade, mas não zera a pendência).
+
 ## Prioridade de execução sugerida (por impacto real, não por ordem da lista)
 
 1. **`verify-key` sem rate limit** — é o gap mais parecido com "porta sem tranca" dos achados todos
-2. **Token em localStorage → cookie httpOnly** — maior blast radius se algo der errado (rouba sessão de qualquer usuário)
-3. **Sentry** — visibilidade imediata de tudo mais que ainda não foi encontrado
-4. **Esconder erro real do Postgres nas respostas de API**
-5. **CORS `*` no ZapFlow → domínio real**
-6. **Upload: bloquear SVG no upload de logo**
+2. **Token em localStorage → cookie httpOnly + proteção CSRF junto** (ver seção CSRF acima — são a mesma mudança, não duas separadas)
+3. **Esconder erro real do Postgres nas respostas de API**
+4. **CORS `*` no ZapFlow → domínio real**
+5. **Upload: bloquear SVG no upload de logo**
+6. **Banner de consentimento de cookies (LGPD)**
 7. Resto (Cloudflare, OAuth/MFA, dependências, logging estruturado) — conforme prioridade de negócio
 
 ---
