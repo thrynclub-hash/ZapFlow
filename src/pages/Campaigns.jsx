@@ -441,7 +441,7 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
     setQuickReplies(list => list.map((q, i) => i === idx ? { ...q, ...patch } : q))
   }
   function addQuickReply() {
-    setQuickReplies(list => [...list, { id: generateId('opt'), label: '', action: 'trigger_flow' }])
+    setQuickReplies(list => [...list, { id: generateId('opt'), label: '', action: 'send_message', message: '' }])
   }
   function removeQuickReply(idx) {
     setQuickReplies(list => list.filter((_, i) => i !== idx))
@@ -541,6 +541,9 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
   async function handleSave() {
     if (isBase && quickReplies.some(q => q.action === 'ask_choice' && (!q.question?.trim() || !(q.options || []).length || q.options.some(o => !o.label.trim())))) {
       return alert('Pra um botão do tipo "perguntar e continuar", preencha a pergunta e o texto de todas as sub-opções (ou remova as vazias).')
+    }
+    if (isBase && quickReplies.some(q => q.action === 'send_message' && !q.message?.trim())) {
+      return alert('Pra um botão do tipo "mandar mensagem personalizada", preencha a mensagem que vai ser enviada.')
     }
     if (isBase && (campaign.type === 'scheduled' || campaign.type === 'daily') && Number(dailyEndHour) <= Number(dailyStartHour)) {
       return alert('O horário de fim da janela de envio precisa ser depois do horário de início.')
@@ -758,11 +761,28 @@ function CampaignModal({ campaign, mode, clientId, onClose, onSaved }) {
                       </div>
                       <select value={q.action} onChange={e => updateQuickReply(idx, { action: e.target.value })}
                         className="w-full bg-card border border-border rounded-lg px-3 py-2 text-xs text-white font-body focus:outline-none focus:border-accent">
-                        <option value="trigger_flow">Continuar o fluxo normal (pergunta o turno, igual "eu quero")</option>
+                        <option value="send_message">Mandar uma mensagem personalizada (livre, escrita abaixo)</option>
+                        <option value="trigger_flow">Continuar o fluxo de agendamento (pergunta manhã/tarde — configurado em "Resposta automática")</option>
                         <option value="stop_followup">Parar o follow-up automático desta campanha pra essa pessoa</option>
                         <option value="opt_out">Descadastrar de vez (igual responder "PARAR")</option>
                         <option value="ask_choice">Perguntar outra coisa com novos botões, e depois notificar pra continuar na mão</option>
                       </select>
+
+                      {q.action === 'send_message' && (
+                        <div className="space-y-2 pl-3 border-l-2 border-accent/30">
+                          <div>
+                            <label className="block text-xs text-muted font-body mb-1">Mensagem enviada quando alguém tocar aqui</label>
+                            <textarea value={q.message || ''} onChange={e => updateQuickReply(idx, { message: e.target.value })}
+                              rows={3} placeholder="Ex: Show! Já vamos te mandar mais detalhes da promoção por aqui."
+                              className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent" />
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer w-fit">
+                            <input type="checkbox" checked={!!q.notify} onChange={e => updateQuickReply(idx, { notify: e.target.checked })}
+                              className="w-4 h-4 rounded border-border bg-surface accent-accent" />
+                            <span className="text-xs text-muted font-body">Notificar o WhatsApp interno também (mesmo número configurado em "Resposta automática")</span>
+                          </label>
+                        </div>
+                      )}
 
                       {q.action === 'ask_choice' && (
                         <div className="space-y-2 pl-3 border-l-2 border-accent/30">

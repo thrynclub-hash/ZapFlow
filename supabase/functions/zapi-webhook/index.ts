@@ -15,15 +15,21 @@
 //  2. Roda o mini-fluxo "EU QUERO" -> pergunta turno -> confirma ->
 //     notifica o número interno (reply_flows.notify_phone), usando
 //     conversation_states como máquina de estado (já existe e já tem
-//     RLS correta desde supabase_security_fixes.sql).
+//     RLS correta desde supabase_security_fixes.sql). Esse fluxo é ÚNICO
+//     por cliente (reply_flows, 1 linha por client_id) — nasceu pensado
+//     pra Clínica Hassum (agendamento de consulta, pergunta manhã/tarde).
 //  3. Todo envio feito por este webhook passa pelo mesmo limite diário
-//     global (try_consume_daily_send_budget) que o resto do sistema.
+//     por número (client_numbers.daily_send_cap ?? DAILY_CAP) que o resto
+//     do sistema, e respeita "Número ativo" (number.active === false).
 //  4. Detecta clique em botão de resposta rápida (campaigns.quick_replies,
-//     2026-07-03) e executa a ação configurada pro botão (continuar o
-//     fluxo "eu quero", parar o follow-up, ou descadastrar). O FORMATO DO
-//     PAYLOAD de clique de botão da Z-API NÃO foi validado ao vivo nesta
-//     sessão (nenhum número real ligado ainda) — o código abaixo tenta os
-//     formatos documentados publicamente (buttonsResponseMessage /
+//     2026-07-03) e executa a ação configurada pro botão. Ações disponíveis:
+//     send_message (2026-07-16, mensagem livre definida na própria
+//     campanha — pra clientes como a Sodie que não usam o fluxo de
+//     agendamento da Hassum), trigger_flow (o fluxo manhã/tarde acima),
+//     stop_followup, opt_out, ou ask_choice (2ª pergunta com novos botões).
+//     O FORMATO DO PAYLOAD de clique de botão da Z-API NÃO foi validado ao
+//     vivo nesta sessão (nenhum número real ligado ainda) — o código abaixo
+//     tenta os formatos documentados publicamente (buttonsResponseMessage /
 //     listResponseMessage) e cai de volta pro fluxo de texto normal se não
 //     reconhecer o payload. Vale conferir o payload real (console.log já
 //     deixado abaixo) assim que o primeiro clique de botão acontecer de
@@ -325,7 +331,7 @@ Deno.serve(async (req: Request) => {
     let forceTriggerFlow = false;
     if (buttonReply && campaignId) {
       const { data: sourceCampaign } = await supabase.from("campaigns").select("quick_replies").eq("id", campaignId).maybeSingle();
-      const options: Array<{ id: string; label: string; action: string; question?: string; options?: Array<{ id: string; label: string }> }> =
+      const options: Array<{ id: string; label: string; action: string; message?: string; notify?: boolean; question?: string; options?: Array<{ id: string; label: string }> }> =
         Array.isArray(sourceCampaign?.quick_replies) ? sourceCampaign.quick_replies : [];
       const matched = options.find((o) => (buttonReply.buttonId && o.id === buttonReply.buttonId) || (buttonReply.text && o.label === buttonReply.text));
 
@@ -341,6 +347,26 @@ Deno.serve(async (req: Request) => {
           "Combinado! Você não vai mais receber esse tipo de mensagem.",
         );
         return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, button_action: "stop_followup" }), { headers: { "Content-Type": "application/json" } });
+      }
+      // send_message (2026-07-16) — mensagem livre definida na própria
+      // campanha, sem depender do fluxo de agendamento manhã/tarde de
+      // reply_flows (esse é único por cliente e nasceu pra Clínica Hassum;
+      // clientes como a Sodie não têm esse fluxo configurado e precisam
+      // de uma resposta própria por campanha/botão). Opcionalmente também
+      // notifica o WhatsApp interno, reusando reply_flows.notify_phone —
+      // mesmo número já usado pelas notificações de trigger_flow/ask_choice.
+      if (matched?.action === "send_message" && matched.message) {
+        await sendViaBudget(number, contact.phone, matched.message);
+        if (matched.notify) {
+          const { data: flowForNotify } = await supabase.from("reply_flows").select("notify_phone").eq("client_id", number.client_id).maybeSingle();
+          if (flowForNotify?.notify_phone) {
+            const notifyMsg = `🔔 Resposta via botão:\n${contact.name}\n${contact.phone}\nTocou: "${matched.label}"`;
+            await sendViaBudget(number, flowForNotify.notify_phone, notifyMsg);
+          } else {
+            console.warn(`reply_flows.notify_phone não configurado para client_id=${number.client_id} — notificação de botão não enviada.`);
+          }
+        }
+        return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, button_action: "send_message" }), { headers: { "Content-Type": "application/json" } });
       }
       if (matched?.action === "ask_choice" && matched.question && Array.isArray(matched.options) && matched.options.length > 0) {
         // Manda a 2ª pergunta com as sub-opções como botões, e marca que
