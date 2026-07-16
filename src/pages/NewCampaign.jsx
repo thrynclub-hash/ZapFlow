@@ -53,7 +53,15 @@ export default function NewCampaign() {
   // Botões de resposta rápida (2026-07-03) — além de escrever "eu quero" na
   // mão, a pessoa pode tocar num botão pronto na própria mensagem. Cada
   // opção é configurável: o que acontece quando ALGUÉM clica nela.
-  //   trigger_flow    -> mesmo fluxo de quem digita a palavra-chave (pergunta turno)
+  //   trigger_flow    -> mesmo fluxo de quem digita a palavra-chave (pergunta turno,
+  //                      manhã/tarde) — esse fluxo é ÚNICO por cliente (reply_flows,
+  //                      configurado em "Resposta automática" no Histórico) e nasceu
+  //                      pensado pra Clínica Hassum (agendamento de consulta). Faz
+  //                      sentido só pra quem realmente pergunta turno de atendimento.
+  //   send_message    -> (2026-07-16) manda uma mensagem livre, definida aqui na
+  //                      própria campanha — pro caso de clientes como a Sodie, que
+  //                      não usam o fluxo de agendamento da Hassum e só querem
+  //                      responder alguma coisa própria quando alguém tocar no botão.
   //   stop_followup   -> confirma e não manda mais o follow-up desta campanha pra essa pessoa
   //   opt_out         -> descadastra de vez (igual responder "PARAR")
   //   ask_choice      -> manda uma 2ª pergunta com outros botões (ex: "qual
@@ -64,14 +72,14 @@ export default function NewCampaign() {
   //                      pro caso da Hassum (dentista vê e agenda na mão).
   const [wantsQuickReplies, setWantsQuickReplies] = useState(false)
   const [quickReplies, setQuickReplies] = useState([
-    { id: 'yes', label: 'Quero sim! 🙌', action: 'trigger_flow' },
+    { id: 'yes', label: 'Quero sim! 🙌', action: 'send_message', message: '' },
     { id: 'no', label: 'Não quero receber esse tipo de mensagem', action: 'stop_followup' },
   ])
   function updateQuickReply(idx, patch) {
     setQuickReplies(list => list.map((q, i) => i === idx ? { ...q, ...patch } : q))
   }
   function addQuickReply() {
-    setQuickReplies(list => [...list, { id: generateId('opt'), label: '', action: 'trigger_flow' }])
+    setQuickReplies(list => [...list, { id: generateId('opt'), label: '', action: 'send_message', message: '' }])
   }
   function removeQuickReply(idx) {
     setQuickReplies(list => list.filter((_, i) => i !== idx))
@@ -202,6 +210,9 @@ export default function NewCampaign() {
     if (wantsQuickReplies && quickReplies.some(q => !q.label.trim())) return alert('Preencha o texto de todos os botões de resposta rápida (ou remova o que não vai usar).')
     if (wantsQuickReplies && quickReplies.some(q => q.action === 'ask_choice' && (!q.question?.trim() || !(q.options || []).length || q.options.some(o => !o.label.trim())))) {
       return alert('Pra um botão do tipo "perguntar e continuar", preencha a pergunta e o texto de todas as sub-opções (ou remova as vazias).')
+    }
+    if (wantsQuickReplies && quickReplies.some(q => q.action === 'send_message' && !q.message?.trim())) {
+      return alert('Pra um botão do tipo "mandar mensagem personalizada", preencha a mensagem que vai ser enviada.')
     }
 
     setSaving(true)
@@ -594,12 +605,29 @@ export default function NewCampaign() {
                     <label className="block text-xs text-muted font-body mb-1">Quando alguém tocar aqui:</label>
                     <select value={q.action} onChange={e => updateQuickReply(idx, { action: e.target.value })}
                       className="w-full bg-card border border-border rounded-lg px-3 py-2 text-xs text-white font-body focus:outline-none focus:border-accent transition-colors">
-                      <option value="trigger_flow">Continuar o fluxo normal (pergunta o turno, igual "eu quero")</option>
+                      <option value="send_message">Mandar uma mensagem personalizada (livre, escrita abaixo)</option>
+                      <option value="trigger_flow">Continuar o fluxo de agendamento (pergunta manhã/tarde — configurado em "Resposta automática")</option>
                       <option value="stop_followup">Parar o follow-up automático desta campanha pra essa pessoa</option>
                       <option value="opt_out">Descadastrar de vez (igual responder "PARAR")</option>
                       <option value="ask_choice">Perguntar outra coisa com novos botões, e depois notificar pra continuar na mão</option>
                     </select>
                   </div>
+
+                  {q.action === 'send_message' && (
+                    <div className="space-y-2 pl-3 border-l-2 border-accent/30">
+                      <div>
+                        <label className="block text-xs text-muted font-body mb-1">Mensagem enviada quando alguém tocar aqui</label>
+                        <textarea value={q.message || ''} onChange={e => updateQuickReply(idx, { message: e.target.value })}
+                          rows={3} placeholder="Ex: Show! Já vamos te mandar mais detalhes da promoção por aqui."
+                          className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent transition-colors" />
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer w-fit">
+                        <input type="checkbox" checked={!!q.notify} onChange={e => updateQuickReply(idx, { notify: e.target.checked })}
+                          className="w-4 h-4 rounded border-border bg-surface accent-accent" />
+                        <span className="text-xs text-muted font-body">Notificar o WhatsApp interno também (mesmo número configurado em "Resposta automática")</span>
+                      </label>
+                    </div>
+                  )}
 
                   {q.action === 'ask_choice' && (
                     <div className="space-y-2 pl-3 border-l-2 border-accent/30">
