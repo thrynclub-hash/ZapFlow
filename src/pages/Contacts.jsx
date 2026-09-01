@@ -143,9 +143,19 @@ export default function Contacts() {
     setSaving(false)
   }
 
+  // Bug real reportado pelo Leonardo: contato com tag "sem-whatsapp" era
+  // excluído, sumia da tela, e "voltava" depois de atualizar a página.
+  // Causa: o delete não checava erro nem quantas linhas foram REALMENTE
+  // apagadas — se a policy de RLS filtrasse a linha (0 linhas afetadas) ou
+  // o Supabase devolvesse erro, o código seguia em frente e removia da
+  // lista local do mesmo jeito, dando a falsa impressão de sucesso até o
+  // próximo fetchContacts() trazer o contato de volta do banco. Agora só
+  // remove da tela o que o banco confirmou (count) ter apagado de verdade.
   async function handleDelete(id) {
     if (!confirm('Remover este contato?')) return
-    await supabase.from('contacts').delete().eq('id', id)
+    const { error, count } = await supabase.from('contacts').delete({ count: 'exact' }).eq('id', id)
+    if (error) { alert('Erro ao remover contato: ' + error.message); return }
+    if (!count) { alert('Não foi possível remover este contato (0 linhas afetadas — pode ser permissão). Nada foi apagado.'); return }
     setContacts(c => c.filter(x => x.id !== id))
   }
 
@@ -248,12 +258,27 @@ export default function Contacts() {
     if (ids.length === 0) return
     if (!confirm(`Remover ${ids.length} contato(s) selecionado(s)? Isso não pode ser desfeito.`)) return
     setBulkBusy(true)
+    // Mesmo bug do handleDelete (ver comentário lá): sem checar error/count,
+    // uma exclusão que falhou (RLS, rede) sumia da tela e voltava no refresh.
+    // Aqui só tira da lista local os ids que cada chunk confirmou ter apagado.
+    const actuallyDeleted = new Set()
+    let anyError = ''
     for (const idsChunk of chunk(ids, BULK_CHUNK)) {
-      await supabase.from('contacts').delete().in('id', idsChunk)
+      const { error, count } = await supabase.from('contacts').delete({ count: 'exact' }).in('id', idsChunk)
+      if (error) { anyError = error.message; continue }
+      if (count === idsChunk.length) {
+        idsChunk.forEach(id => actuallyDeleted.add(id))
+      } else {
+        // Chunk apagou parcialmente (algumas linhas bloqueadas por RLS) —
+        // não dá pra saber quais pelo count sozinho, então não assume
+        // nenhuma como apagada nesse chunk pra não esconder falha parcial.
+        anyError = anyError || `${idsChunk.length - count} de ${idsChunk.length} contato(s) não puderam ser removidos (permissão).`
+      }
     }
-    setContacts(cs => cs.filter(c => !selectedIds.has(c.id)))
-    setSelectedIds(new Set())
+    setContacts(cs => cs.filter(c => !actuallyDeleted.has(c.id)))
+    setSelectedIds(prev => { const next = new Set(prev); actuallyDeleted.forEach(id => next.delete(id)); return next })
     setBulkBusy(false)
+    if (anyError) alert('Alguns contatos não foram removidos: ' + anyError)
   }
 
   // Normaliza cabeçalho de coluna: minúsculas, sem acento, sem espaço/pontuação —
