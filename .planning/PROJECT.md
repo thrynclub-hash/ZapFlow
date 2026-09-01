@@ -43,6 +43,7 @@ Fase 2 entrega uma camada leve de CRM (status de contato, consumo por plano, cob
 - Agentes de IA / supervisor — é Fase 4
 - Inbox multiatendente / multicanal (Instagram, Messenger) — é Fase 4
 - Reescrever o motor de envio ou a arquitetura de automações — Fase 2 constrói sobre o que já existe, não substitui
+- Camada de conectores multi-canal (WhatsApp Business API oficial da Meta, Evolution API, 360Dialog, Twilio, ao lado do Z-API atual) — já prevista no `ZAPFLOW-MASTER-PROMPT.md` original, nunca implementada (hoje Z-API é hardcoded em `zapi.js`/`zapi-webhook`/`send-message`/`zapi-status`); decisão de construir é Fase 4, não Fase 2 (ver Key Decisions 2026-07-16)
 
 ## Context
 
@@ -67,6 +68,7 @@ Fase 2 entrega uma camada leve de CRM (status de contato, consumo por plano, cob
 | Ambiente isolado: novo projeto Supabase + branch `fase-2` com deploy Vercel próprio | Usuário pediu explicitamente manter V1 rodando; decisão delegada a Claude | — Pending |
 | GSD usado para planejar Fase 2 (ao invés de plano ad-hoc na conversa) | Trabalho multi-sessão, precisa ser retomável; regra do projeto (RULE-GSD-MANDATORY) | — Pending |
 | Pesquisa de mercado real (Bolten/HelenaCRM + domínio WhatsApp-CRM) antes de fechar requirements | Usuário pediu pra ir além do documento de referência dele | — Pending |
+| Pivot de estratégia de canal (2026-07-16): para clientes **novos** a partir de agora, WhatsApp deixa de ser canal de disparo em massa e vira canal de agente conversacional (baixo volume, 1:1); comunicação de volume migra para e-mail/outros canais. Hassum e Sodie (V1) **não são afetados** — continuam operando exatamente como hoje. Ordem do roadmap **mantida**: termina Fase 2 (mini-CRM, 5 fases já planejadas) antes de iniciar conectores multi-canal/Agentes de IA (Fase 4) | Risco de banimento é estrutural ao usar Z-API (WhatsApp Web, não-oficial) mesmo com bug de budget já corrigido (ver Incidente 2026-07-15); usuário decidiu não esperar um próximo incidente pra reduzir exposição em contas novas, mas evitar abrir 2 frentes grandes (mini-CRM + agentes) ao mesmo tempo com só 2 clientes reais rodando | Decidido |
 
 ## Ideas Backlog (2026-07-13)
 
@@ -94,5 +96,17 @@ O número da Dra Thais Hassum (conectado 2026-06-30) foi bloqueado pelo WhatsApp
 
 **Decisão de priorização (2026-07-15):** não acelerar pra Fase 4 (Agentes de IA) mesmo com a pesquisa da Helena mais rica agora (`research/HELENA-SITE-VISUALS-2026-07-14.md`, PR #47) — é o item mais caro de construir de todo o roadmap, e ZapFlow ainda tem só 1 cliente real rodando (Hassum) com a Fase 1 (Ambiente Isolado) ainda não iniciada. Ordem recomendada e aceita: seguir Fases 1→5 como já roadmapado, validar CRM básico com uso real antes de investir em canvas visual de agentes.
 
+## Pivot de estratégia de canal (2026-07-16)
+
+Um dia após o incidente acima, o usuário trouxe um resumo gerado por ChatGPT propondo reposicionar o ZapFlow como plataforma multi-canal (o Master Prompt original já previa isso — camada de conectores WhatsApp Business API oficial/Evolution/360Dialog/Twilio ao lado do Z-API — nunca implementada) e parar de tratar WhatsApp como canal de disparo em massa.
+
+**Nota epistêmica (separar fato de inferência — `epistemic-standards.md`):** o resumo do ChatGPT concluiu que "o bloqueio não foi causado por volume, mas por qualquer automação via Z-API ser detectável independente de tudo" — essa é uma teoria do ChatGPT, sem acesso aos logs reais. A investigação real de 2026-07-15 (seção acima) achou uma causa concreta e diferente: bug de contagem de budget (campanha + follow-up cada um achando ter teto próprio de 50, hard-stop real era 90 global), já corrigido. O bug corrigido **não prova nem desmente** a tese mais ampla de que Z-API é estruturalmente arriscado (isso é conhecido do mercado, independente deste incidente) — as duas coisas são discutidas separadamente para não tratar inferência como fato.
+
+**Decisão (aceita pelo usuário, 2026-07-16):**
+- Para clientes **novos** a partir de agora: WhatsApp deixa de ser canal de campanha em massa e vira canal de agente conversacional (baixo volume, 1:1, focado em qualidade da interação); comunicação de volume/bulk migra para e-mail e outros canais sem risco de banimento.
+- **Hassum e Sodie (V1) não são afetados** — continuam operando exatamente como hoje, incluindo os fixes de anti-bloqueio já shipados.
+- **Ordem do roadmap mantida**: Fases 1-5 (mini-CRM, já planejadas e prontas pra executar) continuam antes de qualquer trabalho de conectores multi-canal ou builder de Agentes de IA (Fase 4 da visão maior) — evita abrir 2 frentes grandes ao mesmo tempo com só 2 clientes reais rodando.
+- **Implicação arquitetural futura** (a formalizar só quando a Fase 4 for de fato planejada via `/gsd:plan-phase 4` ou equivalente): a camada de conectores do Master Prompt original vira requisito formal nesse momento, não antes — evita prender o futuro agente de WhatsApp a um único provedor.
+
 ---
-*Last updated: 2026-07-15 — incidente de bloqueio WhatsApp (Hassum) documentado, decisão de manter ordem das fases apesar de nova pesquisa de Agentes de IA*
+*Last updated: 2026-07-16 — pivot de estratégia de canal documentado (WhatsApp=agente/e-mail=volume para clientes novos), Hassum/Sodie e ordem do roadmap confirmados intocados*
