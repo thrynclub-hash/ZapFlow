@@ -290,6 +290,60 @@ export default function NewCampaign() {
     navigate('/campaigns')
   }
 
+  // Salvar como rascunho (2026-09-03, pedido do Leonardo) — antes só dava
+  // pra criar já "Agendado" ou "Por dia", sem jeito de deixar pronto pra
+  // aprovação (ex: Dra dar OK na arte/texto) sem já comprometer uma data
+  // de disparo. status='draft' já existia e já funcionava do lado de
+  // Campaigns.jsx (seção "📝 RASCUNHO", com Disparar agora/Agendar depois
+  // no próprio card) — só faltava um jeito de CRIAR direto nesse estado.
+  // Validação mais solta que handleSend: não exige data/hora nem checa
+  // a janela de envio, já que nada disso importa até sair do rascunho.
+  async function handleSaveDraft() {
+    if (!form.number_id) return alert('Selecione uma loja.')
+    if (!form.caption.trim()) return alert('Escreva a mensagem.')
+    if (wantsQuickReplies && quickReplies.some(q => !q.label.trim())) return alert('Preencha o texto de todos os botões de resposta rápida (ou remova o que não vai usar).')
+    if (wantsQuickReplies && quickReplies.some(q => q.action === 'ask_choice' && (!q.question?.trim() || !(q.options || []).length || q.options.some(o => !o.label.trim())))) {
+      return alert('Pra um botão do tipo "perguntar e continuar", preencha a pergunta e o texto de todas as sub-opções (ou remova as vazias).')
+    }
+    if (wantsQuickReplies && quickReplies.some(q => q.action === 'send_message' && !q.message?.trim())) {
+      return alert('Pra um botão do tipo "mandar mensagem personalizada", preencha a mensagem que vai ser enviada.')
+    }
+
+    setSaving(true)
+
+    const { data: campaign, error: campErr } = await supabase.from('campaigns').insert({
+      client_id: clientId, number_id: form.number_id,
+      name: form.name || `Disparo ${new Date().toLocaleDateString('pt-BR')}`,
+      caption: form.caption, type: form.send_mode, status: 'draft',
+      total_count: filteredContacts.length, sent_count: 0, error_count: 0,
+      target_tags: targetTags.length > 0 ? targetTags : null,
+      daily_limit: Math.min(DAILY_CAP, form.daily_limit),
+      daily_start_hour: form.daily_start_hour,
+      daily_end_hour: form.daily_end_hour,
+      weekdays_only: form.weekdays_only,
+      scheduled_for: null,
+      stop_at: null,
+      quick_replies: wantsQuickReplies ? quickReplies.filter(q => q.label.trim()) : [],
+    }).select().single()
+
+    if (campErr) { alert('Erro ao salvar rascunho: ' + campErr.message); setSaving(false); return }
+
+    if (imageFile) {
+      try {
+        const imageUrl = await uploadImage(campaign.id)
+        await supabase.from('campaigns').update({ image_url: imageUrl }).eq('id', campaign.id)
+      } catch (err) {
+        alert('Rascunho salvo, mas a imagem não subiu: ' + err.message + '. Você pode adicionar depois pelo Histórico.')
+      }
+    } else if (imageUrlInput.trim()) {
+      await supabase.from('campaigns').update({ image_url: imageUrlInput.trim() }).eq('id', campaign.id)
+    }
+
+    setSaving(false)
+    alert('📝 Rascunho salvo! Quando quiser aprovar e disparar (ou agendar), é só ir em Histórico.')
+    navigate('/campaigns')
+  }
+
   // Mesma substituição de {{nome}} que o run-automations faz (personalize())
   // — precisa rodar ANTES de chamar send-message, porque lá o spintax
   // {opção1|opção2} já roda em cima do texto, e {{nome}} sem substituir
@@ -760,6 +814,12 @@ export default function NewCampaign() {
             className="w-full bg-accent hover:bg-accent-dim disabled:opacity-40 disabled:cursor-not-allowed text-bg font-display font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-colors text-base">
             {saving ? 'Salvando...' : <><Clock size={18} /> Agendar disparo (~{estimatedDays} dias)</>}
           </button>
+
+          <button type="button" onClick={handleSaveDraft} disabled={!form.number_id || saving}
+            className="w-full bg-surface border border-border hover:border-muted disabled:opacity-40 disabled:cursor-not-allowed text-white font-display font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors text-sm">
+            {saving ? 'Salvando...' : '📝 Salvar como rascunho (sem agendar nem disparar)'}
+          </button>
+          <p className="text-xs text-muted font-body text-center -mt-2">Fica esperando aprovação — você agenda ou dispara depois, pelo Histórico.</p>
 
           {targetTags.length > 0 && (
             <button type="button" onClick={handleSendNow} disabled={filteredContacts.length === 0 || sendingNow || saving}
