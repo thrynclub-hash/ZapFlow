@@ -101,8 +101,12 @@ export default function Birthdays() {
     setSaving(true)
     let imageUrl = savedImageUrl
     if (imageFile) {
+      // Mesmo bug do Campaigns.jsx (ver comentário lá): path fixo fazia a
+      // URL nunca mudar quando o cliente trocava a foto de aniversário, e
+      // o Z-API continuava servindo a versão antiga em cache. Path com
+      // timestamp garante URL nova a cada troca.
       const ext = imageFile.name.split('.').pop()
-      const path = `birthday/${clientId}/aniversario.${ext}`
+      const path = `birthday/${clientId}/aniversario-${Date.now()}.${ext}`
       await supabase.storage.from('creatives').upload(path, imageFile, { upsert: true })
       const { data } = supabase.storage.from('creatives').getPublicUrl(path)
       imageUrl = data.publicUrl

@@ -194,12 +194,24 @@ export default function Campaigns() {
     fetchCampaigns()
   }
 
+  // Bug real reportado pelo Leonardo (Sodie, 2026-09-02): trocou a imagem
+  // de uma campanha já ativa, o texto novo foi enviado certinho mas a
+  // FOTO continuou saindo a antiga pro WhatsApp — mesmo com a tela do
+  // ZapFlow já mostrando a nova. Causa: o upload sempre usava o MESMO path
+  // (`campaigns/{clientId}/{campaignId}.ext`, com upsert:true), então a
+  // URL pública nunca mudava, só o conteúdo do arquivo "por baixo" dela.
+  // O Z-API (e qualquer CDN no caminho) faz cache de mídia por URL — como
+  // a URL era idêntica à de um envio anterior, ele continuava servindo os
+  // bytes antigos que já tinha guardado, mesmo com o arquivo trocado no
+  // Supabase. Corrigido gerando um path NOVO a cada upload (timestamp),
+  // pra URL sempre mudar e nenhuma camada de cache conseguir servir a
+  // versão velha.
   async function handleImageChange(c, e) {
     const file = e.target.files[0]
     if (!file) return
     setUploadingId(c.id)
     const ext = file.name.split('.').pop()
-    const path = `campaigns/${clientId}/${c.id}.${ext}`
+    const path = `campaigns/${clientId}/${c.id}-${Date.now()}.${ext}`
     const { error: upErr } = await supabase.storage.from('creatives').upload(path, file, { upsert: true })
     if (upErr) { alert('Erro ao enviar imagem: ' + upErr.message); setUploadingId(null); return }
     const { data } = supabase.storage.from('creatives').getPublicUrl(path)
