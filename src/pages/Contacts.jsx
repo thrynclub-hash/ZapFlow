@@ -239,18 +239,28 @@ export default function Contacts() {
       let tags = Array.isArray(c.tags) ? [...c.tags] : []
       if (removeTag) tags = tags.filter(t => t !== removeTag)
       if (addTag && !tags.includes(addTag)) tags.push(addTag)
-      // client_id precisa ir junto: upsert vira INSERT ... ON CONFLICT por
-      // baixo dos panos, e a policy RLS "Contacts own" (FOR ALL USING,
-      // sem WITH CHECK próprio) reusa o USING como WITH CHECK do INSERT —
-      // sem client_id no payload ele chega NULL e a policy rejeita a linha
-      // ("new row violates row-level security policy"), mesmo sendo um
-      // contato que já é do cliente e já ia só ser atualizado.
-      return { id: c.id, client_id: clientId, tags }
+      return { id: c.id, tags }
     })
+
+    // UPDATE de verdade, não upsert: upsert vira INSERT ... ON CONFLICT por
+    // baixo, e o Postgres valida a linha INTEIRA como se fosse inserir —
+    // tanto o WITH CHECK do RLS (resolvido antes com client_id) quanto as
+    // colunas NOT NULL (name, phone...) que este payload nunca teve porque
+    // só queremos mexer em "tags". UPDATE só toca a coluna que passamos,
+    // sem esse efeito colateral. Agrupa por resultado final pra fazer
+    // poucas chamadas em vez de uma por contato.
+    const groups = new Map() // JSON.stringify(tags) -> { tags, ids }
+    for (const r of rows) {
+      const key = JSON.stringify(r.tags)
+      if (!groups.has(key)) groups.set(key, { tags: r.tags, ids: [] })
+      groups.get(key).ids.push(r.id)
+    }
     setBulkBusy(true)
-    for (const rowsChunk of chunk(rows, BULK_CHUNK)) {
-      const { error } = await supabase.from('contacts').upsert(rowsChunk, { onConflict: 'id' })
-      if (error) { alert('Erro ao atualizar tags em massa: ' + error.message); setBulkBusy(false); return }
+    for (const { tags, ids } of groups.values()) {
+      for (const idsChunk of chunk(ids, BULK_CHUNK)) {
+        const { error } = await supabase.from('contacts').update({ tags }).in('id', idsChunk)
+        if (error) { alert('Erro ao atualizar tags em massa: ' + error.message); setBulkBusy(false); return }
+      }
     }
     const byId = new Map(rows.map(r => [r.id, r.tags]))
     setContacts(cs => cs.map(c => byId.has(c.id) ? { ...c, tags: byId.get(c.id) } : c))
