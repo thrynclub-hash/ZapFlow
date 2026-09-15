@@ -239,7 +239,13 @@ export default function Contacts() {
       let tags = Array.isArray(c.tags) ? [...c.tags] : []
       if (removeTag) tags = tags.filter(t => t !== removeTag)
       if (addTag && !tags.includes(addTag)) tags.push(addTag)
-      return { id: c.id, tags }
+      // client_id precisa ir junto: upsert vira INSERT ... ON CONFLICT por
+      // baixo dos panos, e a policy RLS "Contacts own" (FOR ALL USING,
+      // sem WITH CHECK próprio) reusa o USING como WITH CHECK do INSERT —
+      // sem client_id no payload ele chega NULL e a policy rejeita a linha
+      // ("new row violates row-level security policy"), mesmo sendo um
+      // contato que já é do cliente e já ia só ser atualizado.
+      return { id: c.id, client_id: clientId, tags }
     })
     setBulkBusy(true)
     for (const rowsChunk of chunk(rows, BULK_CHUNK)) {
