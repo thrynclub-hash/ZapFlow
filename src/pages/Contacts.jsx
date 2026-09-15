@@ -9,6 +9,9 @@ import Modal from '../components/Modal'
 // não existe checkout automático, o cliente clica e já cai numa conversa
 // pronta pedindo o add-on; Leonardo cobra manualmente e libera em Clientes.
 const SUPPORT_WHATSAPP = '5519997051919'
+// Sentinela pro filtro "sem tag" — nunca colide com tag real (usuário digita
+// tag livre, mas não digita isso), então dá pra distinguir de "" = sem filtro.
+const NO_TAG = '__sem_tag__'
 function addonLink(kind, companyName) {
   const label = kind === 'contacts' ? '+1000 contatos' : '+1 número de WhatsApp'
   const text = `Oi! Sou d${companyName ? 'a empresa ' + companyName : 'o ZapFlow'} e quero contratar o add-on "${label}" no meu plano.`
@@ -100,7 +103,9 @@ export default function Contacts() {
   const filtered = contacts.filter(c => {
     const matchSearch = !search || c.name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search)
     const matchNumber = !filterNumber || c.number_id === filterNumber
-    const matchTag = !filterTag || (Array.isArray(c.tags) && c.tags.includes(filterTag))
+    const matchTag = !filterTag || (filterTag === NO_TAG
+      ? !Array.isArray(c.tags) || c.tags.length === 0
+      : Array.isArray(c.tags) && c.tags.includes(filterTag))
     return matchSearch && matchNumber && matchTag
   })
 
@@ -596,6 +601,7 @@ export default function Contacts() {
           <select value={filterTag} onChange={e => setFilterTag(e.target.value)}
             className="bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent">
             <option value="">Todas as tags</option>
+            <option value={NO_TAG}>Sem tag</option>
             {tagOptions.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
