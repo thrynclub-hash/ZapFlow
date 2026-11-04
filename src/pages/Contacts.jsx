@@ -461,8 +461,18 @@ export default function Contacts() {
         // é bloqueado — só CONTATO NOVO conta pro limite. Se o plano permite
         // menos novos do que vieram na planilha, importa até o limite e avisa.
         const existingPhones = new Set(contacts.map(c => c.phone))
-        const toUpdate = deduped.filter(c => existingPhones.has(c.phone))
+        // Bug real (Fase 2, LNK-04): contato que já deu opt-out (tag
+        // "Descadastrado", ver zapi-webhook.ts optOutContact) tinha o status
+        // reativado pra "Ativo" sempre que o telefone dele reaparecia numa
+        // planilha importada depois — mesmo reenvio de lista antiga, mesmo
+        // import de outra origem (ex: LinkedIn) com o mesmo número. Esses
+        // contatos agora são pulados inteiramente no upsert, nunca tocados.
+        const optOutPhones = new Set(
+          contacts.filter(c => Array.isArray(c.tags) && c.tags.includes('Descadastrado')).map(c => c.phone)
+        )
+        const toUpdate = deduped.filter(c => existingPhones.has(c.phone) && !optOutPhones.has(c.phone))
         const toCreate = deduped.filter(c => !existingPhones.has(c.phone))
+        const blockedByOptOut = deduped.filter(c => optOutPhones.has(c.phone)).length
         let blockedByPlan = 0
         let allowedNew = toCreate
         if (planLimit?.contacts_limit != null) {
@@ -494,7 +504,7 @@ export default function Contacts() {
         await fetchContacts()
         const skipped = totalCandidateRows - toInsert.length
         const duplicatesInFile = toInsert.length - deduped.length
-        setImportSummary({ imported: toUpsert.length, skipped, duplicatesInFile, blockedByPlan, planLimit: planLimit?.contacts_limit, total: totalCandidateRows })
+        setImportSummary({ imported: toUpsert.length, skipped, duplicatesInFile, blockedByPlan, blockedByOptOut, planLimit: planLimit?.contacts_limit, total: totalCandidateRows })
       } catch (err) {
         alert('Erro ao importar: ' + err.message)
       }
@@ -571,6 +581,7 @@ export default function Contacts() {
             {importSummary.skipped > 0 && <> · <span className="text-amber-300">{importSummary.skipped} ignorados</span> (sem nome ou telefone válido)</>}
             {importSummary.duplicatesInFile > 0 && <> · {importSummary.duplicatesInFile} repetidos dentro da própria planilha</>}
             {importSummary.blockedByPlan > 0 && <> · <span className="text-amber-300 font-medium">{importSummary.blockedByPlan} não importados — limite do plano ({importSummary.planLimit?.toLocaleString()} contatos) atingido.</span></>}
+            {importSummary.blockedByOptOut > 0 && <> · <span className="text-amber-300">{importSummary.blockedByOptOut} ignorados</span> (já descadastrados, não reativados)</>}
           </p>
           <div className="flex items-center gap-3 shrink-0">
             {importSummary.blockedByPlan > 0 && (
