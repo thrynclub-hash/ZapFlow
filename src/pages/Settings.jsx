@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard } from 'lucide-react'
+import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard, Gauge } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -20,12 +20,46 @@ export default function Settings() {
   const [addons, setAddons] = useState([])
   const [loading, setLoading] = useState(true)
   const [buyingType, setBuyingType] = useState(null)
+  const [usage, setUsage] = useState(null) // { contacts, numbers, campaigns, limits: {...} }
 
   useEffect(() => {
     if (!profile?.client_id) return
     fetchNumbers()
     fetchAddons()
+    fetchUsage()
   }, [profile])
+
+  // Fase 2, Phase 3 (Painel de Consumo) - CONS-01..05. Fonte única da
+  // comparação: plan_limits (+ campaigns_limit, coluna nova) ampliado por
+  // client_addons ativos - a mesma lógica que Contacts.jsx já usa pra
+  // contatos, generalizada aqui pra números e campanhas também.
+  async function fetchUsage() {
+    const { data: client } = await supabase.from('clients').select('plan').eq('id', profile.client_id).single()
+    if (!client?.plan) return
+    const { data: limit } = await supabase.from('plan_limits').select('*').eq('plan', client.plan).single()
+    if (!limit) return
+    const { data: addonRows } = await supabase.from('client_addons').select('addon_type, quantity').eq('client_id', profile.client_id).eq('status', 'active')
+    const extraContacts = (addonRows || []).filter(a => a.addon_type === 'contacts_1000').reduce((s, a) => s + a.quantity, 0) * 1000
+    const extraNumbers = (addonRows || []).filter(a => a.addon_type === 'number').reduce((s, a) => s + a.quantity, 0)
+
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
+    const [{ count: contactsCount }, { count: numbersCount }, { count: campaignsCount }] = await Promise.all([
+      supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('client_id', profile.client_id),
+      supabase.from('client_numbers').select('id', { count: 'exact', head: true }).eq('client_id', profile.client_id).eq('active', true),
+      supabase.from('campaigns').select('id', { count: 'exact', head: true }).eq('client_id', profile.client_id).gte('created_at', monthStart.toISOString()),
+    ])
+
+    setUsage({
+      contacts: contactsCount || 0,
+      numbers: numbersCount || 0,
+      campaigns: campaignsCount || 0,
+      limits: {
+        contacts: limit.contacts_limit != null ? limit.contacts_limit + extraContacts : null,
+        numbers: limit.numbers_limit != null ? limit.numbers_limit + extraNumbers : null,
+        campaigns: limit.campaigns_limit ?? null,
+      },
+    })
+  }
 
   async function fetchAddons() {
     const { data } = await supabase.from('client_addons').select('*').eq('client_id', profile.client_id).order('created_at', { ascending: false })
@@ -92,6 +126,18 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* Consumo do plano */}
+      {usage && (
+        <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+          <h3 className="font-display font-semibold text-white flex items-center gap-2"><Gauge size={16} /> Consumo do plano</h3>
+          <div className="grid gap-3">
+            <UsageBar label="Contatos" used={usage.contacts} limit={usage.limits.contacts} />
+            <UsageBar label="Números WhatsApp" used={usage.numbers} limit={usage.limits.numbers} />
+            <UsageBar label="Campanhas este mês" used={usage.campaigns} limit={usage.limits.campaigns} />
+          </div>
+        </div>
+      )}
+
       {/* Números WPP */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
         <h3 className="font-display font-semibold text-white flex items-center gap-2"><Smartphone size={16} /> Números WhatsApp conectados</h3>
@@ -141,6 +187,7 @@ export default function Settings() {
                 <span className="flex items-center gap-2">
                   {a.addon_type === 'number' ? `+${a.quantity} número(s) de WhatsApp` : `+${a.quantity * 1000} contatos`}
                   {a.status === 'pending' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-300">aguardando pagamento</span>}
+                  {a.status === 'past_due' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-300">em atraso</span>}
                   {a.status === 'cancelled' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-400/10 text-red-400">cancelado</span>}
                 </span>
                 <span className="text-white">R$ {Number(a.monthly_price).toFixed(2)}{a.addon_type === 'number' ? '/mês' : ' (único)'}</span>
@@ -186,6 +233,27 @@ export default function Settings() {
           <Link to="/contrato-assinatura" className="hover:text-white">Contrato de Assinatura</Link>
         </div>
       </div>
+    </div>
+  )
+}
+
+function UsageBar({ label, used, limit }) {
+  const unlimited = limit == null
+  const pct = unlimited ? 0 : Math.min(100, Math.round((used / Math.max(limit, 1)) * 100))
+  const near = !unlimited && pct >= 90
+  return (
+    <div>
+      <div className="flex justify-between items-baseline mb-1.5">
+        <span className="text-muted text-sm font-body">{label}</span>
+        <span className={`text-sm font-body font-medium ${near ? 'text-amber-400' : 'text-white'}`}>
+          {used.toLocaleString()}{unlimited ? '' : ` / ${limit.toLocaleString()}`}
+        </span>
+      </div>
+      {!unlimited && (
+        <div className="h-1.5 bg-surface rounded-full overflow-hidden">
+          <div className={`h-full rounded-full ${near ? 'bg-amber-400' : 'bg-accent'}`} style={{ width: `${pct}%` }} />
+        </div>
+      )}
     </div>
   )
 }
