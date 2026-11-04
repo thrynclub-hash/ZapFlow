@@ -25,6 +25,7 @@ export default function Contacts() {
   const [search, setSearch] = useState('')
   const [filterNumber, setFilterNumber] = useState('')
   const [filterTag, setFilterTag] = useState('')
+  const [filterLifecycle, setFilterLifecycle] = useState('')
   const [importTag, setImportTag] = useState('Novo')
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
@@ -106,7 +107,8 @@ export default function Contacts() {
     const matchTag = !filterTag || (filterTag === NO_TAG
       ? !Array.isArray(c.tags) || c.tags.length === 0
       : Array.isArray(c.tags) && c.tags.includes(filterTag))
-    return matchSearch && matchNumber && matchTag
+    const matchLifecycle = !filterLifecycle || (c.lifecycle_stage || 'Novo') === filterLifecycle
+    return matchSearch && matchNumber && matchTag && matchLifecycle
   })
 
   // Só a página atual vira linhas na tabela — busca/filtro continuam
@@ -170,6 +172,19 @@ export default function Contacts() {
     const next = contact.status === 'Ativo' ? 'Inativo' : 'Ativo'
     setContacts(cs => cs.map(x => x.id === contact.id ? { ...x, status: next } : x))
     await supabase.from('contacts').update({ status: next }).eq('id', contact.id)
+  }
+
+  // Fase 2, Phase 5 (CRM-03): VIP é SEMPRE manual — nunca o cron de
+  // decaimento nem o webhook de interação atribuem/removem VIP sozinhos.
+  // Desmarcar volta pra "Ativo" (o contato já interagiu antes de virar VIP).
+  async function toggleVip(contact) {
+    const current = contact.lifecycle_stage || 'Novo'
+    const next = current === 'VIP' ? 'Ativo' : 'VIP'
+    setContacts(cs => cs.map(x => x.id === contact.id ? { ...x, lifecycle_stage: next } : x))
+    await supabase.from('contacts').update({ lifecycle_stage: next }).eq('id', contact.id)
+    await supabase.from('contact_lifecycle_log').insert({
+      contact_id: contact.id, client_id: clientId, from_stage: current, to_stage: next, reason: 'marcado manualmente',
+    })
   }
 
   // Edição rápida de tags direto na lista (ex: trocar "Novo" por "Antigo"
@@ -616,6 +631,14 @@ export default function Contacts() {
             {tagOptions.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
+        <select value={filterLifecycle} onChange={e => setFilterLifecycle(e.target.value)}
+          className="bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-white font-body focus:outline-none focus:border-accent">
+          <option value="">Todos os estágios</option>
+          <option value="Novo">Novo</option>
+          <option value="Ativo">Ativo</option>
+          <option value="Dormindo">Dormindo</option>
+          <option value="VIP">VIP</option>
+        </select>
       </div>
 
       <div className="bg-card border border-border rounded-xl p-4">
@@ -697,6 +720,7 @@ export default function Contacts() {
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Loja</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Tags</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Status</th>
+                <th className="text-left px-5 py-3 text-xs text-muted font-body">Estágio</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Nascimento</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Importado em</th>
                 <th className="px-5 py-3" />
@@ -725,6 +749,12 @@ export default function Contacts() {
                     <button onClick={() => toggleStatus(c)} title="Clique para alternar Ativo/Inativo"
                       className={`px-2 py-1 rounded text-xs font-body transition-colors ${c.status === 'Inativo' ? 'bg-muted/10 text-muted hover:bg-muted/20' : 'bg-green-400/10 text-green-400 hover:bg-green-400/20'}`}>
                       {c.status === 'Inativo' ? 'Inativo' : 'Ativo'}
+                    </button>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <button onClick={() => toggleVip(c)} title="Clique para marcar/desmarcar VIP"
+                      className={`px-2 py-1 rounded text-xs font-body transition-colors ${(c.lifecycle_stage || 'Novo') === 'VIP' ? 'bg-amber-400/10 text-amber-400 hover:bg-amber-400/20' : (c.lifecycle_stage === 'Dormindo' ? 'bg-muted/10 text-muted hover:bg-muted/20' : 'bg-blue-400/10 text-blue-300 hover:bg-blue-400/20')}`}>
+                      {c.lifecycle_stage || 'Novo'}
                     </button>
                   </td>
                   <td className="px-5 py-3.5 text-sm text-muted font-body">

@@ -162,6 +162,25 @@ async function sendViaBudget(number: any, phone: string, message: string) {
 
 // Descadastro completo — reusado tanto pela palavra-chave (PARAR/SAIR/...)
 // quanto por um botão configurado com action='opt_out'.
+// Fase 2, Phase 5 (CRM-02): atualiza o lifecycle do contato numa interação
+// real recebida. Novo/Dormindo -> Ativo é INSTANTÂNEO aqui (o decaimento
+// Ativo->Dormindo, por N dias sem interação, é um pg_cron job standalone
+// separado, não vive aqui). VIP nunca é tocado automaticamente - só manual.
+// Nunca mexe em `contacts.status` (gate de envio da V1), coluna separada.
+async function touchLifecycle(contact: any) {
+  const now = new Date().toISOString();
+  const stage = contact.lifecycle_stage ?? "Novo";
+  if (stage === "VIP" || stage === "Ativo") {
+    await supabase.from("contacts").update({ lifecycle_last_interaction_at: now }).eq("id", contact.id);
+    return;
+  }
+  const reason = stage === "Dormindo" ? "reativado por nova interação" : "primeira interação real";
+  await supabase.from("contacts").update({ lifecycle_stage: "Ativo", lifecycle_last_interaction_at: now }).eq("id", contact.id);
+  await supabase.from("contact_lifecycle_log").insert({
+    contact_id: contact.id, client_id: contact.client_id, from_stage: stage, to_stage: "Ativo", reason,
+  });
+}
+
 async function optOutContact(contact: any, number: any) {
   const tags = new Set(contact.tags ?? []);
   tags.add("Descadastrado");
@@ -264,6 +283,8 @@ Deno.serve(async (req: Request) => {
     if (!contact) {
       return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: false }), { headers: { "Content-Type": "application/json" } });
     }
+
+    await touchLifecycle(contact);
 
     const normalizedText = normalize(inboundText);
 
