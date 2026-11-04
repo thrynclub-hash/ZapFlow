@@ -17,6 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Painel de Consumo por Plano** - Contatos/números/campanhas vs. limite, com comparação centralizada no banco
 - [ ] **Phase 4: Status de Assinatura** - Visibilidade de Ativa/Em atraso/Cancelada, com webhook do MP idempotente e seguro contra fora-de-ordem
 - [ ] **Phase 5: Lifecycle de Contato (Mini-CRM)** - Novo/Ativo/Dormindo/VIP auditável, sem tocar o gate de envio nem ser afetado por imports em massa
+- [ ] **Phase 6: API Oficial da Meta — Piloto** - Número de teste isolado via Cloud API (template aprovado + janela 24h), Z-API intocado em produção (Hassum, Sodie)
 
 ## Phase Details
 
@@ -93,6 +94,20 @@ Plans:
 Plans:
 - [ ] 05-01: TBD
 
+### Phase 6: API Oficial da Meta — Piloto
+**Goal**: Existe um número de teste conectado via API oficial da Meta (Cloud API), com envio de template aprovado e janela 24h funcionando, totalmente separado do Z-API de produção — valida se vale migrar clientes reais no futuro.
+**Depends on**: Phase 1 (ambiente isolado) — não depende de Phases 2-5, pode rodar em paralelo
+**Requirements**: META-01, META-02, META-03, META-04
+**Success Criteria** (what must be TRUE):
+  1. Existe um número WhatsApp Business conectado via Cloud API (WABA), distinto de qualquer número `client_numbers` do Z-API
+  2. Mensagem de template aprovado sai corretamente fora da janela 24h; mensagem livre sai dentro da janela
+  3. Webhook de recebimento da API oficial funciona, isolado do `zapi-webhook`
+  4. Nenhum cliente real (Hassum, Sodie) foi tocado — piloto 100% em número de teste
+**Plans**: TBD
+
+Plans:
+- [ ] 06-01: TBD
+
 ## Progress
 
 **Execution Order:**
@@ -105,6 +120,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. Painel de Consumo por Plano | 0/TBD | Not started | - |
 | 4. Status de Assinatura | 0/TBD | Not started | - |
 | 5. Lifecycle de Contato (Mini-CRM) | 0/TBD | Not started | - |
+| 6. API Oficial da Meta — Piloto | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-07-05*

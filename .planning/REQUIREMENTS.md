@@ -94,20 +94,41 @@ Reconhecidos mas propositalmente adiados — não entram no roadmap desta fase.
 - **IA-V2-04**: Chatbot determinístico (regras/condições/webhooks) como produto distinto do Agente de IA
   generativo — o motor de `automations`/`automation_runs` do ZapFlow já é o embrião desse lado determinístico
 
+### CRM/Agente de IA (vocero-crm, `research/VOCERO-ANALYSIS.md`, 2026-11-04)
+
+- **LAB-V2-01**: Laboratório de auto-avaliação do agente de IA — conversas simuladas contra o agente real em
+  sandbox (nunca envia mensagem real), juiz LLM dá score + achados + sugestão aplicável à base de conhecimento.
+  Depende de IA-V2-01..04.
+- **ATND-V2-06**: Flag "sem agente" por contato — agente de IA nunca responde, só humano; distinto de opt-out
+  (contato continua em campanhas). Depende de ATND-V2-02.
+- **CRM-V2-07**: Atribuição de origem/anúncio (Click-to-WhatsApp) no funil e relatório.
+- **AGENDA-V2-01**: Agenda/booking acessível pelo agente de IA. Depende de IA-V2-01..04.
+
 ### Modelo de Negócio (decisão do Leonardo, não requirement de produto)
 
 - **BIZ-V2-01**: Programa de revenda white-label (parceiro rebrandeia a plataforma inteira) — confirmado como
   padrão usado por 2 concorrentes de referência (Bolten e, agora confirmado também, o produto por trás da marca
   "GOL"/Helena)
 
+### API Oficial da Meta — piloto em número de teste (decisão 2026-11-04)
+
+Decisão: Z-API continua intocado em produção (Hassum, Sodie). API oficial da Meta (Cloud API, template
+aprovado, janela 24h) vira trilha nova, num número de teste próprio, isolada — vira Phase 6 do roadmap.
+Migração de cliente real só depois de validada. Ver `research/VOCERO-ANALYSIS.md` (vocero usa API oficial,
+referência de arquitetura).
+
+- **META-01**: Cadastro de novo número via API oficial (WABA), separado do fluxo `client_numbers` do Z-API —
+  mesma tabela ou nova, mas nunca o mesmo número de um cliente Z-API real
+- **META-02**: Envio de template aprovado (fora da janela 24h) e mensagem livre (dentro da janela) — os dois
+  modos, porque fora da janela SÓ template funciona na API oficial
+- **META-03**: Webhook de recebimento via API oficial, separado do `zapi-webhook` existente (payload e auth
+  diferentes)
+- **META-04**: Critério explícito de quando promover um cliente real de Z-API pra API oficial (ou se fica só
+  pra clientes novos) — decisão de negócio, não técnica, fica pendente até o piloto validar
+
 ### Not Portable (explicitamente fora de cogitação, por incompatibilidade de arquitetura)
 
-- Fluxo de campanha baseado em "modelo de mensagem" pré-aprovado — é um requisito da API oficial da Meta
-  (Cloud API), que o ZapFlow não usa (usa Z-API, WhatsApp Web não-oficial, mensagem livre). Adotar esse padrão
-  de UI seria regressão de flexibilidade, não avanço, a menos que o ZapFlow decida migrar de Z-API para a API
-  oficial da Meta — isso seria uma decisão de arquitetura/negócio muito maior, fora de qualquer fase de produto
-  atual (ver conversa registrada em sessão de 2026-07-06 sobre trade-offs de custo/aprovação de template vs.
-  risco de bloqueio).
+Nenhum item nesta seção hoje — o único item (template/janela 24h) virou piloto Phase 6 acima (2026-11-04).
 
 ## Out of Scope
 
