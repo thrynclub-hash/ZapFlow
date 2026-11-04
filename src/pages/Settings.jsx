@@ -187,6 +187,7 @@ export default function Settings() {
                 <span className="flex items-center gap-2">
                   {a.addon_type === 'number' ? `+${a.quantity} número(s) de WhatsApp` : `+${a.quantity * 1000} contatos`}
                   {a.status === 'pending' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-300">aguardando pagamento</span>}
+                  {a.status === 'past_due' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-300">em atraso</span>}
                   {a.status === 'cancelled' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-400/10 text-red-400">cancelado</span>}
                 </span>
                 <span className="text-white">R$ {Number(a.monthly_price).toFixed(2)}{a.addon_type === 'number' ? '/mês' : ' (único)'}</span>

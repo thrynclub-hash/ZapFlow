@@ -94,8 +94,13 @@ Deno.serve(async (req: Request) => {
 
     let newStatus: string | null = null;
     if (isSubscriptionEvent) {
+      // Fase 2, Phase 4 (SUB-02): "paused" (atraso de pagamento, recorrência
+      // ainda existe) agora é "past_due" - antes colapsado junto com
+      // "cancelled" (cancelamento definitivo), os dois viravam a mesma coisa
+      // pro cliente, sem distinguir "ainda dá pra recuperar" de "acabou".
       if (mpData.status === "authorized") newStatus = "active";
-      else if (mpData.status === "cancelled" || mpData.status === "paused") newStatus = "cancelled";
+      else if (mpData.status === "paused") newStatus = "past_due";
+      else if (mpData.status === "cancelled") newStatus = "cancelled";
     } else {
       // Pagamento único: "approved" ativa de vez (não tem renovação pra
       // acompanhar); "rejected"/"cancelled" cancela o pedido pendente.
@@ -103,9 +108,23 @@ Deno.serve(async (req: Request) => {
       else if (mpData.status === "rejected" || mpData.status === "cancelled") newStatus = "cancelled";
     }
 
+    // SUB-03/SUB-04: idempotência + proteção contra evento fora de ordem.
+    // O Mercado Pago pode reentregar a mesma notificação (retry) ou entregar
+    // duas notificações fora da ordem em que os eventos realmente
+    // aconteceram (ex: rede atrasa a mais recente). Sem isso, um evento
+    // antigo que chega por último sobrescrevia um status mais novo já salvo.
+    // date_last_updated existe tanto em preapproval quanto em payment.
+    const eventAt = mpData.date_last_updated || mpData.date_approved || mpData.date_created || null;
+
     if (newStatus) {
-      await supabase.from("client_addons").update({ status: newStatus }).eq("id", addonRowId);
-      console.log(`client_addons ${addonRowId} -> status=${newStatus}`);
+      const { data: current } = await supabase.from("client_addons").select("mp_last_event_at").eq("id", addonRowId).single();
+      const isStale = eventAt && current?.mp_last_event_at && new Date(eventAt) <= new Date(current.mp_last_event_at);
+      if (isStale) {
+        console.log(`client_addons ${addonRowId}: evento mais antigo que o já salvo, ignorado (${eventAt} <= ${current.mp_last_event_at})`);
+      } else {
+        await supabase.from("client_addons").update({ status: newStatus, mp_last_event_at: eventAt }).eq("id", addonRowId);
+        console.log(`client_addons ${addonRowId} -> status=${newStatus}`);
+      }
     }
 
     return new Response(JSON.stringify({ ok: true, status: newStatus }), { headers: { "Content-Type": "application/json" } });
