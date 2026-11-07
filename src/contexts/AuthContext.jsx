@@ -17,16 +17,28 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profileRow, setProfileRow] = useState(null) // linha de `profiles`
   const [clientRow, setClientRow] = useState(null)   // linha de `clients`, só quando role === 'client'
+  const [resellerBrand, setResellerBrand] = useState(null) // marca do revendedor dono deste cliente, se houver (reforma white-label, 2026-11-07)
   const [loading, setLoading] = useState(true)
 
   const loadProfileFor = useCallback(async (userId) => {
     const { data: prof } = await supabase.from('profiles').select('*').eq('id', userId).single()
     setProfileRow(prof || null)
     if (prof?.role === 'client' && prof.client_id) {
-      const { data: cli } = await supabase.from('clients').select('id, name, email, plan, status').eq('id', prof.client_id).single()
+      const { data: cli } = await supabase.from('clients').select('id, name, email, plan, status, reseller_id, is_reseller, logo_url').eq('id', prof.client_id).single()
       setClientRow(cli || null)
+      // Se este cliente pertence a um revendedor, busca a marca dele (nome +
+      // logo) pra white-label — o cliente final vê a marca do revendedor,
+      // não "ZapFlow". Precisa da policy de RLS "Sub-client reads own
+      // reseller brand" (migration) — sem ela, RLS bloqueia e brand vem null.
+      if (cli?.reseller_id) {
+        const { data: brand } = await supabase.from('clients').select('name, logo_url').eq('id', cli.reseller_id).single()
+        setResellerBrand(brand || null)
+      } else {
+        setResellerBrand(null)
+      }
     } else {
       setClientRow(null)
+      setResellerBrand(null)
     }
   }, [])
 
@@ -99,6 +111,7 @@ export function AuthProvider({ children }) {
   const isAdmin = profileRow?.role === 'admin'
   const isAuthenticated = !!session
   const clientId = profileRow?.client_id || null
+  const isReseller = profileRow?.role === 'client' && clientRow?.is_reseller === true
 
   // profile compatível com o resto do app (mesmo formato de antes,
   // pra não precisar mexer em nenhuma outra página)
@@ -113,7 +126,7 @@ export function AuthProvider({ children }) {
       user: isAdmin ? session?.user : null,
       client: clientRow,
       profile, loading,
-      isAdmin, isAuthenticated, clientId,
+      isAdmin, isAuthenticated, clientId, isReseller, resellerBrand,
       loginAdmin, loginWithKey, logout,
     }}>
       {children}

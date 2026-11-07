@@ -209,11 +209,11 @@ export default function Reports() {
           <h3 className="font-display font-semibold text-white mb-6">Mensagens enviadas por mês</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={monthlyData} barSize={32}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E7E2D8" vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: '#6B6560', fontSize: 12, fontFamily: 'Manrope' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#6B6560', fontSize: 12, fontFamily: 'Manrope' }} axisLine={false} tickLine={false} />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,77,109,0.06)' }} />
-              <Bar dataKey="enviados" fill="#FF4D6D" radius={[4, 4, 0, 0]} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E1E9E4" vertical={false} />
+              <XAxis dataKey="name" tick={{ fill: '#5F6A65', fontSize: 12, fontFamily: 'Archivo' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#5F6A65', fontSize: 12, fontFamily: 'Archivo' }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(13,91,255,0.06)' }} />
+              <Bar dataKey="enviados" fill="#0D5BFF" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
