@@ -110,7 +110,11 @@ function buildTools(modules: Record<string, boolean>) {
   return tools;
 }
 
-async function runTool(name: string, input: any, ctx: { clientId: string; contactId: string | null; notifyPhone: string | null; number: any }) {
+async function queuePrintJob(clientId: string, title: string, lines: string[]) {
+  await supabase.from("print_jobs").insert({ client_id: clientId, kind: "receipt", title, lines });
+}
+
+async function runTool(name: string, input: any, ctx: { clientId: string; contactId: string | null; notifyPhone: string | null; number: any; modules: Record<string, boolean> }) {
   if (name === "check_stock") {
     const { data } = await supabase
       .from("products")
@@ -132,6 +136,13 @@ async function runTool(name: string, input: any, ctx: { clientId: string; contac
     });
     if (ctx.notifyPhone) {
       await sendViaBudget(ctx.number, ctx.notifyPhone, `🛒 Venda via IA: ${input.qty}x ${product.name} (restam ${product.stock_qty - input.qty} em estoque).`);
+    }
+    if (ctx.modules.auto_print) {
+      await queuePrintJob(ctx.clientId, "Comanda de venda", [
+        `${input.qty}x ${product.name}`,
+        product.unit_price ? `Valor unit.: R$ ${Number(product.unit_price).toFixed(2)}` : "",
+        `Total: R$ ${(Number(product.unit_price || 0) * input.qty).toFixed(2)}`,
+      ].filter(Boolean));
     }
     return { ok: true, remaining_stock: product.stock_qty - input.qty };
   }
@@ -218,7 +229,7 @@ Responda sempre em português do Brasil, em 1-3 frases curtas (é WhatsApp, não
       messages.push({ role: "assistant", content: response.content });
       const toolResults = [];
       for (const tu of toolUses) {
-        const result = await runTool(tu.name, tu.input, { clientId: client_id, contactId: contact.id, notifyPhone, number });
+        const result = await runTool(tu.name, tu.input, { clientId: client_id, contactId: contact.id, notifyPhone, number, modules });
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(result) });
       }
       messages.push({ role: "user", content: toolResults });
