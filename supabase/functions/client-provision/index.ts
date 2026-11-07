@@ -43,14 +43,28 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "Não autenticado" }), { status: 401, headers: corsHeaders });
     }
     const { data: callerProfile } = await adminClient
-      .from("profiles").select("role").eq("id", userData.user.id).single();
-    if (callerProfile?.role !== "admin") {
-      return new Response(JSON.stringify({ error: "Acesso restrito a administradores" }), { status: 403, headers: corsHeaders });
-    }
+      .from("profiles").select("role, client_id").eq("id", userData.user.id).single();
 
     const { client_id } = await req.json();
     if (!client_id) {
       return new Response(JSON.stringify({ error: "client_id é obrigatório" }), { status: 400, headers: corsHeaders });
+    }
+
+    // Admin provisiona qualquer cliente. Revendedor (reforma white-label,
+    // 2026-11-07) só provisiona os PRÓPRIOS clientes finais (reseller_id
+    // aponta pra ele) — nunca Hassum/Sodie nem outro revendedor.
+    let authorized = callerProfile?.role === "admin";
+    if (!authorized && callerProfile?.role === "client" && callerProfile.client_id) {
+      const { data: callerClient } = await adminClient
+        .from("clients").select("is_reseller").eq("id", callerProfile.client_id).single();
+      if (callerClient?.is_reseller) {
+        const { data: targetClient } = await adminClient
+          .from("clients").select("reseller_id").eq("id", client_id).single();
+        authorized = targetClient?.reseller_id === callerProfile.client_id;
+      }
+    }
+    if (!authorized) {
+      return new Response(JSON.stringify({ error: "Acesso restrito a administradores ou ao revendedor dono deste cliente" }), { status: 403, headers: corsHeaders });
     }
 
     // Já provisionado? retorna sem recriar
