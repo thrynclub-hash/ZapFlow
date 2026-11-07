@@ -1,39 +1,35 @@
 /** @type {import('tailwindcss').Config} */
 //
-// Identidade visual "Signal Ledger" (2026-07-03) — fundo claro premium
-// (like the "Ledger" direction) + cor de assinatura e tipografia da direção
-// "Signal" (coral-magenta + Unbounded/Manrope). Escolhida pelo Leonardo entre
-// 3 direções para ser a base visual de todo o ecossistema — ver
-// docs/design-system/ na raiz do mega-brain quando for propagar pros
-// outros projetos.
+// Identidade visual "Vocero" (2026-11-07) — reforma pedida pelo Leonardo pra
+// aproximar o máximo possível do design real do vocero-crm (kevinrivm/
+// vocero-crm, clonado em projects/vocero-reference pra extrair os tokens
+// reais de src/app/globals.css, não só o README). Substitui a direção
+// "Signal Ledger" (coral-magenta + Unbounded/Manrope) anterior.
 //
-// `white` é redefinido de propósito (de #FFFFFF pro ink escuro): o app
-// inteiro foi construído em dark mode com `text-white` como cor de texto
-// principal (220+ ocorrências em 17 arquivos) — redefinir o token em vez de
-// editar cada ocorrência resolve todas de uma vez, sem precisar caçar cada
-// uma. `bg-white`/`border-white` também são afetados por essa redefinição —
-// os únicos 2 usos de bg-white no projeto (bolinha do toggle switch em
-// NewCampaign.jsx/Birthdays.jsx) foram trocados pra bg-[#ffffff] literal de
-// propósito, pra continuarem brancos de verdade.
+// Mesma técnica de antes (ver histórico): redefinir os 8 tokens semânticos
+// num lugar só muda a cor em todo o app, sem caçar cada ocorrência de
+// `bg-card`/`text-accent`/etc. nos 17+ arquivos que já usam esses nomes.
+// `white` continua redefinido pro ink (mesmo motivo de antes: 220+ usos de
+// `text-white` como cor de texto principal, não branco literal).
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {
-        bg: '#F7F5F1',            // fundo — papel claro premium, não branco puro
+        bg: '#F6F8FC',            // "papel frío" do vocero — fundo da página
         card: '#FFFFFF',
-        border: '#E7E2D8',
-        accent: '#FF4D6D',        // coral-magenta — cor de assinatura
-        'accent-dim': '#E23F5C',
-        violet: '#8B5CF6',        // segunda cor do gradiente (uso raro, só destaque)
-        muted: '#6B6560',
-        surface: '#FBFAF7',
-        ink: '#17141A',           // texto principal / mesmo valor de white (ver nota acima)
-        white: '#17141A',
+        border: '#E1E9E4',
+        accent: '#0D5BFF',        // azul elétrico "Vocero" — cor de assinatura nova
+        'accent-dim': '#0A4DE6',
+        violet: '#8B5CF6',        // sem equivalente no vocero, mantido (uso raro/destaque)
+        muted: '#5F6A65',
+        surface: '#EEF4F0',       // --bg-subtle do vocero (verde-menta claro)
+        ink: '#141A17',           // --text do vocero
+        white: '#141A17',
       },
       fontFamily: {
-        display: ['Unbounded', 'sans-serif'],
-        body: ['Manrope', 'sans-serif'],
+        display: ['Archivo', 'sans-serif'],
+        body: ['Archivo', 'sans-serif'],
       },
     },
   },
