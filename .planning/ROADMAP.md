@@ -12,11 +12,11 @@ Fase 2 parte de um ambiente totalmente isolado da produção real (Clínica Hass
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Ambiente Isolado** - Novo projeto Supabase + branch `fase-2` + deploy Vercel próprio, revisável por URL sem tocar a produção
-- [ ] **Phase 2: Import de Leads do LinkedIn** - Reusa o pipeline de import CSV existente, com tag de origem, roteamento automático e blindagem de opt-out
-- [ ] **Phase 3: Painel de Consumo por Plano** - Contatos/números/campanhas vs. limite, com comparação centralizada no banco
-- [ ] **Phase 4: Status de Assinatura** - Visibilidade de Ativa/Em atraso/Cancelada, com webhook do MP idempotente e seguro contra fora-de-ordem
-- [ ] **Phase 5: Lifecycle de Contato (Mini-CRM)** - Novo/Ativo/Dormindo/VIP auditável, sem tocar o gate de envio nem ser afetado por imports em massa
+- [x] **Phase 1: Ambiente Isolado** - Novo projeto Supabase + branch `fase-2` + deploy Vercel próprio, revisável por URL sem tocar a produção
+- [x] **Phase 2: Import de Leads do LinkedIn** - Reusa o pipeline de import CSV existente, com tag de origem, roteamento automático e blindagem de opt-out
+- [x] **Phase 3: Painel de Consumo por Plano** - Contatos/números/campanhas vs. limite, com comparação centralizada no banco
+- [x] **Phase 4: Status de Assinatura** - Visibilidade de Ativa/Em atraso/Cancelada, com webhook do MP idempotente e seguro contra fora-de-ordem
+- [x] **Phase 5: Lifecycle de Contato (Mini-CRM)** - Novo/Ativo/Dormindo/VIP auditável, sem tocar o gate de envio nem ser afetado por imports em massa
 - [ ] **Phase 6: API Oficial da Meta — Piloto** - Número de teste isolado via Cloud API (template aprovado + janela 24h), Z-API intocado em produção (Hassum, Sodie)
 
 ## Phase Details
@@ -115,12 +115,12 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
-| 1. Ambiente Isolado | 0/TBD | Not started | - |
-| 2. Import de Leads do LinkedIn | 0/TBD | Not started | - |
-| 3. Painel de Consumo por Plano | 0/TBD | Not started | - |
-| 4. Status de Assinatura | 0/TBD | Not started | - |
-| 5. Lifecycle de Contato (Mini-CRM) | 0/TBD | Not started | - |
-| 6. API Oficial da Meta — Piloto | 0/TBD | Not started | - |
+| 1. Ambiente Isolado | 1/1 | Complete | 2026-11-04 |
+| 2. Import de Leads do LinkedIn | 1/1 | Complete | 2026-11-04 |
+| 3. Painel de Consumo por Plano | 1/1 | Complete | 2026-11-04 |
+| 4. Status de Assinatura | 1/1 | Complete | 2026-11-04 |
+| 5. Lifecycle de Contato (Mini-CRM) | 1/1 | Complete | 2026-11-04 |
+| 6. API Oficial da Meta — Piloto | 0/1 | Blocked (sem credencial Meta) | - |
 
 ---
 *Roadmap created: 2026-07-05*

@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-07-05)
 
 ## Current Position
 
-Phase: 1 of 5 (Ambiente Isolado)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-07-05 — ROADMAP.md criado (5 fases, 22/22 requirements mapeados)
+Phase: 6 of 6 (API Oficial da Meta — Piloto)
+Plan: Phases 1-5 completas e em produção (2026-11-04); Phase 6 bloqueada, falta credencial Meta
+Status: Blocked (Phase 6) — scaffold pronto (meta-webhook/meta-send)
+Last activity: 2026-11-04 — Fases 1-5 mergeadas (PR #56, #57), migrations rodadas, mp-webhook/zapi-webhook deployados, build 9032492 confirmado em produção
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 83% (5/6 fases)
 
 ## Performance Metrics
 
