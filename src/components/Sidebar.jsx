@@ -26,10 +26,25 @@ const adminNav = [
   { to: '/admin/pricing', icon: Tag, label: 'Precificação' },
 ]
 
-export default function Sidebar({ isAdmin, open = false, onClose = () => {} }) {
-  const { profile, logout } = useAuth()
+// Painel do revendedor (reforma white-label, 2026-11-07) — reusa as mesmas
+// telas do admin (AdminClients/AdminNumbers), RLS já escopa pros clientes
+// dele (ver migration "Reseller manages own clients"), nada de Precificação
+// nem Painel Admin global aqui.
+const resellerNav = [
+  { to: '/reseller/clients', icon: Building2, label: 'Meus Clientes' },
+  { to: '/reseller/numbers', icon: Smartphone, label: 'Números WPP' },
+]
+
+export default function Sidebar({ isAdmin, isReseller = false, open = false, onClose = () => {} }) {
+  const { profile, client, resellerBrand, logout } = useAuth()
   const navigate = useNavigate()
-  const nav = isAdmin ? adminNav : clientNav
+  const nav = isAdmin ? adminNav : isReseller ? resellerNav : clientNav
+  // White-label: cliente final de revendedor vê a marca dele; o próprio
+  // revendedor, gerenciando os clientes dele, vê a própria marca (se já
+  // configurou logo_url/nome) — nunca "ZapFlow" nesses dois casos.
+  const brand = isAdmin ? null : isReseller ? client : resellerBrand
+  const brandName = brand?.name || 'ZapFlow'
+  const brandLogo = brand?.logo_url || null
 
   async function handleLogout() {
     await logout()
@@ -46,11 +61,21 @@ export default function Sidebar({ isAdmin, open = false, onClose = () => {} }) {
       <div className="px-5 py-6 border-b border-border flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
-              <span className="text-bg font-display font-bold text-sm">Z</span>
-            </div>
-            <span className="font-display font-bold text-white text-lg">ZapFlow</span>
+            {brandLogo ? (
+              <img src={brandLogo} alt={brandName} className="w-8 h-8 rounded-lg object-cover" />
+            ) : (
+              <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
+                <span className="text-bg font-display font-bold text-sm">{brandName[0]}</span>
+              </div>
+            )}
+            <span className="font-display font-bold text-white text-lg">{brandName}</span>
           </div>
+          {isReseller && (
+            <div className="mt-2 flex items-center gap-1 text-accent text-xs font-body">
+              <Building2 size={10} />
+              <span>Revendedor</span>
+            </div>
+          )}
           {isAdmin && (
             <div className="mt-2 flex items-center gap-1 text-accent text-xs font-body">
               <Shield size={10} />

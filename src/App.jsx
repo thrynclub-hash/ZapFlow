@@ -47,6 +47,17 @@ function AdminRoute({ children }) {
   return children
 }
 
+// Revendedor (reforma white-label, 2026-11-07): mesmo login de cliente
+// (chave de acesso), mas a linha em `clients` tem is_reseller=true — não é
+// papel novo em `profiles`, reusa 100% do login/sessão já existente.
+function ResellerRoute({ children }) {
+  const { isAuthenticated, isReseller, loading } = useAuth()
+  if (loading) return <LoadingScreen />
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (!isReseller) return <Navigate to="/dashboard" replace />
+  return children
+}
+
 function LoadingScreen() {
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center">
@@ -59,7 +70,7 @@ function LoadingScreen() {
 }
 
 export default function App() {
-  const { isAuthenticated, isAdmin } = useAuth()
+  const { isAuthenticated, isAdmin, isReseller } = useAuth()
 
   return (
     <Suspense fallback={<LoadingScreen />}>
@@ -70,7 +81,7 @@ export default function App() {
         <Route path="/privacidade" element={<Privacidade />} />
         <Route path="/cookies" element={<CookiesPage />} />
         <Route path="/contrato-assinatura" element={<ContratoAssinatura />} />
-        <Route path="/login" element={isAuthenticated && !isAdmin ? <Navigate to="/dashboard" /> : <Login />} />
+        <Route path="/login" element={isAuthenticated && !isAdmin ? <Navigate to={isReseller ? '/reseller' : '/dashboard'} /> : <Login />} />
         <Route path="/admin/login" element={isAdmin ? <Navigate to="/admin" /> : <AdminLogin />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
@@ -93,6 +104,15 @@ export default function App() {
           <Route index element={<AdminDashboard />} />
           <Route path="clients" element={<AdminClients />} />
           <Route path="pricing" element={<AdminPricing />} />
+          <Route path="numbers" element={<AdminNumbers />} />
+        </Route>
+
+        {/* Revendedor — white-label, reforma 2026-11-07. Reusa AdminClients/
+            AdminNumbers (já 100% guiados por RLS, select('*') sem filtro
+            manual) — eles mesmos detectam o modo revendedor via useAuth(). */}
+        <Route path="/reseller" element={<ResellerRoute><Layout isReseller /></ResellerRoute>}>
+          <Route index element={<Navigate to="clients" replace />} />
+          <Route path="clients" element={<AdminClients />} />
           <Route path="numbers" element={<AdminNumbers />} />
         </Route>
 

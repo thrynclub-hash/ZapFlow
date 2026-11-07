@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2, KeyRound, PackagePlus, X, CalendarCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/Modal'
+import { useAuth } from '../../contexts/AuthContext'
 
 const PLANS = ['Starter', 'Growth', 'Scale', 'Enterprise']
 const SEGMENTS = ['Alimentação', 'Saúde/Clínica', 'Beleza', 'Educação', 'Varejo', 'Serviços', 'Outro']
@@ -20,6 +21,13 @@ function generateKey() {
 }
 
 export default function AdminClients() {
+  // Modo revendedor (reforma white-label, 2026-11-07): mesma tela, RLS já
+  // escopa `clients` pra só os sub-clientes dele (policy "Reseller manages
+  // own clients") — mas a policy "Client own" também deixa o revendedor ver
+  // a PRÓPRIA linha (ele também é um `clients`), então ela precisa ser
+  // filtrada manualmente da lista; e todo INSERT precisa levar reseller_id
+  // pra passar no `with check` da policy.
+  const { isReseller, clientId: resellerId } = useAuth()
   const [clients, setClients] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [showKey, setShowKey] = useState(null)
@@ -34,7 +42,7 @@ export default function AdminClients() {
 
   async function fetchClients() {
     const { data } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
-    setClients(data || [])
+    setClients(isReseller ? (data || []).filter(c => c.id !== resellerId) : (data || []))
   }
 
   function openNew() {
@@ -67,7 +75,10 @@ export default function AdminClients() {
       await supabase.from('clients').update({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key, plan_next_charge_at: form.plan_next_charge_at || null, plan_billing_cycle_days: form.plan_billing_cycle_days }).eq('id', editing.id)
       setSaving(false); setShowModal(false); fetchClients()
     } else {
-      const { data: client, error } = await supabase.from('clients').insert({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key, plan_next_charge_at: form.plan_next_charge_at || null, plan_billing_cycle_days: form.plan_billing_cycle_days }).select().single()
+      // reseller_id: null pro admin (cliente direto do Leonardo); o próprio
+      // ID do revendedor quando é ele criando — sem isso a policy de RLS
+      // "Reseller manages own clients" recusa o insert (with check falha).
+      const { data: client, error } = await supabase.from('clients').insert({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key, plan_next_charge_at: form.plan_next_charge_at || null, plan_billing_cycle_days: form.plan_billing_cycle_days, reseller_id: isReseller ? resellerId : null }).select().single()
       if (error) { alert('Erro: ' + error.message); setSaving(false); return }
       // Provisiona login real (Supabase Auth) automaticamente pra todo cliente novo —
       // sem isso, o cliente consegue "logar" mas o banco trata ele como anônimo.
