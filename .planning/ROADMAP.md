@@ -22,14 +22,14 @@ Decimal phases appear between their surrounding integers in numeric order.
 ## Phase Details
 
 ### Phase 1: Ambiente Isolado
-**Goal**: Existe um ambiente técnico completo e isolado (banco + deploy) onde toda a Fase 2 pode ser construída e revisada visualmente por Leonardo, sem qualquer risco à V1 em produção (Clínica Hassum).
+**Goal**: Existe um ambiente de deploy isolado (branch `fase-2`, URL própria) onde toda a Fase 2 pode ser construída e revisada visualmente por Leonardo, sem qualquer risco à V1 em produção (Clínica Hassum, Sodie) — isolamento é de **migration**, não de infra (decisão 2026-11-04, ver STATE.md): mesmo projeto Supabase `bhiggyigsrqfabqhutne`, nenhuma tabela/coluna existente é tocada.
 **Depends on**: Nothing (first phase)
-**Requirements**: Nenhum REQ-ID — infraestrutura pura, pré-requisito para Phases 2-5 (todas as features desta fase serão construídas e revisadas dentro deste ambiente)
+**Requirements**: Nenhum REQ-ID — infraestrutura pura, pré-requisito para Phases 2-5
 **Success Criteria** (what must be TRUE):
-  1. Existe um projeto Supabase novo, separado do projeto de produção, com dados de teste (não os 1190 contatos reais da Clínica Hassum)
-  2. Existe uma branch git `fase-2` e um deployment Vercel próprio apontando para ela, com URL própria e distinta da URL de produção
-  3. Leonardo consegue abrir a URL do deploy `fase-2` e ver a aplicação rodando de ponta a ponta contra o banco isolado, sem setup local
-  4. As variáveis de ambiente do deployment `fase-2` (URL/keys do Supabase isolado) estão configuradas separadamente das variáveis de produção — nenhum caminho de código do ambiente `fase-2` consegue escrever no projeto Supabase de produção
+  1. Existe uma branch git `fase-2` (✅ criada, pushada) e um deployment Vercel próprio apontando pra ela, com URL preview própria e distinta da URL de produção
+  2. Leonardo consegue abrir a URL do deploy `fase-2` e ver a aplicação rodando de ponta a ponta
+  3. Toda migration da Fase 2 é estritamente aditiva — `CREATE TABLE` novo ou `ADD COLUMN` nullable/default — nunca `ALTER`/`DROP` em `contacts`, `campaigns`, `client_numbers`, `message_logs` (tabelas que a V1 já usa em produção)
+  4. Leonardo roda cada migration manualmente no SQL Editor (Claude não tem mais escrita via MCP nesse projeto) — Claude dá o SQL pronto no chat
 **Plans**: TBD
 
 Plans:

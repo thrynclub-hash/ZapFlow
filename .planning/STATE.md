@@ -42,7 +42,12 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Ambiente isolado: novo projeto Supabase + branch `fase-2` + deploy Vercel próprio — vira Phase 1 do roadmap, pré-requisito de tudo o mais.
+- Ambiente isolado: branch `fase-2` + deploy Vercel próprio — vira Phase 1 do roadmap, pré-requisito de tudo o mais.
+- 2026-11-04: SEM projeto Supabase novo — Leonardo decidiu ficar no mesmo projeto `bhiggyigsrqfabqhutne`
+  (Marusso Projetos). Isolamento vira regra de migration, não de infra: toda migration da Fase 2 é aditiva
+  (CREATE TABLE/ADD COLUMN nullable), nunca ALTER/DROP em tabela que a V1 já usa (`contacts`, `campaigns`,
+  `client_numbers`, `message_logs`). MCP Supabase perdeu escrita nesse projeto nesta sessão — Claude dá o SQL
+  no chat, Leonardo roda no SQL Editor do dashboard.
 - `contacts.status` (gate de envio) nunca é tocado por lifecycle — nova coluna `contacts.lifecycle_stage` separada, dona é o cron de Phase 5.
 - Decaimento de lifecycle (Ativo→Dormindo) é `pg_cron` job standalone, não extensão de `run-automations`; reativação (Dormindo→Ativo) é update instantâneo dentro do `zapi-webhook` já existente.
 - Ordem de build por risco (não por dependência de dado): Import LinkedIn → Painel de Consumo → Status de Assinatura → Lifecycle de Contato (por último, por tocar coluna adjacente ao gate de envio).
