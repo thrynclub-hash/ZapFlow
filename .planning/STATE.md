@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-07-05)
 
 ## Current Position
 
-Phase: 1 of 5 (Ambiente Isolado)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-07-05 — ROADMAP.md criado (5 fases, 22/22 requirements mapeados)
+Phase: 6 of 6 (API Oficial da Meta — Piloto)
+Plan: Phases 1-5 completas e em produção (2026-11-04); Phase 6 bloqueada, falta credencial Meta
+Status: Blocked (Phase 6) — scaffold pronto (meta-webhook/meta-send)
+Last activity: 2026-11-04 — Fases 1-5 mergeadas (PR #56, #57), migrations rodadas, mp-webhook/zapi-webhook deployados, build 9032492 confirmado em produção
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 83% (5/6 fases)
 
 ## Performance Metrics
 
@@ -42,7 +42,12 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Ambiente isolado: novo projeto Supabase + branch `fase-2` + deploy Vercel próprio — vira Phase 1 do roadmap, pré-requisito de tudo o mais.
+- Ambiente isolado: branch `fase-2` + deploy Vercel próprio — vira Phase 1 do roadmap, pré-requisito de tudo o mais.
+- 2026-11-04: SEM projeto Supabase novo — Leonardo decidiu ficar no mesmo projeto `bhiggyigsrqfabqhutne`
+  (Marusso Projetos). Isolamento vira regra de migration, não de infra: toda migration da Fase 2 é aditiva
+  (CREATE TABLE/ADD COLUMN nullable), nunca ALTER/DROP em tabela que a V1 já usa (`contacts`, `campaigns`,
+  `client_numbers`, `message_logs`). MCP Supabase perdeu escrita nesse projeto nesta sessão — Claude dá o SQL
+  no chat, Leonardo roda no SQL Editor do dashboard.
 - `contacts.status` (gate de envio) nunca é tocado por lifecycle — nova coluna `contacts.lifecycle_stage` separada, dona é o cron de Phase 5.
 - Decaimento de lifecycle (Ativo→Dormindo) é `pg_cron` job standalone, não extensão de `run-automations`; reativação (Dormindo→Ativo) é update instantâneo dentro do `zapi-webhook` já existente.
 - Ordem de build por risco (não por dependência de dado): Import LinkedIn → Painel de Consumo → Status de Assinatura → Lifecycle de Contato (por último, por tocar coluna adjacente ao gate de envio).

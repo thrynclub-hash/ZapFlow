@@ -12,24 +12,24 @@ Fase 2 parte de um ambiente totalmente isolado da produção real (Clínica Hass
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Ambiente Isolado** - Novo projeto Supabase + branch `fase-2` + deploy Vercel próprio, revisável por URL sem tocar a produção
-- [ ] **Phase 2: Import de Leads do LinkedIn** - Reusa o pipeline de import CSV existente, com tag de origem, roteamento automático e blindagem de opt-out
-- [ ] **Phase 3: Painel de Consumo por Plano** - Contatos/números/campanhas vs. limite, com comparação centralizada no banco
-- [ ] **Phase 4: Status de Assinatura** - Visibilidade de Ativa/Em atraso/Cancelada, com webhook do MP idempotente e seguro contra fora-de-ordem
-- [ ] **Phase 5: Lifecycle de Contato (Mini-CRM)** - Novo/Ativo/Dormindo/VIP auditável, sem tocar o gate de envio nem ser afetado por imports em massa
+- [x] **Phase 1: Ambiente Isolado** - Novo projeto Supabase + branch `fase-2` + deploy Vercel próprio, revisável por URL sem tocar a produção
+- [x] **Phase 2: Import de Leads do LinkedIn** - Reusa o pipeline de import CSV existente, com tag de origem, roteamento automático e blindagem de opt-out
+- [x] **Phase 3: Painel de Consumo por Plano** - Contatos/números/campanhas vs. limite, com comparação centralizada no banco
+- [x] **Phase 4: Status de Assinatura** - Visibilidade de Ativa/Em atraso/Cancelada, com webhook do MP idempotente e seguro contra fora-de-ordem
+- [x] **Phase 5: Lifecycle de Contato (Mini-CRM)** - Novo/Ativo/Dormindo/VIP auditável, sem tocar o gate de envio nem ser afetado por imports em massa
 - [ ] **Phase 6: API Oficial da Meta — Piloto** - Número de teste isolado via Cloud API (template aprovado + janela 24h), Z-API intocado em produção (Hassum, Sodie)
 
 ## Phase Details
 
 ### Phase 1: Ambiente Isolado
-**Goal**: Existe um ambiente técnico completo e isolado (banco + deploy) onde toda a Fase 2 pode ser construída e revisada visualmente por Leonardo, sem qualquer risco à V1 em produção (Clínica Hassum).
+**Goal**: Existe um ambiente de deploy isolado (branch `fase-2`, URL própria) onde toda a Fase 2 pode ser construída e revisada visualmente por Leonardo, sem qualquer risco à V1 em produção (Clínica Hassum, Sodie) — isolamento é de **migration**, não de infra (decisão 2026-11-04, ver STATE.md): mesmo projeto Supabase `bhiggyigsrqfabqhutne`, nenhuma tabela/coluna existente é tocada.
 **Depends on**: Nothing (first phase)
-**Requirements**: Nenhum REQ-ID — infraestrutura pura, pré-requisito para Phases 2-5 (todas as features desta fase serão construídas e revisadas dentro deste ambiente)
+**Requirements**: Nenhum REQ-ID — infraestrutura pura, pré-requisito para Phases 2-5
 **Success Criteria** (what must be TRUE):
-  1. Existe um projeto Supabase novo, separado do projeto de produção, com dados de teste (não os 1190 contatos reais da Clínica Hassum)
-  2. Existe uma branch git `fase-2` e um deployment Vercel próprio apontando para ela, com URL própria e distinta da URL de produção
-  3. Leonardo consegue abrir a URL do deploy `fase-2` e ver a aplicação rodando de ponta a ponta contra o banco isolado, sem setup local
-  4. As variáveis de ambiente do deployment `fase-2` (URL/keys do Supabase isolado) estão configuradas separadamente das variáveis de produção — nenhum caminho de código do ambiente `fase-2` consegue escrever no projeto Supabase de produção
+  1. Existe uma branch git `fase-2` (✅ criada, pushada) e um deployment Vercel próprio apontando pra ela, com URL preview própria e distinta da URL de produção
+  2. Leonardo consegue abrir a URL do deploy `fase-2` e ver a aplicação rodando de ponta a ponta
+  3. Toda migration da Fase 2 é estritamente aditiva — `CREATE TABLE` novo ou `ADD COLUMN` nullable/default — nunca `ALTER`/`DROP` em `contacts`, `campaigns`, `client_numbers`, `message_logs` (tabelas que a V1 já usa em produção)
+  4. Leonardo roda cada migration manualmente no SQL Editor (Claude não tem mais escrita via MCP nesse projeto) — Claude dá o SQL pronto no chat
 **Plans**: TBD
 
 Plans:
@@ -115,12 +115,12 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
-| 1. Ambiente Isolado | 0/TBD | Not started | - |
-| 2. Import de Leads do LinkedIn | 0/TBD | Not started | - |
-| 3. Painel de Consumo por Plano | 0/TBD | Not started | - |
-| 4. Status de Assinatura | 0/TBD | Not started | - |
-| 5. Lifecycle de Contato (Mini-CRM) | 0/TBD | Not started | - |
-| 6. API Oficial da Meta — Piloto | 0/TBD | Not started | - |
+| 1. Ambiente Isolado | 1/1 | Complete | 2026-11-04 |
+| 2. Import de Leads do LinkedIn | 1/1 | Complete | 2026-11-04 |
+| 3. Painel de Consumo por Plano | 1/1 | Complete | 2026-11-04 |
+| 4. Status de Assinatura | 1/1 | Complete | 2026-11-04 |
+| 5. Lifecycle de Contato (Mini-CRM) | 1/1 | Complete | 2026-11-04 |
+| 6. API Oficial da Meta — Piloto | 0/1 | Blocked (sem credencial Meta) | - |
 
 ---
 *Roadmap created: 2026-07-05*
