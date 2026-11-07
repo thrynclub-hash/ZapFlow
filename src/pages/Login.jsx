@@ -15,8 +15,8 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      await loginWithKey(accessKey)
-      navigate('/dashboard')
+      const result = await loginWithKey(accessKey)
+      navigate(result.isReseller ? '/reseller' : '/dashboard')
     } catch (err) {
       setError(err.message)
     }
