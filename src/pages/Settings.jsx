@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard, Gauge } from 'lucide-react'
+import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard, Gauge, Image as ImageIcon } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -14,13 +14,37 @@ function addonLink(kind, companyName) {
 }
 
 export default function Settings() {
-  const { profile } = useAuth()
+  const { profile, isReseller, client } = useAuth()
   const [numbers, setNumbers] = useState([])
   const [statuses, setStatuses] = useState({})
   const [addons, setAddons] = useState([])
   const [loading, setLoading] = useState(true)
   const [buyingType, setBuyingType] = useState(null)
   const [usage, setUsage] = useState(null) // { contacts, numbers, campaigns, limits: {...} }
+  const [logoUrl, setLogoUrl] = useState(client?.logo_url || null)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+
+  // Upload do logo (white-label, 2026-11-07) — só revendedor usa isto.
+  // RPC update_own_logo (security definer) grava só logo_url da própria
+  // linha, não dá pra editar plan/access_key por aqui.
+  async function handleLogoUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingLogo(true)
+    try {
+      const path = `logos/${profile.client_id}-${Date.now()}.${file.name.split('.').pop()}`
+      const { error: upErr } = await supabase.storage.from('creatives').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const { data } = supabase.storage.from('creatives').getPublicUrl(path)
+      const { error: rpcErr } = await supabase.rpc('update_own_logo', { new_logo_url: data.publicUrl })
+      if (rpcErr) throw rpcErr
+      setLogoUrl(data.publicUrl)
+    } catch (err) {
+      alert('Erro ao enviar logo: ' + err.message)
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
 
   useEffect(() => {
     if (!profile?.client_id) return
@@ -125,6 +149,26 @@ export default function Settings() {
           <Row label="Função" value={profile?.role === 'admin' ? 'Administrador' : 'Usuário'} />
         </div>
       </div>
+
+      {/* Marca do revendedor (white-label) — só revendedor vê isto; os
+          clientes finais dele enxergam este logo no lugar de "ZapFlow". */}
+      {isReseller && (
+        <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+          <h3 className="font-display font-semibold text-white flex items-center gap-2"><ImageIcon size={16} /> Sua marca</h3>
+          <p className="text-muted text-xs font-body">Esse logo aparece pros seus clientes finais no lugar do "ZapFlow".</p>
+          <div className="flex items-center gap-4">
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="w-14 h-14 rounded-lg object-cover border border-border" />
+            ) : (
+              <div className="w-14 h-14 rounded-lg bg-surface border border-border flex items-center justify-center text-muted text-xs font-body">sem logo</div>
+            )}
+            <label className="cursor-pointer text-sm font-display font-bold text-accent hover:underline">
+              {uploadingLogo ? 'Enviando...' : 'Trocar logo'}
+              <input type="file" accept="image/*" className="hidden" disabled={uploadingLogo} onChange={handleLogoUpload} />
+            </label>
+          </div>
+        </div>
+      )}
 
       {/* Consumo do plano */}
       {usage && (
