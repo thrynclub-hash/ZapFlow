@@ -24,6 +24,18 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// ERP que já propaga pra vários marketplaces sozinho — caminho recomendado.
+// Payload v3 não conferido contra doc oficial (developer.bling.com.br) ainda;
+// se falhar, o erro cai em product_channel_links.last_error, nada quebra.
+async function pushBling(credentials: any, externalId: string, product: any) {
+  const res = await fetch(`https://api.bling.com.br/Api/v3/produtos/${externalId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${credentials.access_token}` },
+    body: JSON.stringify({ preco: product.unit_price, estoque: { saldoVirtualTotal: product.stock_qty } }),
+  });
+  if (!res.ok) throw new Error(`Bling: ${res.status} ${await res.text()}`);
+}
+
 async function pushMercadoLivre(credentials: any, externalId: string, product: any) {
   const res = await fetch(`https://api.mercadolibre.com/items/${externalId}`, {
     method: "PUT",
@@ -52,6 +64,9 @@ async function pushNuvemshop(credentials: any, externalId: string, product: any)
 }
 
 const ADAPTERS: Record<string, (credentials: any, externalId: string, product: any) => Promise<void>> = {
+  bling: pushBling,
+  tiny: async () => { throw new Error("Tiny: adapter não implementado ainda — avisar quando tiver cliente usando"); },
+  omie: async () => { throw new Error("Omie: adapter não implementado ainda — avisar quando tiver cliente usando"); },
   mercadolivre: pushMercadoLivre,
   nuvemshop: pushNuvemshop,
   tiktokshop: async () => { throw new Error("TikTok Shop: aguardando aprovação de Partner API"); },

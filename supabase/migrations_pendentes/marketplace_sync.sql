@@ -5,7 +5,9 @@
 create table if not exists marketplace_channels (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references clients(id) on delete cascade,
-  platform text not null check (platform in ('mercadolivre','nuvemshop','tiktokshop','shopee','shein','netshoes')),
+  -- bling/tiny/omie = ERP que já propaga pra vários marketplaces sozinho
+  -- (caminho recomendado); os demais = integração direta com 1 marketplace.
+  platform text not null check (platform in ('bling','tiny','omie','mercadolivre','nuvemshop','tiktokshop','shopee','shein','netshoes')),
   credentials jsonb not null default '{}'::jsonb, -- ex: {"access_token": "...", "store_id": "..."}
   active boolean not null default true,
   created_at timestamptz not null default now()
