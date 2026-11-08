@@ -37,7 +37,11 @@ function parseCsv(text) {
   });
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Bling limita 3 req/s — espaça toda chamada.
 async function bling(path, opts = {}) {
+  await sleep(400);
   const res = await fetch(`${API}${path}`, { ...opts, headers });
   const json = await res.json();
   if (!res.ok) throw new Error(`${path}: ${res.status} ${JSON.stringify(json)}`);
@@ -65,63 +69,96 @@ for (let page = 1; page <= 20; page++) {
 console.log(`${allProducts.length} produtos encontrados no Bling.`);
 
 function norm(s) {
-  return (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return (s || "").trim().toLowerCase().replace(/\s+/g, " ").normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
 let matched = 0, unmatched = 0;
 for (const [parentSku, variants] of byParentSku) {
   const name = norm(variants[0]["Descrição curta"]);
-  const parent = allProducts.find((p) => p.formato === "V" && norm(p.nome) === name);
+  // Bling às vezes acrescenta sufixo de cor no nome pra desambiguar
+  // produtos pai com a mesma descrição base (ex: "- Preto+Cinza") — aceita
+  // o nome do catálogo como prefixo do nome real, não só igualdade exata.
+  // Se houver mais de um candidato (duas cores do mesmo produto base),
+  // desempata pela cor da própria variação.
+  const candidates = allProducts.filter((p) => p.formato === "V" && norm(p.nome).startsWith(name));
+  const color = norm((variants[0]["Descrição da variação"].match(/Cor:([^;]+)/) || [])[1]);
+  // match exato do sufixo "- Cor" (não substring — "preto" é substring de
+  // "preto+cinza", então teria que comparar igualdade do sufixo inteiro)
+  // CSV às vezes não distingue cor nenhuma (duas cores "Preto" com descrição
+  // idêntica) — sem como adivinhar, pula pro usuário resolver manual.
+  const parent = candidates.length <= 1 ? candidates[0]
+    : candidates.find((p) => color && norm(p.nome.split(" - ").pop()) === color);
   if (!parent) {
     console.warn(`SEM MATCH no Bling: "${variants[0]["Descrição curta"]}" (pai ${parentSku})`);
     unmatched++;
     continue;
   }
 
-  const images = [variants[0]["Imagem 1"], variants[0]["Imagem 2"]].filter(Boolean).map((url) => ({ url }));
-  const parentFull = (await bling(`/produtos/${parent.id}`)).data;
+  try {
+    const parentFull = (await bling(`/produtos/${parent.id}`)).data;
+    if (!parentFull.variacoes?.length) throw new Error("variacoes vazio no GET, pulando (tentar de novo depois)");
 
-  await bling(`/produtos/${parent.id}`, {
-    method: "PUT",
-    body: JSON.stringify({
-      nome: parent.nome, tipo: parent.tipo, situacao: parent.situacao, formato: parent.formato,
-      variacoes: parentFull.variacoes,
-      codigo: parentSku,
-      descricaoCurta: variants[0]["Descrição complementar"] || parent.descricaoCurta,
-      marca: variants[0]["Marca"] || "",
-      midia: images.length ? { imagens: { externas: images } } : undefined,
-    }),
-  });
+    // "Descrição complementar" vem vazia na fonte — usa "Descrição curta"
+    // (que tem o texto real) como complementar também, senão Nuvemshop recusa
+    // export por "produto não possui descrição".
+    const desc = variants[0]["Descrição curta"] || "";
 
-  const children = await bling(`/produtos?idProdutoPai=${parent.id}`);
-  for (const row of variants) {
-    const size = (row["Descrição da variação"].match(/Tamanho:([^;]+)/) || [])[1]?.trim();
-    const child = (children.data || []).find((c) => c.nome.includes(`Tamanho:${size}`));
-    if (!child) { console.warn(`  variação sem match: ${row["Descrição da variação"]} (sku ${row["Código (SKU)"]})`); continue; }
-
-    await bling(`/produtos/${child.id}`, {
+    await bling(`/produtos/${parent.id}`, {
       method: "PUT",
       body: JSON.stringify({
-        nome: child.nome, tipo: child.tipo, situacao: child.situacao, formato: child.formato,
-        codigo: row["Código (SKU)"],
-        precoCusto: Number(row["Preço"]) || 0,
+        nome: parent.nome, tipo: parent.tipo, situacao: parent.situacao, formato: parent.formato,
+        variacoes: parentFull.variacoes,
+        codigo: parentSku,
+        descricaoCurta: desc || parent.descricaoCurta,
+        descricaoComplementar: desc || parent.descricaoComplementar,
+        marca: variants[0]["Marca"] || "",
       }),
     });
 
-    const inStock = row["Disponibilidade na origem"] === "InStock";
-    await bling(`/estoques`, {
-      method: "POST",
-      body: JSON.stringify({
-        produto: { id: child.id },
-        deposito: { id: Number(depositoId) },
-        operacao: "B",
-        quantidade: inStock ? 50 : 0,
-        observacoes: "Import catálogo real ZapFlow (placeholder até contagem real)",
-      }),
-    });
+    // ?idProdutoPai não filtra de verdade (API devolve tudo) — restringe
+    // pelo prefixo do nome, já que todo filho é "{nome do pai} Cor:...;Tamanho:X".
+    // Precisa do espaço depois do nome do pai — "Preto" é prefixo de
+    // "Preto+Cinza" sem espaço, startsWith puro pegava filho do produto errado.
+    const siblings = allProducts.filter((p) => p.id !== parent.id && p.nome.startsWith(`${parent.nome} `));
+    for (const row of variants) {
+      const size = (row["Descrição da variação"].match(/Tamanho:([^;]+)/) || [])[1]?.trim();
+      // endsWith, não includes — "G" é substring de "GG", includes erra a escolha.
+      const child = siblings.find((c) => c.nome.endsWith(`Tamanho:${size}`));
+      if (!child) { console.warn(`  variação sem match: ${row["Descrição da variação"]} (sku ${row["Código (SKU)"]})`); continue; }
+
+      // "Preço" na fonte é o preço de venda já raspado do site de origem
+      // (Netshoes/Zattini), não custo. Fonte não tem preço de custo nem
+      // promocional — nenhum dos dois é setável aqui.
+      await bling(`/produtos/${child.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          nome: child.nome, tipo: child.tipo, situacao: child.situacao, formato: child.formato,
+          codigo: row["Código (SKU)"],
+          preco: Number(row["Preço"]) || 0,
+          // Nuvemshop exige descrição em CADA variação, não só no pai.
+          descricaoCurta: desc || child.descricaoCurta,
+          descricaoComplementar: desc || child.descricaoComplementar,
+        }),
+      });
+
+      const inStock = row["Disponibilidade na origem"] === "InStock";
+      await bling(`/estoques`, {
+        method: "POST",
+        body: JSON.stringify({
+          produto: { id: child.id },
+          deposito: { id: Number(depositoId) },
+          operacao: "B",
+          quantidade: inStock ? 50 : 0,
+          observacoes: "Import catálogo real ZapFlow (placeholder até contagem real)",
+        }),
+      });
+    }
+    matched++;
+    console.log(`OK: ${parent.nome} (${variants.length} variações)`);
+  } catch (e) {
+    console.error(`FALHOU: ${parent.nome} (${parentSku}):`, e.message);
+    unmatched++;
   }
-  matched++;
-  console.log(`OK: ${parent.nome} (${variants.length} variações)`);
 }
 
 console.log(`\nFeito. ${matched} produtos pai atualizados, ${unmatched} sem match no Bling.`);
