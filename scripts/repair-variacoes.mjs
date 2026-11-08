@@ -1,0 +1,39 @@
+// Reconstrói o array `variacoes` de produtos pai (formato V) que o Bling
+// zera como efeito colateral de "Exportar produtos multiloja" — não afeta
+// os filhos de verdade (continuam existindo, com nome/codigo intactos),
+// só a referência que o PAI guarda. Uso único/repetível:
+// node scripts/repair-variacoes.mjs <access_token>
+
+const token = process.argv[2];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+async function bling(path, opts = {}) {
+  await sleep(400);
+  const res = await fetch(`https://api.bling.com.br/Api/v3${path}`, { ...opts, headers });
+  const json = await res.json();
+  if (!res.ok) throw new Error(`${path}: ${res.status} ${JSON.stringify(json)}`);
+  return json;
+}
+
+const all = (await bling("/produtos?pagina=1&limite=100")).data;
+const parents = all.filter((p) => p.formato === "V");
+
+for (const parent of parents) {
+  const children = all
+    .filter((p) => p.id !== parent.id && p.nome.startsWith(parent.nome) && p.nome.includes("Tamanho:"))
+    .map((c) => ({
+      id: c.id, nome: c.nome, codigo: c.codigo, preco: c.preco, tipo: c.tipo, situacao: c.situacao, formato: c.formato,
+      variacao: { nome: c.nome.slice(parent.nome.length).trim() },
+    }));
+  if (!children.length) { console.warn(`sem filhos achados pra "${parent.nome}" (id ${parent.id})`); continue; }
+
+  const full = (await bling(`/produtos/${parent.id}`)).data;
+  if (full.variacoes?.length) { console.log(`ok (já tinha variacoes): ${parent.nome}`); continue; }
+
+  await bling(`/produtos/${parent.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ nome: parent.nome, tipo: parent.tipo, situacao: parent.situacao, formato: parent.formato, variacoes: children }),
+  });
+  console.log(`reparado: ${parent.nome} (${children.length} variações)`);
+}
