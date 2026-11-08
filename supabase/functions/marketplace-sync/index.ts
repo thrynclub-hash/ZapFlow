@@ -10,7 +10,12 @@
 // tiktokshop, shopee, shein, netshoes: stub (erro explicativo) até termos
 // credenciais de parceiro aprovadas — ver NÃO TESTADO abaixo.
 //
-// NÃO TESTADO AO VIVO — nenhum canal real conectado ainda.
+// Bling: TESTADO AO VIVO 2026-11-08 (Lisa La Belle) — funciona.
+// Causa de bug real encontrado: se o access_token for colado via UI web
+// (dashboard Supabase), algum detector de campo sensível pode mascarar
+// trechos com bullet (•), corrompendo o valor salvo. Sempre trocar token
+// via base64 (decode/convert_from em SQL) ou direto por API, nunca
+// copiar/colar texto longo tipo JWT num campo de formulário.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -25,15 +30,39 @@ const corsHeaders = {
 };
 
 // ERP que já propaga pra vários marketplaces sozinho — caminho recomendado.
-// Payload v3 não conferido contra doc oficial (developer.bling.com.br) ainda;
-// se falhar, o erro cai em product_channel_links.last_error, nada quebra.
+// Bling v3 não aceita PUT parcial de produto (exige nome/tipo/situacao/
+// formato sempre) e não atualiza estoque por esse endpoint — estoque é
+// lançamento separado em /estoques, por depósito (credentials.deposito_id).
 async function pushBling(credentials: any, externalId: string, product: any) {
-  const res = await fetch(`https://api.bling.com.br/Api/v3/produtos/${externalId}`, {
+  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${credentials?.access_token}` };
+
+  const getRes = await fetch(`https://api.bling.com.br/Api/v3/produtos/${externalId}`, { headers });
+  if (!getRes.ok) throw new Error(`Bling (get produto): ${getRes.status} ${await getRes.text()}`);
+  const current = (await getRes.json()).data;
+
+  const putRes = await fetch(`https://api.bling.com.br/Api/v3/produtos/${externalId}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${credentials.access_token}` },
-    body: JSON.stringify({ preco: product.unit_price, estoque: { saldoVirtualTotal: product.stock_qty } }),
+    headers,
+    body: JSON.stringify({
+      nome: current.nome, tipo: current.tipo, situacao: current.situacao, formato: current.formato,
+      preco: product.unit_price,
+    }),
   });
-  if (!res.ok) throw new Error(`Bling: ${res.status} ${await res.text()}`);
+  if (!putRes.ok) throw new Error(`Bling (put produto): ${putRes.status} ${await putRes.text()}`);
+
+  if (!credentials.deposito_id) throw new Error("Bling: credentials.deposito_id não configurado");
+  const estoqueRes = await fetch(`https://api.bling.com.br/Api/v3/estoques`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      produto: { id: Number(externalId) },
+      deposito: { id: Number(credentials.deposito_id) },
+      operacao: "B",
+      quantidade: product.stock_qty,
+      observacoes: "Sync automático ZapFlow",
+    }),
+  });
+  if (!estoqueRes.ok) throw new Error(`Bling (estoque): ${estoqueRes.status} ${await estoqueRes.text()}`);
 }
 
 async function pushMercadoLivre(credentials: any, externalId: string, product: any) {
