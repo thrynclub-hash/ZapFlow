@@ -98,33 +98,46 @@ for (const [parentSku, variants] of byParentSku) {
     const parentFull = (await bling(`/produtos/${parent.id}`)).data;
     if (!parentFull.variacoes?.length) throw new Error("variacoes vazio no GET, pulando (tentar de novo depois)");
 
+    // "Descrição complementar" vem vazia na fonte — usa "Descrição curta"
+    // (que tem o texto real) como complementar também, senão Nuvemshop recusa
+    // export por "produto não possui descrição".
+    const desc = variants[0]["Descrição curta"] || "";
+
     await bling(`/produtos/${parent.id}`, {
       method: "PUT",
       body: JSON.stringify({
         nome: parent.nome, tipo: parent.tipo, situacao: parent.situacao, formato: parent.formato,
         variacoes: parentFull.variacoes,
         codigo: parentSku,
-        descricaoCurta: variants[0]["Descrição complementar"] || parent.descricaoCurta,
-        descricaoComplementar: variants[0]["Descrição complementar"] || parent.descricaoComplementar,
+        descricaoCurta: desc || parent.descricaoCurta,
+        descricaoComplementar: desc || parent.descricaoComplementar,
         marca: variants[0]["Marca"] || "",
       }),
     });
 
     // ?idProdutoPai não filtra de verdade (API devolve tudo) — restringe
-    // pelo prefixo do nome, já que todo filho é "{nome do pai} Tamanho:X".
-    const siblings = allProducts.filter((p) => p.id !== parent.id && p.nome.startsWith(parent.nome));
+    // pelo prefixo do nome, já que todo filho é "{nome do pai} Cor:...;Tamanho:X".
+    // Precisa do espaço depois do nome do pai — "Preto" é prefixo de
+    // "Preto+Cinza" sem espaço, startsWith puro pegava filho do produto errado.
+    const siblings = allProducts.filter((p) => p.id !== parent.id && p.nome.startsWith(`${parent.nome} `));
     for (const row of variants) {
       const size = (row["Descrição da variação"].match(/Tamanho:([^;]+)/) || [])[1]?.trim();
       // endsWith, não includes — "G" é substring de "GG", includes erra a escolha.
       const child = siblings.find((c) => c.nome.endsWith(`Tamanho:${size}`));
       if (!child) { console.warn(`  variação sem match: ${row["Descrição da variação"]} (sku ${row["Código (SKU)"]})`); continue; }
 
+      // "Preço" na fonte é o preço de venda já raspado do site de origem
+      // (Netshoes/Zattini), não custo. Fonte não tem preço de custo nem
+      // promocional — nenhum dos dois é setável aqui.
       await bling(`/produtos/${child.id}`, {
         method: "PUT",
         body: JSON.stringify({
           nome: child.nome, tipo: child.tipo, situacao: child.situacao, formato: child.formato,
           codigo: row["Código (SKU)"],
-          precoCusto: Number(row["Preço"]) || 0,
+          preco: Number(row["Preço"]) || 0,
+          // Nuvemshop exige descrição em CADA variação, não só no pai.
+          descricaoCurta: desc || child.descricaoCurta,
+          descricaoComplementar: desc || child.descricaoComplementar,
         }),
       });
 

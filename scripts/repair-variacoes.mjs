@@ -20,8 +20,10 @@ const all = (await bling("/produtos?pagina=1&limite=100")).data;
 const parents = all.filter((p) => p.formato === "V");
 
 for (const parent of parents) {
+  // espaço depois do nome do pai — "Preto" é prefixo de "Preto+Cinza" sem
+  // espaço, startsWith puro pegava filho do produto errado.
   const children = all
-    .filter((p) => p.id !== parent.id && p.nome.startsWith(parent.nome) && p.nome.includes("Tamanho:"))
+    .filter((p) => p.id !== parent.id && p.nome.startsWith(`${parent.nome} `) && p.nome.includes("Tamanho:"))
     .map((c) => ({
       id: c.id, nome: c.nome, codigo: c.codigo, preco: c.preco, tipo: c.tipo, situacao: c.situacao, formato: c.formato,
       variacao: { nome: c.nome.slice(parent.nome.length).trim() },
@@ -31,9 +33,15 @@ for (const parent of parents) {
   const full = (await bling(`/produtos/${parent.id}`)).data;
   if (full.variacoes?.length) { console.log(`ok (já tinha variacoes): ${parent.nome}`); continue; }
 
+  // PUT substitui o produto inteiro — reenvia codigo/descrição/preço que já
+  // estavam lá, senão o reparo apaga esses campos (achado da vez passada).
   await bling(`/produtos/${parent.id}`, {
     method: "PUT",
-    body: JSON.stringify({ nome: parent.nome, tipo: parent.tipo, situacao: parent.situacao, formato: parent.formato, variacoes: children }),
+    body: JSON.stringify({
+      nome: full.nome, tipo: full.tipo, situacao: full.situacao, formato: full.formato,
+      codigo: full.codigo, descricaoCurta: full.descricaoCurta, descricaoComplementar: full.descricaoComplementar,
+      marca: full.marca, variacoes: children,
+    }),
   });
   console.log(`reparado: ${parent.nome} (${children.length} variações)`);
 }
