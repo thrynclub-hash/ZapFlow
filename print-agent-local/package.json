@@ -1,0 +1,14 @@
+{
+  "name": "zapflow-print-agent",
+  "version": "1.0.0",
+  "description": "Agente local de impressão térmica do ZapFlow — roda no PC da loja",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "node-thermal-printer": "^4.4.4",
+    "dotenv": "^16.4.5"
+  }
+}

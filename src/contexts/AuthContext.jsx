@@ -26,6 +26,9 @@ export function AuthProvider({ children }) {
     if (prof?.role === 'client' && prof.client_id) {
       const { data: cli } = await supabase.from('clients').select('id, name, email, plan, status, reseller_id, is_reseller, logo_url').eq('id', prof.client_id).single()
       setClientRow(cli || null)
+      // Retorna o client_row carregado pra quem chamou (ex: loginWithKey)
+      // poder decidir o redirect na hora — setClientRow só reflete no
+      // state em um próximo render, tarde demais pro navigate() daqui.
       // Se este cliente pertence a um revendedor, busca a marca dele (nome +
       // logo) pra white-label — o cliente final vê a marca do revendedor,
       // não "ZapFlow". Precisa da policy de RLS "Sub-client reads own
@@ -36,9 +39,11 @@ export function AuthProvider({ children }) {
       } else {
         setResellerBrand(null)
       }
+      return cli || null
     } else {
       setClientRow(null)
       setResellerBrand(null)
+      return null
     }
   }, [])
 
@@ -97,8 +102,8 @@ export function AuthProvider({ children }) {
     if (error) throw new Error('Chave de acesso inválida ou expirada.')
 
     setSession(signInData.session)
-    await loadProfileFor(signInData.user.id)
-    return signInData
+    const cli = await loadProfileFor(signInData.user.id)
+    return { ...signInData, isReseller: cli?.is_reseller === true }
   }
 
   async function logout() {

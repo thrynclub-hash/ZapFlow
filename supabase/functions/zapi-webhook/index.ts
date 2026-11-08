@@ -432,6 +432,21 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, opted_out: true }), { headers: { "Content-Type": "application/json" } });
     }
 
+    // 3.5. Agente de IA (módulo opcional, reforma ERP+IA 2026-11-07) —
+    // SUBSTITUI inteiro o fluxo de regra abaixo quando o cliente tem
+    // modules.ia_agent=true. Clientes sem o módulo (Hassum/Sodie hoje,
+    // modules={} default) seguem exatamente como sempre seguiram.
+    const { data: clientRow } = await supabase.from("clients").select("modules").eq("id", number.client_id).single();
+    if (clientRow?.modules?.ia_agent === true) {
+      const aiRes = await fetch(`${supabaseUrl}/functions/v1/ai-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify({ client_id: number.client_id, number, contact, message: inboundText }),
+      });
+      if (!aiRes.ok) console.error("zapi-webhook: ai-agent falhou:", await aiRes.text().catch(() => ""));
+      return new Response(JSON.stringify({ ok: true, logged: true, contact_matched: true, handled_by: "ia_agent" }), { headers: { "Content-Type": "application/json" } });
+    }
+
     // 4. Fluxo "EU QUERO" (se habilitado para este cliente)
     const { data: flow } = await supabase.from("reply_flows").select("*").eq("client_id", number.client_id).single();
     if (!flow || !flow.enabled) {

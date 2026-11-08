@@ -24,10 +24,22 @@ create policy "Reseller manages sub-client numbers" on client_numbers
   with check (client_id in (select id from clients where reseller_id = my_client_id()));
 
 -- 4. RLS: cliente final lê nome/logo do revendedor dono dele (white-label)
+--
+-- FIX (2026-11-07): a versão original fazia subquery em `clients` dentro
+-- de uma policy de `clients` → RECURSÃO INFINITA, quebrava TODO select na
+-- tabela (inclusive pro admin). Função security definer evita reacionar
+-- a RLS (mesmo padrão de my_client_id()/is_admin() já existentes).
+create or replace function my_reseller_id()
+returns uuid
+language sql security definer stable
+as $$
+  select reseller_id from clients where id = my_client_id()
+$$;
+
 drop policy if exists "Sub-client reads own reseller brand" on clients;
 create policy "Sub-client reads own reseller brand" on clients
   for select
-  using (id = (select reseller_id from clients where id = my_client_id()));
+  using (id = my_reseller_id());
 
 -- 5. Marcar o primeiro revendedor (pilot) — rodar manualmente apontando
 -- pro client_id correto depois de criar a conta dele:
