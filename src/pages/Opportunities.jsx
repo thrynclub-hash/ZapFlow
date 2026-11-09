@@ -142,7 +142,7 @@ function OpportunityModal({ opportunity, clientId, onClose, onSaved }) {
 
   useEffect(() => {
     supabase.from('contacts').select('id, name').eq('client_id', clientId).order('name').then(({ data }) => setContacts(data || []))
-    supabase.from('products').select('id, name, unit_price').eq('client_id', clientId).eq('active', true).order('name').then(({ data }) => setProducts(data || []))
+    fetchProducts()
     if (!isNew) {
       supabase.from('opportunity_items').select('id, product_id, description, qty, unit_price').eq('opportunity_id', opportunity.id).then(({ data }) => {
         if (data?.length) setItems(data)
@@ -150,11 +150,27 @@ function OpportunityModal({ opportunity, clientId, onClose, onSaved }) {
     }
   }, [])
 
+  // Bug real corrigido em 2026-11-09: o seletor de produto só buscava na
+  // tabela local `products` (catálogo antigo, quase vazio pra quem usa
+  // Bling). Agora tenta o Bling primeiro (mesmo catálogo real que a tela
+  // Estoque mostra); cai pra tabela local só se não tiver Bling conectado.
+  async function fetchProducts() {
+    const { data: blingData } = await supabase.functions.invoke('bling-estoque', { body: { action: 'list' } })
+    if (blingData?.ok && blingData.connected) {
+      setProducts((blingData.produtos || []).map(p => ({ id: p.id, name: p.nome, unit_price: p.preco })))
+      return
+    }
+    const { data } = await supabase.from('products').select('id, name, unit_price').eq('client_id', clientId).eq('active', true).order('name')
+    setProducts(data || [])
+  }
+
   function updateItem(i, field, value) {
     setItems(its => its.map((it, idx) => idx === i ? { ...it, [field]: value } : it))
   }
   function pickProduct(i, productId) {
-    const p = products.find(p => p.id === productId)
+    // String() nos dois lados: id do Bling é numérico, e <select> sempre
+    // devolve string no onChange — comparação estrita (===) nunca batia.
+    const p = products.find(p => String(p.id) === String(productId))
     setItems(its => its.map((it, idx) => idx === i ? { ...it, product_id: productId || null, description: p ? p.name : it.description, unit_price: p ? p.unit_price : it.unit_price } : it))
   }
   function addItem() { setItems(its => [...its, { description: '', qty: 1, unit_price: '', product_id: null }]) }
