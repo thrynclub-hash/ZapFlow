@@ -7,6 +7,7 @@ import {
   Smartphone, Building2, ShoppingCart, Banknote, QrCode, Play
 } from 'lucide-react'
 import { APP_VERSION, BUILD_ID } from '../lib/appInfo'
+import Reveal from '../components/Reveal'
 
 // ZapFlow — Landing Page de Alta Conversão
 // Identidade visual técnica e elegante (Vocero + Linear), sem clichês de IA.
@@ -80,17 +81,21 @@ Na **conferência cega**, o sistema não mostra ao operador quanto dinheiro deve
   {
     id: 'emissao-nfce-a1',
     tag: 'Fiscal Descomplicado',
-    readTime: '4 min de leitura',
-    title: 'Guia de emissão de NFC-e e NF-e com Certificado A1 direto no balcão',
-    summary: 'Como emitir a Nota Fiscal de Consumidor Eletrônica em 3 segundos no PDV, imprimir em bobina térmica e evitar multas fiscais sem depender de ERPs externos.',
+    readTime: '3 min de leitura',
+    title: 'O que você precisa ter em mãos pra emitir NFC-e sem depender de ERP externo',
+    summary: 'CNPJ ativo, inscrição estadual e um certificado digital A1 — é só isso que a legislação pede pra vender com nota fiscal válida. Veja por que o A1 é o formato certo pro seu negócio.',
     content: `
-### Por que o Certificado Digital A1 é o padrão ideal?
-Diferente do certificado A3 (em cartão ou token USB, que pode quebrar ou perder o leitor), o **Certificado Digital A1** é um arquivo digital (.pfx) criptografado.
+### Por que o Certificado Digital A1 é o padrão ideal pro PDV?
+Diferente do certificado A3 (cartão ou token USB, que pode travar ou perder o leitor), o **Certificado Digital A1** é um arquivo digital (.pfx) criptografado — guarda na nuvem, usa em qualquer computador ou terminal sem precisar de hardware plugado.
 
-Isso permite que ele seja configurado no ZapFlow de forma segura, possibilitando a emissão de notas fiscais diretamente pela nuvem a partir de qualquer computador, tablet ou terminal PDV.
+### O que a lei exige pra emitir NFC-e de verdade
+- CNPJ ativo (MEI já serve).
+- Inscrição estadual ativa — é ela que autoriza emissão de nota de consumo.
+- Certificado digital A1 próprio, vinculado ao seu CNPJ.
 
-### Emissão de NFC-e com 1 clique no PDV
-Ao concluir a venda no balcão, o ZapFlow gera o arquivo XML no padrão nacional da SEFAZ, assina digitalmente com o seu certificado e transmite para a Receita Estadual. Em menos de 3 segundos, o cupom fiscal está autorizado e pronto para impressão na impressora térmica (58mm ou 80mm).
+Sem esses três, nenhuma plataforma (nem o ZapFlow, nem concorrente nenhum) consegue emitir nota fiscal válida em seu nome — é exigência da SEFAZ, não de fornecedor de sistema.
+
+**No ZapFlow:** a emissão fiscal integrada está em desenvolvimento. Hoje o PDV já emite cupom não-fiscal e etiqueta de envio direto do sistema; a emissão de NFC-e homologada entra assim que a integração com a Receita estiver pronta.
     `
   }
 ]
@@ -126,7 +131,7 @@ const PLANS = [
     features: [
       '2 números de WhatsApp conectados',
       'Até 2.500 contatos cadastrados',
-      'Terminal PDV de Balcão Offline-First',
+      'Terminal PDV de Balcão em Tempo Real',
       'Controle de Caixa (abrir/fechar/sangria)',
       'Funil de Vendas (Negócios com valores R$)',
       'Atendente de Vendas inteligente 24/7',
@@ -144,7 +149,7 @@ const PLANS = [
       '5 números de WhatsApp conectados',
       'Até 7.500 contatos cadastrados',
       'Multi-atendentes na mesma conversa',
-      'Emissão de NFC-e / NF-e integrada A1',
+      'Emissão de NFC-e / NF-e integrada A1 (em breve)',
       'Rastreabilidade total de estoque (Kardex)',
       'Promoções automáticas no WhatsApp',
       'Treinamento da equipe e setup assistido'
@@ -173,12 +178,12 @@ const PLANS = [
 // -------------------------------------------------------------
 const FAQS = [
   {
-    q: 'Preciso contratar outro sistema ou ERP para emitir notas ou controlar estoque?',
-    a: 'Não. O ZapFlow é 100% autônomo. Ele possui banco de dados próprio, controle de grade com fotos reais, frente de caixa de balcão e motor fiscal direto com seu certificado A1. Tudo em uma única mensalidade, sem custos surpresa de plataformas externas.'
+    q: 'Preciso contratar outro sistema ou ERP para controlar estoque?',
+    a: 'Não. O ZapFlow tem banco de dados próprio, controle de grade com fotos reais e frente de caixa de balcão, tudo numa única mensalidade. A emissão de NFC-e com certificado A1 integrado está em desenvolvimento — hoje o PDV já emite cupom não-fiscal e etiqueta de envio direto pelo sistema.'
   },
   {
     q: 'O PDV funciona se a internet da loja física cair?',
-    a: 'Sim! O PDV do ZapFlow foi projetado com arquitetura offline-first. Suas vendedoras continuam registrando vendas, conferindo itens e calculando troco normalmente no balcão. Assim que a conexão de internet retornar, o sistema sincroniza os dados no banco automaticamente.'
+    a: 'Hoje não — o PDV precisa de conexão ativa pra registrar a venda em tempo real (evita furo de estoque entre balcão e WhatsApp). Modo offline com sincronização automática está no roadmap.'
   },
   {
     q: 'Como o atendente no WhatsApp sabe se tem a peça e manda a foto?',
@@ -237,7 +242,7 @@ export default function Landing() {
           Novo ZapFlow 2.4
         </span>
         <span className="text-white/85">
-          Terminal PDV com modo offline, catálogo com fotos reais e atendente de vendas no WhatsApp.
+          Terminal PDV em tempo real, catálogo com fotos reais e atendente de vendas no WhatsApp.
         </span>
         <a href="#demo" className="text-accent hover:text-white underline underline-offset-4 font-semibold ml-1 transition-colors">
           Ver demonstração ao vivo →
@@ -310,7 +315,7 @@ export default function Landing() {
             </h1>
 
             <p className="text-base sm:text-lg text-muted font-body max-w-2xl mx-auto lg:mx-0 leading-relaxed">
-              Terminal PDV que <strong className="text-ink font-semibold">não para se a internet cair</strong>, catálogo com fotos e grade de tamanhos, e um atendente no WhatsApp que <strong className="text-ink font-semibold">manda a foto da peça e fecha no Pix na hora</strong>.
+              Terminal PDV que <strong className="text-ink font-semibold">baixa o estoque na hora</strong>, catálogo com fotos e grade de tamanhos, e um atendente no WhatsApp que <strong className="text-ink font-semibold">manda a foto da peça e fecha no Pix na hora</strong>.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3 pt-2">
@@ -338,11 +343,11 @@ export default function Landing() {
             <div className="pt-4 flex flex-wrap items-center justify-center lg:justify-start gap-6 text-xs text-muted font-mono">
               <div className="flex items-center gap-2">
                 <Check size={14} className="text-emerald-600" />
-                <span>PDV Offline-First</span>
+                <span>Controle de Estoque em Tempo Real</span>
               </div>
               <div className="flex items-center gap-2">
                 <Check size={14} className="text-emerald-600" />
-                <span>NFC-e / NF-e Própria A1</span>
+                <span>Cupom & Etiqueta de Envio Nativos</span>
               </div>
               <div className="flex items-center gap-2">
                 <Check size={14} className="text-emerald-600" />
@@ -461,7 +466,7 @@ export default function Landing() {
                     </div>
 
                     <button className="w-full bg-emerald-600 text-white font-display font-bold py-2.5 rounded-xl flex items-center justify-center gap-2">
-                      <Printer size={14} /> Finalizar & Imprimir NFC-e
+                      <Printer size={14} /> Finalizar & Imprimir Cupom
                     </button>
                   </div>
                 ) : (
@@ -515,7 +520,7 @@ export default function Landing() {
       {/* --------------------------------------------------------- */}
       {/* 3. DEMONSTRAÇÃO INTERATIVA SEM CADASTRO (#demo)           */}
       {/* --------------------------------------------------------- */}
-      <section id="demo" className="py-20 bg-surface/40 border-y border-border">
+      <Reveal as="section" id="demo" className="py-20 bg-surface/40 border-y border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="text-center max-w-2xl mx-auto space-y-3 mb-12">
             <span className="font-mono text-xs uppercase tracking-wider text-accent font-semibold">
@@ -531,12 +536,12 @@ export default function Landing() {
 
           <InteractiveDemoWidget />
         </div>
-      </section>
+      </Reveal>
 
       {/* --------------------------------------------------------- */}
       {/* 4. OS 4 PILARES DO SISTEMA NATIVO (#pilares)              */}
       {/* --------------------------------------------------------- */}
-      <section id="pilares" className="py-24 max-w-7xl mx-auto px-4 sm:px-6 space-y-16">
+      <Reveal as="section" id="pilares" className="py-24 max-w-7xl mx-auto px-4 sm:px-6 space-y-16">
         <div className="text-center max-w-3xl mx-auto space-y-3">
           <span className="font-mono text-xs uppercase tracking-wider text-accent font-semibold">
             Motor Integrado
@@ -592,7 +597,7 @@ export default function Landing() {
               Venda rápida com leitor de código de barras ou busca instantânea. Abertura e fechamento de caixa com conferência cega e sangria.
             </p>
             <ul className="text-xs text-ink/80 font-body space-y-1.5 pt-2 border-t border-border/60">
-              <li className="flex items-center gap-1.5"><Check size={13} className="text-emerald-600" /> 100% Offline-First (não para sem net)</li>
+              <li className="flex items-center gap-1.5"><Check size={13} className="text-emerald-600" /> Baixa de Estoque em Tempo Real</li>
               <li className="flex items-center gap-1.5"><Check size={13} className="text-emerald-600" /> Múltiplos pagamentos por venda</li>
               <li className="flex items-center gap-1.5"><Check size={13} className="text-emerald-600" /> Cálculo automático de troco</li>
             </ul>
@@ -603,23 +608,23 @@ export default function Landing() {
             <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center text-accent">
               <FileText size={24} />
             </div>
-            <h3 className="font-display font-bold text-lg text-ink">Emissão Fiscal Própria A1</h3>
+            <h3 className="font-display font-bold text-lg text-ink">Cupom, Etiqueta & Nota Fiscal</h3>
             <p className="text-muted text-xs font-body leading-relaxed">
-              Emissão de NFC-e e NF-e com certificado A1 criptografado na nuvem. Emita comprovantes e cupons fiscais em segundos no balcão.
+              Cupom não-fiscal e etiqueta de envio já saem direto do balcão. Emissão de NFC-e/NF-e com certificado A1 está em desenvolvimento.
             </p>
             <ul className="text-xs text-ink/80 font-body space-y-1.5 pt-2 border-t border-border/60">
-              <li className="flex items-center gap-1.5"><Check size={13} className="text-emerald-600" /> Transmissão direta para SEFAZ</li>
               <li className="flex items-center gap-1.5"><Check size={13} className="text-emerald-600" /> Impressão em bobina térmica</li>
-              <li className="flex items-center gap-1.5"><Check size={13} className="text-emerald-600" /> Zero custo de ERP terceiro</li>
+              <li className="flex items-center gap-1.5"><Check size={13} className="text-emerald-600" /> Etiqueta de envio integrada</li>
+              <li className="flex items-center gap-1.5"><Check size={13} className="text-emerald-600" /> NFC-e própria A1 (em breve)</li>
             </ul>
           </div>
         </div>
-      </section>
+      </Reveal>
 
       {/* --------------------------------------------------------- */}
       {/* 5. ANTES X DEPOIS (A REALIDADE DO LOJISTA)                */}
       {/* --------------------------------------------------------- */}
-      <section className="py-20 bg-surface/40 border-y border-border">
+      <Reveal as="section" className="py-20 bg-surface/40 border-y border-border">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-12">
           <div className="text-center space-y-2">
             <h2 className="font-display font-bold text-3xl text-ink">A diferença entre improvisar e ter método</h2>
@@ -670,7 +675,7 @@ export default function Landing() {
                 </li>
                 <li className="flex items-start gap-2">
                   <Check size={15} className="text-emerald-600 shrink-0 mt-0.5" />
-                  <span>O PDV funciona offline: a loja continua vendendo mesmo se o provedor de internet cair.</span>
+                  <span>Baixa de estoque em tempo real: sem planilha, sem conferência manual no fim do dia.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check size={15} className="text-emerald-600 shrink-0 mt-0.5" />
@@ -680,12 +685,12 @@ export default function Landing() {
             </div>
           </div>
         </div>
-      </section>
+      </Reveal>
 
       {/* --------------------------------------------------------- */}
       {/* 6. ARTIGOS, TUTORIAIS & GUIAS (SEO / GEO / AEO) (#tutoriais) */}
       {/* --------------------------------------------------------- */}
-      <section id="tutoriais" className="py-24 max-w-7xl mx-auto px-4 sm:px-6 space-y-12">
+      <Reveal as="section" id="tutoriais" className="py-24 max-w-7xl mx-auto px-4 sm:px-6 space-y-12">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <span className="font-mono text-xs uppercase tracking-wider text-accent font-semibold">
@@ -726,12 +731,12 @@ export default function Landing() {
             </article>
           ))}
         </div>
-      </section>
+      </Reveal>
 
       {/* --------------------------------------------------------- */}
       {/* 7. PREÇOS TRANSPARENTES (#precos)                         */}
       {/* --------------------------------------------------------- */}
-      <section id="precos" className="py-24 bg-surface/40 border-y border-border">
+      <Reveal as="section" id="precos" className="py-24 bg-surface/40 border-y border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 space-y-12">
           <div className="text-center max-w-2xl mx-auto space-y-3">
             <span className="font-mono text-xs uppercase tracking-wider text-accent font-semibold">
@@ -828,12 +833,12 @@ export default function Landing() {
             })}
           </div>
         </div>
-      </section>
+      </Reveal>
 
       {/* --------------------------------------------------------- */}
       {/* 8. PERGUNTAS FREQUENTES (FAQ) — AEO & GEO (#faq)           */}
       {/* --------------------------------------------------------- */}
-      <section id="faq" className="py-24 max-w-4xl mx-auto px-4 sm:px-6 space-y-12">
+      <Reveal as="section" id="faq" className="py-24 max-w-4xl mx-auto px-4 sm:px-6 space-y-12">
         <div className="text-center space-y-2">
           <span className="font-mono text-xs uppercase tracking-wider text-accent font-semibold">Tira-Dúvidas</span>
           <h2 className="font-display font-bold text-3xl text-ink">Perguntas Frequentes</h2>
@@ -861,7 +866,7 @@ export default function Landing() {
             </div>
           ))}
         </div>
-      </section>
+      </Reveal>
 
       {/* --------------------------------------------------------- */}
       {/* 9. MODAL: LEITOR DE ARTIGO COMPLETO (SEO & EDUCAÇÃO)      */}
@@ -1027,7 +1032,7 @@ export default function Landing() {
                         />
                         <div>
                           <p className="text-xs font-bold text-ink">PDV de Balcão & Controle de Caixa</p>
-                          <p className="text-[11px] text-muted">Terminal de venda offline, sangria, suprimento e troco.</p>
+                          <p className="text-[11px] text-muted">Terminal de venda de balcão, sangria, suprimento e troco.</p>
                         </div>
                       </label>
 
@@ -1039,8 +1044,8 @@ export default function Landing() {
                           className="rounded text-accent"
                         />
                         <div>
-                          <p className="text-xs font-bold text-ink">Emissão de NFC-e / NF-e Própria A1</p>
-                          <p className="text-[11px] text-muted">Transmissão direta SEFAZ com cupom na impressora térmica.</p>
+                          <p className="text-xs font-bold text-ink">Emissão de NFC-e / NF-e Própria A1 (em breve)</p>
+                          <p className="text-[11px] text-muted">Cupom não-fiscal e etiqueta já disponíveis; nota fiscal homologada entra em breve.</p>
                         </div>
                       </label>
                     </div>
@@ -1389,7 +1394,7 @@ function InteractiveDemoWidget() {
               </div>
               <div className="flex items-center justify-between text-[11px] font-mono text-muted">
                 <span>Comprovante:</span>
-                <span className="text-accent font-bold">NFC-e Autorizada</span>
+                <span className="text-accent font-bold">Cupom Emitido (demo)</span>
               </div>
             </div>
           )}
