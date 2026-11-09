@@ -500,11 +500,51 @@ function IntegrationsModal({ client, onClose }) {
   const [channel, setChannel] = useState(null) // null = carregando, false = nenhuma, {} = conectada
   const [connecting, setConnecting] = useState(false)
 
-  useEffect(() => { fetchChannel() }, [])
+  // Frenet (frete/etiqueta) — não é OAuth, é token manual do lojista.
+  // Não exige CNPJ (diferente de nota fiscal): qualquer cliente pode ter.
+  const [shipAccount, setShipAccount] = useState(null) // null = carregando, false = nenhuma, {} = configurada
+  const [shipCep, setShipCep] = useState('')
+  const [shipToken, setShipToken] = useState('')
+  const [savingShip, setSavingShip] = useState(false)
+
+  useEffect(() => { fetchChannel(); fetchShipAccount() }, [])
 
   async function fetchChannel() {
     const { data } = await supabase.from('marketplace_channels').select('id, platform, active').eq('client_id', client.id).eq('platform', 'bling').maybeSingle()
     setChannel(data || false)
+  }
+
+  async function fetchShipAccount() {
+    const { data } = await supabase.from('shipping_accounts').select('id, origin_cep, active').eq('client_id', client.id).maybeSingle()
+    setShipAccount(data || false)
+    if (data) setShipCep(data.origin_cep || '')
+  }
+
+  async function saveShipAccount() {
+    if (!shipCep.trim() || !shipToken.trim()) return alert('CEP de origem e token Frenet são obrigatórios.')
+    setSavingShip(true)
+    try {
+      const { error } = await supabase.from('shipping_accounts').upsert({
+        client_id: client.id,
+        origin_cep: shipCep.trim().replace(/\D/g, ''),
+        origin_name: client.name,
+        frenet_token: shipToken.trim(),
+        active: true,
+      }, { onConflict: 'client_id' })
+      if (error) throw error
+      setShipToken('')
+      fetchShipAccount()
+    } catch (e) {
+      alert('Erro ao salvar: ' + e.message)
+    } finally {
+      setSavingShip(false)
+    }
+  }
+
+  async function disconnectShip() {
+    if (!confirm('Desconectar o frete deste cliente? Etiqueta de envio para de funcionar até reconectar.')) return
+    await supabase.from('shipping_accounts').update({ active: false }).eq('id', shipAccount.id)
+    fetchShipAccount()
   }
 
   async function connect() {
@@ -569,6 +609,37 @@ function IntegrationsModal({ client, onClose }) {
             )}
           </div>
         ))}
+
+        <div className="border-t border-border pt-5 space-y-3">
+          <div>
+            <p className="text-sm text-white font-body font-medium flex items-center gap-2">
+              Frenet (Frete / Etiqueta de Envio)
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">não exige CNPJ</span>
+            </p>
+            <p className="text-xs text-muted font-body mt-0.5">Cotação de frete e etiqueta direto no ZapFlow (PDV / Oportunidades). Funciona mesmo pro cliente sem CNPJ — frete é logística, não fiscal.</p>
+          </div>
+
+          {shipAccount === null ? (
+            <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+          ) : shipAccount && shipAccount.active ? (
+            <div className="bg-surface border border-border rounded-xl p-4 flex items-center justify-between gap-4">
+              <div className="text-xs text-muted font-body">
+                <span className="flex items-center gap-1 text-green-400"><Check size={14} /> Configurado</span>
+                <span>CEP de origem: {shipAccount.origin_cep}</span>
+              </div>
+              <button onClick={disconnectShip} className="text-xs text-muted hover:text-red-400 font-body shrink-0">Desconectar</button>
+            </div>
+          ) : (
+            <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
+              <F label="CEP de origem (de onde sai o pacote)" value={shipCep} onChange={setShipCep} required />
+              <F label="Token Frenet do cliente (Dados Cadastrais > Chaves de Acesso, no painel dele)" value={shipToken} onChange={setShipToken} required />
+              <button onClick={saveShipAccount} disabled={savingShip}
+                className="w-full bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg py-2.5 rounded-lg text-xs font-display font-bold transition-colors">
+                {savingShip ? 'Salvando...' : 'Salvar Frenet'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </Modal>
   )
