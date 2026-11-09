@@ -5,9 +5,9 @@
 // Deploy: supabase functions deploy ai-agent --no-verify-jwt
 // (chamada só server-to-server, por zapi-webhook, nunca pelo navegador)
 //
-// NÃO TESTADO AO VIVO (precisa de ANTHROPIC_API_KEY configurada como
-// secret da function antes de funcionar) — scaffold funcional, mesmo
-// status de cautela que meta-webhook/meta-send quando foram criados.
+// ANTHROPIC_API_KEY configurada em produção desde 2026-11-08 — zapi-webhook
+// já roteia pra cá de verdade quando modules.ia_agent=true (ver
+// zapi-webhook/index.ts linha ~440). Lisa La Belle usa isto ao vivo.
 //
 // Só é chamado quando clients.modules->>'ia_agent' = 'true' — clientes
 // sem esse módulo (Hassum, Sodie hoje) continuam 100% no fluxo de regra
@@ -25,6 +25,48 @@ const ANTHROPIC_MODEL = "claude-sonnet-5-5";
 const ZAPI_BASE = "https://api.z-api.io/instances";
 const DAILY_CAP = 100;
 const ZAPI_CLIENT_TOKEN = Deno.env.get("ZAPI_CLIENT_TOKEN") ?? "";
+
+const blingClientId = Deno.env.get("BLING_CLIENT_ID") ?? "";
+const blingClientSecret = Deno.env.get("BLING_CLIENT_SECRET") ?? "";
+
+// BUG REAL corrigido em 2026-11-09: check_stock/sell_product só liam a
+// tabela local `products`, mas a Lisa La Belle (única cliente com o
+// Agente de IA ativo até agora) usa Bling como catálogo — o agente nunca
+// achava produto nenhum dela. Helpers Bling duplicados de bling-estoque
+// (mesmo padrão sem pasta _shared já usado em todo o resto do projeto),
+// adaptados pra rodar 100% server-side (ai-agent já é service role, sem
+// JWT de usuário pra resolver — recebe client_id direto no payload).
+async function refreshBlingToken(refreshToken: string) {
+  const basic = btoa(`${blingClientId}:${blingClientSecret}`);
+  const res = await fetch("https://bling.com.br/Api/v3/oauth/token", {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const errMsg = typeof data?.error === "string" ? data.error : data?.error?.message;
+    throw new Error(data?.error_description || errMsg || `refresh falhou: ${res.status}`);
+  }
+  return data as { access_token: string; refresh_token: string };
+}
+
+async function getBlingChannel(clientId: string) {
+  const { data } = await supabase.from("marketplace_channels").select("id, credentials").eq("client_id", clientId).eq("platform", "bling").eq("active", true).maybeSingle();
+  return data;
+}
+
+async function blingFetch(clientId: string, channel: any, path: string, init: RequestInit = {}) {
+  let accessToken = channel.credentials?.access_token;
+  const headers = { ...(init.headers || {}), "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
+  let res = await fetch(`https://api.bling.com.br/Api/v3${path}`, { ...init, headers });
+  if (res.status === 401 && channel.credentials?.refresh_token && blingClientId && blingClientSecret) {
+    const refreshed = await refreshBlingToken(channel.credentials.refresh_token);
+    await supabase.from("marketplace_channels").update({ credentials: { ...channel.credentials, access_token: refreshed.access_token, refresh_token: refreshed.refresh_token } }).eq("id", channel.id);
+    res = await fetch(`https://api.bling.com.br/Api/v3${path}`, { ...init, headers: { ...headers, Authorization: `Bearer ${refreshed.access_token}` } });
+  }
+  return res;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -116,6 +158,18 @@ async function queuePrintJob(clientId: string, title: string, lines: string[]) {
 
 async function runTool(name: string, input: any, ctx: { clientId: string; contactId: string | null; notifyPhone: string | null; number: any; modules: Record<string, boolean> }) {
   if (name === "check_stock") {
+    const channel = await getBlingChannel(ctx.clientId);
+    if (channel) {
+      const res = await blingFetch(ctx.clientId, channel, "/produtos?pagina=1&limite=100&situacao=A");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { error: "não consegui consultar o estoque agora" };
+      const q = String(input.product_name || "").toLowerCase();
+      const produtos = (data.data ?? [])
+        .filter((p: any) => !(p.formato === "S" && p.produtoPai) && p.nome.toLowerCase().includes(q))
+        .slice(0, 5)
+        .map((p: any) => ({ id: p.id, name: p.nome, stock_qty: p.estoque?.saldoVirtualTotal ?? null, unit_price: p.preco ?? null }));
+      return { products: produtos };
+    }
     const { data } = await supabase
       .from("products")
       .select("id, name, stock_qty, unit_price")
@@ -126,6 +180,34 @@ async function runTool(name: string, input: any, ctx: { clientId: string; contac
     return { products: data || [] };
   }
   if (name === "sell_product") {
+    const channel = await getBlingChannel(ctx.clientId);
+    if (channel) {
+      const getRes = await blingFetch(ctx.clientId, channel, `/produtos/${input.product_id}`);
+      const current = (await getRes.json().catch(() => ({})))?.data;
+      if (!getRes.ok || !current) return { error: "produto não encontrado" };
+      const currentStock = current.estoque?.saldoVirtualTotal ?? 0;
+      if (currentStock < input.qty) return { error: "estoque insuficiente", stock_qty: currentStock };
+      const depositoId = channel.credentials?.deposito_id;
+      if (!depositoId) return { error: "depósito não configurado, avise o suporte" };
+      const newQty = currentStock - input.qty;
+      const stockRes = await blingFetch(ctx.clientId, channel, "/estoques", {
+        method: "POST",
+        body: JSON.stringify({ produto: { id: Number(input.product_id) }, deposito: { id: Number(depositoId) }, operacao: "B", quantidade: newQty, observacoes: "Venda via Agente de IA" }),
+      });
+      if (!stockRes.ok) return { error: "não consegui registrar a venda agora" };
+      if (ctx.notifyPhone) {
+        await sendViaBudget(ctx.number, ctx.notifyPhone, `🛒 Venda via IA: ${input.qty}x ${current.nome} (restam ${newQty} em estoque).`);
+      }
+      if (ctx.modules.auto_print) {
+        await queuePrintJob(ctx.clientId, "Comanda de venda", [
+          `${input.qty}x ${current.nome}`,
+          current.preco ? `Valor unit.: R$ ${Number(current.preco).toFixed(2)}` : "",
+          `Total: R$ ${(Number(current.preco || 0) * input.qty).toFixed(2)}`,
+        ].filter(Boolean));
+      }
+      return { ok: true, remaining_stock: newQty };
+    }
+
     const { data: product } = await supabase.from("products").select("*").eq("id", input.product_id).eq("client_id", ctx.clientId).single();
     if (!product) return { error: "produto não encontrado" };
     if (product.stock_qty < input.qty) return { error: "estoque insuficiente", stock_qty: product.stock_qty };
@@ -163,6 +245,23 @@ async function runTool(name: string, input: any, ctx: { clientId: string; contac
   return { error: "ferramenta desconhecida" };
 }
 
+const WEEKDAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+// Checa se agora está dentro do horário de atendimento configurado pelo
+// cliente (reply_flows.ai_business_hours). Sem config nenhuma = sempre
+// aberto (comportamento anterior, não quebra quem não configurou ainda).
+function isWithinBusinessHours(businessHours: Record<string, { start: string; end: string }> | null, timezone: string): boolean {
+  if (!businessHours || Object.keys(businessHours).length === 0) return true;
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: timezone || "America/Sao_Paulo" }));
+  const todayKey = WEEKDAY_KEYS[now.getDay()];
+  const todayHours = businessHours[todayKey];
+  if (!todayHours?.start || !todayHours?.end) return false; // dia sem horário definido = fechado
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const [startH, startM] = todayHours.start.split(":").map(Number);
+  const [endH, endM] = todayHours.end.split(":").map(Number);
+  return nowMinutes >= startH * 60 + startM && nowMinutes <= endH * 60 + endM;
+}
+
 async function callAnthropic(system: string, messages: any[], tools: any[]) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -190,8 +289,19 @@ Deno.serve(async (req: Request) => {
 
     const { data: client } = await supabase.from("clients").select("name, vertical, modules").eq("id", client_id).single();
     const modules = client?.modules || {};
-    const { data: flow } = await supabase.from("reply_flows").select("notify_phone").eq("client_id", client_id).single();
+    const { data: flow } = await supabase.from("reply_flows").select("notify_phone, ai_business_hours, ai_handoff_message, ai_timezone").eq("client_id", client_id).single();
     const notifyPhone = flow?.notify_phone || null;
+
+    // Handoff humano por horário (2026-11-09): fora do horário configurado,
+    // nem chama o modelo — só avisa o cliente que vai demorar e notifica a
+    // equipe, igual um atendente real faria. Economiza chamada de IA à toa
+    // e evita o agente prometer algo fora de hora de funcionamento.
+    if (!isWithinBusinessHours(flow?.ai_business_hours || null, flow?.ai_timezone || "America/Sao_Paulo")) {
+      const handoffMessage = flow?.ai_handoff_message || "Nosso atendimento automático está fora do horário agora. Já avisei a equipe, te respondem assim que possível!";
+      await sendViaBudget(number, contact.phone, handoffMessage);
+      if (notifyPhone) await sendViaBudget(number, notifyPhone, `🔔 Mensagem fora do horário de ${contact.name || contact.phone}: "${message}"`);
+      return new Response(JSON.stringify({ ok: true, reply: handoffMessage, handoff: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // Contexto curto: últimas mensagens recebidas deste contato (sem
     // histórico de saída ainda — ver limitação no README do módulo).
@@ -209,6 +319,7 @@ Deno.serve(async (req: Request) => {
     const system = `Você é o atendente virtual da ${client?.name || "empresa"} (${client?.vertical || "negócio"}), conversando pelo WhatsApp com ${contact.name || "um cliente"}.
 Converse como um humano de verdade conversaria — natural, direto, sem parecer script. Nunca mande mensagem robótica ou lista de opções numeradas.
 Use as ferramentas disponíveis quando precisar checar estoque, registrar uma venda ou marcar um horário — não invente disponibilidade ou preço sem checar.
+Se o cliente pedir pra falar com uma pessoa/atendente, ou perguntar algo que você não tem certeza, use notify_staff e avise o cliente que a equipe foi chamada.
 Responda sempre em português do Brasil, em 1-3 frases curtas (é WhatsApp, não e-mail).`;
 
     const tools = buildTools(modules);
