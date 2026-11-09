@@ -38,7 +38,7 @@ export default function AdminClients() {
   const [addonsClient, setAddonsClient] = useState(null) // cliente com o painel de add-ons aberto
   const [modulesClient, setModulesClient] = useState(null) // cliente com o painel de módulos aberto
   const [integrationsClient, setIntegrationsClient] = useState(null) // cliente com o painel de integrações (ERP) aberto
-  const [form, setForm] = useState({ name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: '', plan_next_charge_at: '', plan_billing_cycle_days: 30 })
+  const [form, setForm] = useState({ name: '', plan: 'Basic', segment: 'Alimentação', vertical: '', status: 'active', access_key: '', plan_next_charge_at: '', plan_billing_cycle_days: 30 })
 
   useEffect(() => { fetchClients() }, [])
 
@@ -59,13 +59,13 @@ export default function AdminClients() {
 
   function openNew() {
     setEditing(null)
-    setForm({ name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: generateKey(), plan_next_charge_at: '', plan_billing_cycle_days: 30 })
+    setForm({ name: '', plan: 'Basic', segment: 'Alimentação', vertical: '', status: 'active', access_key: generateKey(), plan_next_charge_at: '', plan_billing_cycle_days: 30 })
     setShowModal(true)
   }
 
   function openEdit(c) {
     setEditing(c)
-    setForm({ name: c.name, plan: c.plan || 'Basic', segment: c.segment || '', status: c.status, access_key: c.access_key || generateKey(), plan_next_charge_at: c.plan_next_charge_at ? c.plan_next_charge_at.slice(0, 10) : '', plan_billing_cycle_days: c.plan_billing_cycle_days || 30 })
+    setForm({ name: c.name, plan: c.plan || 'Basic', segment: c.segment || '', vertical: c.vertical || '', status: c.status, access_key: c.access_key || generateKey(), plan_next_charge_at: c.plan_next_charge_at ? c.plan_next_charge_at.slice(0, 10) : '', plan_billing_cycle_days: c.plan_billing_cycle_days || 30 })
     setShowModal(true)
   }
 
@@ -84,13 +84,13 @@ export default function AdminClients() {
     e.preventDefault()
     setSaving(true)
     if (editing) {
-      await supabase.from('clients').update({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key, plan_next_charge_at: form.plan_next_charge_at || null, plan_billing_cycle_days: form.plan_billing_cycle_days }).eq('id', editing.id)
+      await supabase.from('clients').update({ name: form.name, plan: form.plan, segment: form.segment, vertical: form.vertical, status: form.status, access_key: form.access_key, plan_next_charge_at: form.plan_next_charge_at || null, plan_billing_cycle_days: form.plan_billing_cycle_days }).eq('id', editing.id)
       setSaving(false); setShowModal(false); fetchClients()
     } else {
       // reseller_id: null pro admin (cliente direto do Leonardo); o próprio
       // ID do revendedor quando é ele criando — sem isso a policy de RLS
       // "Reseller manages own clients" recusa o insert (with check falha).
-      const { data: client, error } = await supabase.from('clients').insert({ name: form.name, plan: form.plan, segment: form.segment, status: form.status, access_key: form.access_key, plan_next_charge_at: form.plan_next_charge_at || null, plan_billing_cycle_days: form.plan_billing_cycle_days, reseller_id: isReseller ? resellerId : null }).select().single()
+      const { data: client, error } = await supabase.from('clients').insert({ name: form.name, plan: form.plan, segment: form.segment, vertical: form.vertical, status: form.status, access_key: form.access_key, plan_next_charge_at: form.plan_next_charge_at || null, plan_billing_cycle_days: form.plan_billing_cycle_days, reseller_id: isReseller ? resellerId : null }).select().single()
       if (error) { alert('Erro: ' + error.message); setSaving(false); return }
       // Provisiona login real (Supabase Auth) automaticamente pra todo cliente novo —
       // sem isso, o cliente consegue "logar" mas o banco trata ele como anônimo.
@@ -251,6 +251,10 @@ export default function AdminClients() {
                 <div className="grid grid-cols-2 gap-3">
                   <Sel label="Plano" value={form.plan} onChange={v => setForm(f => ({ ...f, plan: v }))} options={PLANS} />
                   <Sel label="Segmento" value={form.segment} onChange={v => setForm(f => ({ ...f, segment: v }))} options={SEGMENTS} />
+                </div>
+                <div>
+                  <F label="Nicho (descreva o negócio)" value={form.vertical} onChange={v => setForm(f => ({ ...f, vertical: v }))} />
+                  <p className="text-[11px] text-muted font-body -mt-2.5">Vira contexto do Agente de IA — ex: "loja de roupa feminina", "clínica odontológica", "barbearia masculina".</p>
                 </div>
                 <Sel label="Status" value={form.status} onChange={v => setForm(f => ({ ...f, status: v }))} options={['active', 'inactive']} labels={['Ativo', 'Inativo']} />
                 <div className="grid grid-cols-2 gap-3">
