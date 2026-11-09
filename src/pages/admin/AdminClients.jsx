@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2, KeyRound, PackagePlus, X, CalendarCheck } from 'lucide-react'
+import { Plus, Edit2, Building2, Copy, Check, RefreshCw, Trash2, KeyRound, PackagePlus, X, CalendarCheck, Blocks, Plug } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/Modal'
 import { useAuth } from '../../contexts/AuthContext'
@@ -36,9 +36,21 @@ export default function AdminClients() {
   const [copied, setCopied] = useState(false)
   const [provisioning, setProvisioning] = useState(null) // id do cliente sendo provisionado
   const [addonsClient, setAddonsClient] = useState(null) // cliente com o painel de add-ons aberto
+  const [modulesClient, setModulesClient] = useState(null) // cliente com o painel de módulos aberto
+  const [integrationsClient, setIntegrationsClient] = useState(null) // cliente com o painel de integrações (ERP) aberto
   const [form, setForm] = useState({ name: '', plan: 'Basic', segment: 'Alimentação', status: 'active', access_key: '', plan_next_charge_at: '', plan_billing_cycle_days: 30 })
 
   useEffect(() => { fetchClients() }, [])
+
+  // Feedback do redirect pós-OAuth (bling-oauth-callback -> /admin/clients?bling=success|error)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const bling = params.get('bling')
+    if (!bling) return
+    if (bling === 'success') alert('Integração conectada com sucesso!')
+    else alert('Não consegui conectar: ' + (params.get('msg') || 'erro desconhecido'))
+    window.history.replaceState({}, '', window.location.pathname)
+  }, [])
 
   async function fetchClients() {
     const { data } = await supabase.from('clients').select('*').order('created_at', { ascending: false })
@@ -211,6 +223,14 @@ export default function AdminClients() {
                       className="text-muted hover:text-accent transition-colors p-1">
                       <PackagePlus size={14} />
                     </button>
+                    <button onClick={() => setModulesClient(c)} title="Módulos: CRM (Pipeline), Estoque (ERP), Agente de IA"
+                      className="text-muted hover:text-accent transition-colors p-1">
+                      <Blocks size={14} />
+                    </button>
+                    <button onClick={() => setIntegrationsClient(c)} title="Integrações (ERP/marketplace) — nunca visível pro cliente final"
+                      className="text-muted hover:text-accent transition-colors p-1">
+                      <Plug size={14} />
+                    </button>
                     <button onClick={() => openEdit(c)} className="text-muted hover:text-white transition-colors p-1"><Edit2 size={14} /></button>
                     <button onClick={() => handleDelete(c)} className="text-muted hover:text-red-400 transition-colors p-1"><Trash2 size={14} /></button>
                   </td>
@@ -268,6 +288,10 @@ export default function AdminClients() {
       )}
 
       {addonsClient && <AddonsModal client={addonsClient} onClose={() => setAddonsClient(null)} />}
+
+      {modulesClient && <ModulesModal client={modulesClient} onClose={() => setModulesClient(null)} onSaved={fetchClients} />}
+
+      {integrationsClient && <IntegrationsModal client={integrationsClient} onClose={() => setIntegrationsClient(null)} />}
 
       {showKey && (
         <Modal>
@@ -399,6 +423,143 @@ function AddonsModal({ client, onClose }) {
             {saving ? 'Adicionando...' : 'Adicionar add-on'}
           </button>
         </div>
+      </div>
+    </Modal>
+  )
+}
+
+// Módulos opcionais (clients.modules) — mesmo campo que Sidebar.jsx já lê
+// pra gatear Pipeline/Estoque no menu (ver REGRA real corrigida: esses
+// itens não podem aparecer sem o módulo ligado). Antes só dava pra mexer
+// via SQL direto; aqui fica self-service pra qualquer cliente novo.
+const MODULE_OPTIONS = [
+  { key: 'crm', label: 'CRM (Pipeline)', desc: 'Kanban de funil de vendas/relacionamento' },
+  { key: 'estoque', label: 'Estoque (ERP)', desc: 'Catálogo e estoque em tempo real via Bling' },
+  { key: 'ia_agent', label: 'Agente de IA', desc: 'Resposta automática por IA nas conversas' },
+]
+
+function ModulesModal({ client, onClose, onSaved }) {
+  const [modules, setModules] = useState(client.modules || {})
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    setSaving(true)
+    await supabase.from('clients').update({ modules }).eq('id', client.id)
+    setSaving(false)
+    onSaved()
+    onClose()
+  }
+
+  return (
+    <Modal>
+      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display font-bold text-xl text-white">Módulos de {client.name}</h3>
+          <button onClick={onClose} className="text-muted hover:text-white"><X size={20} /></button>
+        </div>
+        <div className="space-y-2">
+          {MODULE_OPTIONS.map(m => (
+            <label key={m.key} className="flex items-start gap-3 bg-surface border border-border rounded-lg px-3 py-3 cursor-pointer hover:border-accent/40 transition-colors">
+              <input type="checkbox" checked={!!modules[m.key]} onChange={e => setModules(prev => ({ ...prev, [m.key]: e.target.checked }))}
+                className="mt-0.5 w-4 h-4 accent-accent" />
+              <div>
+                <p className="text-sm text-white font-body font-medium">{m.label}</p>
+                <p className="text-xs text-muted font-body">{m.desc}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+        <button onClick={save} disabled={saving}
+          className="w-full bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg py-3 rounded-lg text-sm font-display font-bold transition-colors">
+          {saving ? 'Salvando...' : 'Salvar módulos'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+// Integrações de ERP/marketplace (2026-11-09): isso NUNCA aparece pro
+// cliente final — nem o nome do provedor (Bling etc), só os resultados
+// já dentro do ZapFlow (estoque, nota, etc). Quem integra é o admin, aqui,
+// em nome do cliente — orientando por telefone/WhatsApp se o próprio
+// cliente já usa um ERP, ou criando uma conta nova se não usa nenhum.
+const PROVIDERS = [
+  { key: 'bling', label: 'Bling', recommended: true, desc: 'ERP recomendado — emissão de nota, estoque, integração automática com Mercado Livre/Shopee/etc.' },
+]
+
+function IntegrationsModal({ client, onClose }) {
+  const [channel, setChannel] = useState(null) // null = carregando, false = nenhuma, {} = conectada
+  const [connecting, setConnecting] = useState(false)
+
+  useEffect(() => { fetchChannel() }, [])
+
+  async function fetchChannel() {
+    const { data } = await supabase.from('marketplace_channels').select('id, platform, active').eq('client_id', client.id).eq('platform', 'bling').maybeSingle()
+    setChannel(data || false)
+  }
+
+  async function connect() {
+    setConnecting(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('bling-oauth-start', { body: { client_id: client.id } })
+      if (error || !data?.ok) { alert('Erro ao iniciar conexão: ' + (data?.error || error.message)); return }
+      window.open(data.url, '_blank', 'noopener')
+    } catch (e) {
+      alert('Erro ao iniciar conexão: ' + e.message)
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  async function disconnect() {
+    if (!confirm('Desconectar o ERP deste cliente? O Estoque para de funcionar até reconectar.')) return
+    await supabase.from('marketplace_channels').update({ active: false }).eq('id', channel.id)
+    fetchChannel()
+  }
+
+  return (
+    <Modal>
+      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-lg animate-fadein space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display font-bold text-xl text-white">Integrações de {client.name}</h3>
+          <button onClick={onClose} className="text-muted hover:text-white"><X size={20} /></button>
+        </div>
+        <p className="text-muted text-xs font-body">O cliente nunca vê o nome do provedor — ele só usa o ZapFlow normalmente (Estoque, Nota, etc) e por trás a gente busca no ERP certo.</p>
+
+        <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
+          <p className="text-xs text-muted font-body uppercase tracking-wide">Passo a passo</p>
+          <ol className="text-sm text-white font-body space-y-1.5 list-decimal list-inside">
+            <li>Pergunte ao cliente se ele já usa algum ERP (Bling, Tiny, Omie...). Se não usar nenhum, crie uma conta Bling grátis pra ele.</li>
+            <li>Peça pra ele (ou faça por ele, com acesso) logar na conta Bling.</li>
+            <li>Clique em "Conectar Bling" abaixo — abre a tela de autorização do Bling numa aba nova.</li>
+            <li>Aprove o acesso na conta Bling logada. A aba fecha sozinha e a conexão aparece aqui.</li>
+          </ol>
+        </div>
+
+        {PROVIDERS.map(p => (
+          <div key={p.key} className="bg-surface border border-border rounded-xl p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-white font-body font-medium flex items-center gap-2">
+                {p.label}
+                {p.recommended && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/10 text-accent">recomendado</span>}
+              </p>
+              <p className="text-xs text-muted font-body mt-0.5">{p.desc}</p>
+            </div>
+            {channel === null ? (
+              <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin shrink-0" />
+            ) : channel && channel.active ? (
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="flex items-center gap-1 text-green-400 text-xs font-body"><Check size={14} /> Conectado</span>
+                <button onClick={disconnect} className="text-xs text-muted hover:text-red-400 font-body">Desconectar</button>
+              </div>
+            ) : (
+              <button onClick={connect} disabled={connecting}
+                className="shrink-0 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2 rounded-lg text-xs font-display font-bold transition-colors">
+                {connecting ? 'Abrindo...' : 'Conectar Bling'}
+              </button>
+            )}
+          </div>
+        ))}
       </div>
     </Modal>
   )
