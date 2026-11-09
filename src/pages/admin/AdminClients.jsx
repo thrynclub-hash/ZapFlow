@@ -445,6 +445,7 @@ const MODULE_OPTIONS = [
   { key: 'estoque', label: 'Estoque (ERP)', desc: 'Catálogo e estoque em tempo real via Bling' },
   { key: 'pdv', label: 'PDV + Caixa', desc: 'Venda de balcão, abertura/fechamento de caixa, sangria/suprimento' },
   { key: 'ia_agent', label: 'Agente de IA', desc: 'Resposta automática por IA nas conversas' },
+  { key: 'financeiro', label: 'Financeiro', desc: 'Contas a pagar e a receber, além das vendas do PDV' },
 ]
 
 function ModulesModal({ client, onClose, onSaved }) {

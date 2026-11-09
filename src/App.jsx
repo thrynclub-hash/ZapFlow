@@ -36,6 +36,7 @@ const Opportunities = lazy(() => import('./pages/Opportunities'))
 const Pdv = lazy(() => import('./pages/Pdv'))
 const Caixa = lazy(() => import('./pages/Caixa'))
 const CarneLeao = lazy(() => import('./pages/CarneLeao'))
+const Financeiro = lazy(() => import('./pages/Financeiro'))
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
 const AdminClients = lazy(() => import('./pages/admin/AdminClients'))
 const AdminPricing = lazy(() => import('./pages/admin/AdminPricing'))
@@ -105,6 +106,7 @@ export default function App() {
           <Route path="pdv" element={<Pdv />} />
           <Route path="caixa" element={<Caixa />} />
           <Route path="carne-leao" element={<CarneLeao />} />
+          <Route path="financeiro" element={<Financeiro />} />
           <Route path="stock" element={<Stock />} />
           <Route path="conversations" element={<Conversations />} />
           <Route path="ai-agent" element={<AiAgentStudio />} />
