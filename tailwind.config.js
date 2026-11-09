@@ -30,6 +30,10 @@ export default {
       fontFamily: {
         display: ['Archivo', 'sans-serif'],
         body: ['Archivo', 'sans-serif'],
+        // Mono IBM Plex, igual ao vocero-crm (referência) — usado só em
+        // toques discretos (badge de plano, tag/rótulo técnico), nunca em
+        // texto corrido. É isso que diferencia de "só mais um SaaS azul".
+        mono: ['"IBM Plex Mono"', 'monospace'],
       },
     },
   },
