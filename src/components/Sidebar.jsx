@@ -1,7 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Megaphone, Plus, Cake,
-  BarChart2, Settings, LogOut, Shield, Building2, Tag, Smartphone, Workflow, Image, X, MessageCircle
+  BarChart2, Settings, LogOut, Shield, Building2, Tag, Smartphone, Workflow, Image, X, MessageCircle,
+  Package, Columns3
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -20,8 +21,15 @@ const clientNavGroups = [
     title: 'Relacionamento',
     items: [
       { to: '/contacts', icon: Users, label: 'Contatos' },
+      { to: '/pipeline', icon: Columns3, label: 'Pipeline' },
       { to: '/conversations', icon: MessageCircle, label: 'Conversas' },
       { to: '/birthdays', icon: Cake, label: 'Aniversários' },
+    ],
+  },
+  {
+    title: 'ERP',
+    items: [
+      { to: '/stock', icon: Package, label: 'Estoque' },
     ],
   },
   {
