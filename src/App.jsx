@@ -30,6 +30,7 @@ const Creatives = lazy(() => import('./pages/Creatives'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Stock = lazy(() => import('./pages/Stock'))
 const Pipeline = lazy(() => import('./pages/Pipeline'))
+const Opportunities = lazy(() => import('./pages/Opportunities'))
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
 const AdminClients = lazy(() => import('./pages/admin/AdminClients'))
 const AdminPricing = lazy(() => import('./pages/admin/AdminPricing'))
@@ -95,6 +96,7 @@ export default function App() {
           <Route path="campaigns/new" element={<NewCampaign />} />
           <Route path="birthdays" element={<Birthdays />} />
           <Route path="pipeline" element={<Pipeline />} />
+          <Route path="negocios" element={<Opportunities />} />
           <Route path="stock" element={<Stock />} />
           <Route path="conversations" element={<Conversations />} />
           <Route path="creatives" element={<Creatives />} />

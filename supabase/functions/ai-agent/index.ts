@@ -163,6 +163,23 @@ async function runTool(name: string, input: any, ctx: { clientId: string; contac
   return { error: "ferramenta desconhecida" };
 }
 
+const WEEKDAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+// Checa se agora está dentro do horário de atendimento configurado pelo
+// cliente (reply_flows.ai_business_hours). Sem config nenhuma = sempre
+// aberto (comportamento anterior, não quebra quem não configurou ainda).
+function isWithinBusinessHours(businessHours: Record<string, { start: string; end: string }> | null, timezone: string): boolean {
+  if (!businessHours || Object.keys(businessHours).length === 0) return true;
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: timezone || "America/Sao_Paulo" }));
+  const todayKey = WEEKDAY_KEYS[now.getDay()];
+  const todayHours = businessHours[todayKey];
+  if (!todayHours?.start || !todayHours?.end) return false; // dia sem horário definido = fechado
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const [startH, startM] = todayHours.start.split(":").map(Number);
+  const [endH, endM] = todayHours.end.split(":").map(Number);
+  return nowMinutes >= startH * 60 + startM && nowMinutes <= endH * 60 + endM;
+}
+
 async function callAnthropic(system: string, messages: any[], tools: any[]) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -190,8 +207,19 @@ Deno.serve(async (req: Request) => {
 
     const { data: client } = await supabase.from("clients").select("name, vertical, modules").eq("id", client_id).single();
     const modules = client?.modules || {};
-    const { data: flow } = await supabase.from("reply_flows").select("notify_phone").eq("client_id", client_id).single();
+    const { data: flow } = await supabase.from("reply_flows").select("notify_phone, ai_business_hours, ai_handoff_message, ai_timezone").eq("client_id", client_id).single();
     const notifyPhone = flow?.notify_phone || null;
+
+    // Handoff humano por horário (2026-11-09): fora do horário configurado,
+    // nem chama o modelo — só avisa o cliente que vai demorar e notifica a
+    // equipe, igual um atendente real faria. Economiza chamada de IA à toa
+    // e evita o agente prometer algo fora de hora de funcionamento.
+    if (!isWithinBusinessHours(flow?.ai_business_hours || null, flow?.ai_timezone || "America/Sao_Paulo")) {
+      const handoffMessage = flow?.ai_handoff_message || "Nosso atendimento automático está fora do horário agora. Já avisei a equipe, te respondem assim que possível!";
+      await sendViaBudget(number, contact.phone, handoffMessage);
+      if (notifyPhone) await sendViaBudget(number, notifyPhone, `🔔 Mensagem fora do horário de ${contact.name || contact.phone}: "${message}"`);
+      return new Response(JSON.stringify({ ok: true, reply: handoffMessage, handoff: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // Contexto curto: últimas mensagens recebidas deste contato (sem
     // histórico de saída ainda — ver limitação no README do módulo).
@@ -209,6 +237,7 @@ Deno.serve(async (req: Request) => {
     const system = `Você é o atendente virtual da ${client?.name || "empresa"} (${client?.vertical || "negócio"}), conversando pelo WhatsApp com ${contact.name || "um cliente"}.
 Converse como um humano de verdade conversaria — natural, direto, sem parecer script. Nunca mande mensagem robótica ou lista de opções numeradas.
 Use as ferramentas disponíveis quando precisar checar estoque, registrar uma venda ou marcar um horário — não invente disponibilidade ou preço sem checar.
+Se o cliente pedir pra falar com uma pessoa/atendente, ou perguntar algo que você não tem certeza, use notify_staff e avise o cliente que a equipe foi chamada.
 Responda sempre em português do Brasil, em 1-3 frases curtas (é WhatsApp, não e-mail).`;
 
     const tools = buildTools(modules);
