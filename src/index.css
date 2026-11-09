@@ -3,32 +3,72 @@
 @tailwind utilities;
 
 @layer base {
-  * { box-sizing: border-box; }
-  body {
-    background-color: #F7F5F1;
-    color: #17141A;
-    font-family: 'Manrope', sans-serif;
-    -webkit-font-smoothing: antialiased;
+  * {
+    box-sizing: border-box;
   }
-  h1, h2, h3, h4, h5 { font-family: 'Unbounded', sans-serif; }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: #F8FAFC;
+    color: #0F172A;
+    font-family: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Archivo', sans-serif;
+    letter-spacing: -0.025em;
+  }
+  code, kbd, samp, pre {
+    font-family: 'IBM Plex Mono', monospace;
+  }
 }
 
 @layer utilities {
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  .tabular-nums { font-variant-numeric: tabular-nums; }
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #F7F5F1; }
-::-webkit-scrollbar-thumb { background: #E7E2D8; border-radius: 3px; }
-
-/* Animations */
-@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.animate-fadein { animation: fadeIn 0.25s ease both; }
-
-@keyframes pulse-ring {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255,77,109,0.35); }
-  50% { box-shadow: 0 0 0 8px rgba(255,77,109,0); }
+/* Custom scrollbar corporativo */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-.animate-pulse-ring { animation: pulse-ring 2s ease infinite; }
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Animations de alta performance */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fadein {
+  animation: fadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slideup {
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}

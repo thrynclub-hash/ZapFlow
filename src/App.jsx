@@ -25,6 +25,8 @@ const Campaigns = lazy(() => import('./pages/Campaigns'))
 const Birthdays = lazy(() => import('./pages/Birthdays'))
 const Conversations = lazy(() => import('./pages/Conversations'))
 const Automations = lazy(() => import('./pages/Automations'))
+const VisualAutomations = lazy(() => import('./pages/VisualAutomations'))
+const AiAgentStudio = lazy(() => import('./pages/AiAgentStudio'))
 const Reports = lazy(() => import('./pages/Reports'))
 const Creatives = lazy(() => import('./pages/Creatives'))
 const Settings = lazy(() => import('./pages/Settings'))
@@ -103,8 +105,10 @@ export default function App() {
           <Route path="caixa" element={<Caixa />} />
           <Route path="stock" element={<Stock />} />
           <Route path="conversations" element={<Conversations />} />
+          <Route path="ai-agent" element={<AiAgentStudio />} />
           <Route path="creatives" element={<Creatives />} />
-          <Route path="automations" element={<Automations />} />
+          <Route path="automations" element={<VisualAutomations />} />
+          <Route path="automations/legacy" element={<Automations />} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
         </Route>

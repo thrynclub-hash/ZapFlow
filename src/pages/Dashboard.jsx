@@ -1,358 +1,315 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, Megaphone, Cake, TrendingUp, Plus, ChevronRight, Boxes, DollarSign, AlertTriangle, Package } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import {
+  ShoppingCart, Package, Wallet, MessageCircle, ArrowUpRight, Plus,
+  TrendingUp, AlertTriangle, CheckCircle2, Clock, Users, ArrowRight,
+  Boxes, FileText, QrCode, Barcode, ChevronRight, Store, DollarSign
+} from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
-// ZapFlow — Início (2026-11-09): ganha cara de painel de ERP de verdade
-// (KPI financeiro/operacional + gráfico + lista acionável), não só
-// métricas de campanha — senão o produto "ainda parece o ZapFlow" de
-// antes, mesmo com Estoque/Negócios por baixo. Seções de Estoque/Negócios
-// só aparecem se o módulo correspondente estiver ativo pro cliente.
-function money(n) {
-  return `R$ ${Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
+// ZapFlow — Centro de Comando Operacional (ERP + CRM Nativo)
+// Visão em tempo real de faturamento do dia, gaveta de caixa, estoque e atendimentos.
+// Zero chamadas para Bling ou terceiros.
 
-function StatCard({ icon: Icon, label, value, color = 'accent' }) {
-  const colors = {
-    accent: 'text-accent bg-accent/10',
-    blue: 'text-blue-400 bg-blue-400/10',
-    green: 'text-green-400 bg-green-400/10',
-    purple: 'text-purple-400 bg-purple-400/10',
-    amber: 'text-amber-400 bg-amber-400/10',
-  }
-  return (
-    <div className="bg-card border border-border rounded-[14px] p-5 transition-shadow hover:shadow-sm">
-      <div className={`w-10 h-10 rounded-[10px] flex items-center justify-center mb-4 ${colors[color]}`}>
-        <Icon size={19} strokeWidth={1.8} />
-      </div>
-      <p className="text-[28px] leading-none font-display font-bold text-white tabular-nums">{value}</p>
-      <p className="text-muted text-[12.5px] font-mono tracking-wide uppercase mt-2">{label}</p>
-    </div>
-  )
+function money(val) {
+  return `R$ ${Number(val || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
-
-const STAGE_ORDER = ['Novo', 'Orçamento', 'Negociação', 'Ganho', 'Perdido']
 
 export default function Dashboard() {
   const { profile } = useAuth()
-  const modules = profile?.client?.modules || {}
-  const [stats, setStats] = useState({ contacts: 0, campaigns: 0, birthdays: 0, sent: 0 })
-  const [recent, setRecent] = useState([])
-  const [erp, setErp] = useState(null) // { stockValue, activeProducts, lowStock: [] }
-  const [crm, setCrm] = useState(null) // { openValue, openCount, won30d, byStage: [], monthlyWon: [] }
+  const clientId = profile?.client_id
+
   const [loading, setLoading] = useState(true)
+  const [todaySales, setTodaySales] = useState({ total: 0, count: 0 })
+  const [cashSession, setCashSession] = useState(null)
+  const [stockSummary, setStockSummary] = useState({ totalItems: 0, totalValue: 0, lowStockItems: [] })
+  const [conversationsCount, setConversationsCount] = useState(0)
+  const [recentSales, setRecentSales] = useState([])
 
   useEffect(() => {
-    if (!profile?.client_id) return
-    fetchStats()
-    if (modules.estoque) fetchErp()
-    if (modules.crm) fetchCrm()
-  }, [profile])
+    if (clientId) loadDashboardData()
+  }, [clientId])
 
-  async function fetchStats() {
-    const clientId = profile.client_id
+  async function loadDashboardData() {
+    setLoading(true)
+    try {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const todayIso = today.toISOString()
 
-    const [contacts, campaigns, logs] = await Promise.all([
-      supabase.from('contacts').select('id', { count: 'exact' }).eq('client_id', clientId),
-      supabase.from('campaigns').select('id', { count: 'exact' }).eq('client_id', clientId),
-      supabase.from('message_logs').select('id', { count: 'exact' }).eq('client_id', clientId).eq('status', 'sent'),
-    ])
+      // 1. Vendas de Hoje (Oportunidades ganhas)
+      const { data: opps } = await supabase
+        .from('opportunities')
+        .select(`
+          id, title, stage, closed_at,
+          opportunity_payments (amount, method)
+        `)
+        .eq('client_id', clientId)
+        .eq('stage', 'Ganho')
+        .gte('closed_at', todayIso)
+        .order('closed_at', { ascending: false })
 
-    const today = new Date()
-    const mm = String(today.getMonth() + 1).padStart(2, '0')
-    const dd = String(today.getDate()).padStart(2, '0')
-    let withBirthdate = [], bdFrom = 0
-    while (true) {
-      const { data } = await supabase.from('contacts').select('birth_date').eq('client_id', clientId).not('birth_date', 'is', null).range(bdFrom, bdFrom + 999)
-      withBirthdate = withBirthdate.concat(data || [])
-      if (!data || data.length < 1000) break
-      bdFrom += 1000
-    }
-    const birthdays = withBirthdate.filter(c => { const p = c.birth_date.split('-'); return p[1] === mm && p[2] === dd }).length
+      let sumToday = 0
+      const list = (opps || []).map(o => {
+        const total = (o.opportunity_payments || []).reduce((s, p) => s + Number(p.amount || 0), 0)
+        sumToday += total
+        return {
+          id: o.id,
+          title: o.title,
+          total,
+          time: new Date(o.closed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          method: o.opportunity_payments?.[0]?.method || 'dinheiro'
+        }
+      })
 
-    const { data: recentData } = await supabase
-      .from('campaigns')
-      .select('*, number:client_numbers(label)')
-      .eq('client_id', clientId)
-      .order('created_at', { ascending: false })
-      .limit(5)
+      setTodaySales({ total: sumToday, count: list.length })
+      setRecentSales(list.slice(0, 5))
 
-    setStats({ contacts: contacts.count || 0, campaigns: campaigns.count || 0, birthdays: birthdays || 0, sent: logs.count || 0 })
-    setRecent(recentData || [])
-    setLoading(false)
-  }
+      // 2. Caixa Aberto
+      const { data: cash } = await supabase
+        .from('cash_sessions')
+        .select(`
+          id, initial_amount, opened_at,
+          cash_movements (type, amount)
+        `)
+        .eq('client_id', clientId)
+        .eq('status', 'open')
+        .maybeSingle()
 
-  // Painel de estoque (via bling-estoque, mesma function da tela
-  // Estoque) — valor total parado em estoque + o que precisa de atenção
-  // agora (baixo/zerado), igual painel operacional de referência.
-  async function fetchErp() {
-    const { data } = await supabase.functions.invoke('bling-estoque', { body: { action: 'list' } })
-    if (!data?.ok || !data.connected) { setErp(data?.connected === false ? { notConnected: true } : null); return }
-    const produtos = data.produtos || []
-    const stockValue = produtos.reduce((s, p) => s + (p.preco || 0) * (p.estoque || 0), 0)
-    const lowStock = produtos.filter(p => p.estoque !== null && p.estoque <= 5).sort((a, b) => a.estoque - b.estoque).slice(0, 5)
-    setErp({ stockValue, activeProducts: produtos.length, lowStock })
-  }
+      setCashSession(cash || null)
 
-  // Painel de negócios — funil em aberto (valor + contagem por estágio,
-  // estilo "accounts receivable/payable" dos exemplos de ERP) e vendas
-  // fechadas por mês (estilo "revenue vs expenses").
-  async function fetchCrm() {
-    const clientId = profile.client_id
-    const { data: opps } = await supabase
-      .from('opportunities')
-      .select('stage, closed_at, created_at, opportunity_items(description, qty, unit_price)')
-      .eq('client_id', clientId)
+      // 3. Estoque Nativo (Zero Bling)
+      const { data: prods } = await supabase
+        .from('products')
+        .select('id, name, stock_qty, unit_price, cost_price, min_stock_alert, images')
+        .eq('client_id', clientId)
+        .eq('active', true)
 
-    const withTotal = (opps || []).map(o => ({ ...o, total: (o.opportunity_items || []).reduce((s, i) => s + Number(i.qty) * Number(i.unit_price), 0) }))
-    const open = withTotal.filter(o => o.stage !== 'Ganho' && o.stage !== 'Perdido')
-    const byStage = STAGE_ORDER.map(stage => ({ stage, count: withTotal.filter(o => o.stage === stage).length, value: withTotal.filter(o => o.stage === stage).reduce((s, o) => s + o.total, 0) }))
+      let totalQty = 0
+      let totalVal = 0
+      const lowItems = []
 
-    const now = new Date()
-    const months = Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
-      return { key: `${d.getFullYear()}-${d.getMonth()}`, name: d.toLocaleDateString('pt-BR', { month: 'short' }), ganho: 0 }
-    })
-    withTotal.filter(o => o.stage === 'Ganho' && o.closed_at).forEach(o => {
-      const d = new Date(o.closed_at)
-      const key = `${d.getFullYear()}-${d.getMonth()}`
-      const m = months.find(m => m.key === key)
-      if (m) m.ganho += o.total
-    })
-
-    // Curva ABC / produtos mais vendidos — só itens de negócios Ganhos,
-    // agrupados por descrição (funciona com produto do catálogo local OU
-    // descrição livre, já que opportunity_items aceita os dois). Classe A
-    // = acumula até 80% da receita, B = até 95%, C = o resto (Pareto).
-    const soldByName = {}
-    withTotal.filter(o => o.stage === 'Ganho').forEach(o => {
-      for (const item of o.opportunity_items || []) {
-        const key = item.description || 'Item sem nome'
-        const value = Number(item.qty) * Number(item.unit_price)
-        if (!soldByName[key]) soldByName[key] = { name: key, qty: 0, value: 0 }
-        soldByName[key].qty += Number(item.qty)
-        soldByName[key].value += value
+      for (const p of prods || []) {
+        totalQty += p.stock_qty || 0
+        totalVal += (p.stock_qty || 0) * Number(p.unit_price || 0)
+        if ((p.stock_qty || 0) <= (p.min_stock_alert || 2)) {
+          lowItems.push(p)
+        }
       }
-    })
-    const ranked = Object.values(soldByName).sort((a, b) => b.value - a.value)
-    const totalSold = ranked.reduce((s, p) => s + p.value, 0)
-    let cumulative = 0
-    const topProducts = ranked.slice(0, 8).map(p => {
-      cumulative += p.value
-      const pct = totalSold > 0 ? cumulative / totalSold : 0
-      const classe = pct <= 0.8 ? 'A' : pct <= 0.95 ? 'B' : 'C'
-      return { ...p, classe }
-    })
 
-    setCrm({
-      openValue: open.reduce((s, o) => s + o.total, 0),
-      openCount: open.length,
-      byStage,
-      monthlyWon: months,
-      topProducts,
-    })
+      setStockSummary({
+        totalItems: totalQty,
+        totalValue: totalVal,
+        lowStockItems: lowItems.slice(0, 5)
+      })
+
+      // 4. Conversas Ativas
+      const { count: cCount } = await supabase
+        .from('contacts')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', clientId)
+
+      setConversationsCount(cCount || 0)
+    } catch (err) {
+      console.error('Erro ao carregar Dashboard:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite'
-  const name = profile?.full_name?.split(' ')[0] || 'por aí'
-
-  const statusColors = { draft: 'text-muted bg-muted/10', sending: 'text-accent bg-accent/10', completed: 'text-green-400 bg-green-400/10', error: 'text-red-400 bg-red-400/10' }
-  const statusLabels = { draft: 'Rascunho', sending: 'Enviando', completed: 'Concluído', error: 'Erro' }
-
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (!active || !payload?.length) return null
+  if (loading) {
     return (
-      <div className="bg-card border border-border rounded-lg px-3 py-2">
-        <p className="text-muted text-xs font-body">{label}</p>
-        <p className="text-accent font-body font-medium">{money(payload[0].value)}</p>
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-    </div>
-  )
-
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-start justify-between">
+    <div className="space-y-6">
+      {/* Topo do Centro de Comando */}
+      <div className="flex items-center justify-between flex-wrap gap-4 border-b border-border pb-4">
         <div>
-          <p className="text-muted text-sm font-body">{greeting} 👋</p>
-          <h1 className="font-display font-bold text-3xl text-white mt-1">{name}</h1>
+          <h1 className="font-display font-bold text-2xl sm:text-3xl text-ink">
+            Centro de Comando da Loja
+          </h1>
+          <p className="text-muted text-xs sm:text-sm font-body mt-0.5">
+            Visão unificada de vendas físicas, WhatsApp, saldo de caixa e estoque.
+          </p>
         </div>
-        <Link to="/campaigns/new" className="flex items-center gap-2 bg-accent hover:bg-accent-dim text-bg font-display font-bold px-5 py-2.5 rounded-lg transition-colors text-sm">
-          <Plus size={16} /> Novo Disparo
-        </Link>
+
+        {/* Atalhos Rápidos de Balcão */}
+        <div className="flex items-center gap-2">
+          <Link
+            to="/pdv"
+            className="bg-accent hover:bg-accent-dim text-white text-xs font-display font-bold px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-2"
+          >
+            <ShoppingCart size={15} />
+            <span>Abrir PDV (F2)</span>
+          </Link>
+          <Link
+            to="/stock"
+            className="bg-card hover:bg-surface border border-border text-ink text-xs font-display font-bold px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
+          >
+            <Plus size={15} />
+            <span>Cadastrar Peça</span>
+          </Link>
+        </div>
       </div>
 
-      {/* KPIs principais — relacionamento + (se ativo) ERP/negócios juntos
-          na mesma grade, pra não parecer "ferramenta de mensagem com um
-          extra" e sim um painel só. */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard icon={Users} label="Contatos cadastrados" value={stats.contacts.toLocaleString()} color="blue" />
-        <StatCard icon={TrendingUp} label="Mensagens enviadas" value={stats.sent.toLocaleString()} color="green" />
-        {modules.crm && crm && <StatCard icon={DollarSign} label="Em negociação" value={money(crm.openValue)} color="accent" />}
-        {modules.estoque && erp && !erp.notConnected && <StatCard icon={Boxes} label="Valor em estoque" value={money(erp.stockValue)} color="purple" />}
-        {!modules.crm && <StatCard icon={Megaphone} label="Campanhas criadas" value={stats.campaigns} color="accent" />}
-        {!modules.estoque && <StatCard icon={Cake} label="Aniversários hoje" value={stats.birthdays} color="purple" />}
+      {/* Grid de KPIs Principais (4 Colunas Desktop) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* KPI 1: Vendas do Dia */}
+        <div className="bg-card border border-border rounded-2xl p-4.5 space-y-2 shadow-xs">
+          <div className="flex items-center justify-between text-muted text-xs">
+            <span className="font-mono uppercase tracking-wider">Vendas de Hoje</span>
+            <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600">
+              <TrendingUp size={15} />
+            </span>
+          </div>
+          <p className="font-display font-bold text-2xl text-ink tabular-nums">
+            {money(todaySales.total)}
+          </p>
+          <div className="flex items-center justify-between text-xs text-muted font-mono pt-1 border-t border-border/50">
+            <span>{todaySales.count} pedidos fechados</span>
+            <Link to="/negocios" className="text-accent hover:underline flex items-center">
+              Ver pedidos <ChevronRight size={11} />
+            </Link>
+          </div>
+        </div>
+
+        {/* KPI 2: Caixa Aberto */}
+        <div className="bg-card border border-border rounded-2xl p-4.5 space-y-2 shadow-xs">
+          <div className="flex items-center justify-between text-muted text-xs">
+            <span className="font-mono uppercase tracking-wider">Gaveta do Caixa</span>
+            <span className="p-1.5 rounded-lg bg-accent/10 text-accent">
+              <Wallet size={15} />
+            </span>
+          </div>
+          <p className="font-display font-bold text-2xl text-ink tabular-nums">
+            {cashSession ? money(cashSession.initial_amount) : 'Fechado'}
+          </p>
+          <div className="flex items-center justify-between text-xs font-mono pt-1 border-t border-border/50">
+            <span className={cashSession ? 'text-emerald-600 font-bold' : 'text-amber-600'}>
+              {cashSession ? '● Aberto hoje' : 'Necessita abertura'}
+            </span>
+            <Link to="/caixa" className="text-accent hover:underline flex items-center">
+              Conferir <ChevronRight size={11} />
+            </Link>
+          </div>
+        </div>
+
+        {/* KPI 3: Estoque Imobilizado */}
+        <div className="bg-card border border-border rounded-2xl p-4.5 space-y-2 shadow-xs">
+          <div className="flex items-center justify-between text-muted text-xs">
+            <span className="font-mono uppercase tracking-wider">Estoque Ativo</span>
+            <span className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600">
+              <Package size={15} />
+            </span>
+          </div>
+          <p className="font-display font-bold text-2xl text-ink tabular-nums">
+            {stockSummary.totalItems} <span className="text-sm font-normal text-muted">peças</span>
+          </p>
+          <div className="flex items-center justify-between text-xs text-muted font-mono pt-1 border-t border-border/50">
+            <span>Valor: {money(stockSummary.totalValue)}</span>
+            <Link to="/stock" className="text-accent hover:underline flex items-center">
+              Catálogo <ChevronRight size={11} />
+            </Link>
+          </div>
+        </div>
+
+        {/* KPI 4: Atendimentos WhatsApp */}
+        <div className="bg-card border border-border rounded-2xl p-4.5 space-y-2 shadow-xs">
+          <div className="flex items-center justify-between text-muted text-xs">
+            <span className="font-mono uppercase tracking-wider">Atendimento WhatsApp</span>
+            <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600">
+              <MessageCircle size={15} />
+            </span>
+          </div>
+          <p className="font-display font-bold text-2xl text-ink tabular-nums">
+            {conversationsCount} <span className="text-sm font-normal text-muted">clientes</span>
+          </p>
+          <div className="flex items-center justify-between text-xs text-muted font-mono pt-1 border-t border-border/50">
+            <span className="text-emerald-600 font-bold">IA Sofia Ativa</span>
+            <Link to="/conversations" className="text-accent hover:underline flex items-center">
+              Abrir chat <ChevronRight size={11} />
+            </Link>
+          </div>
+        </div>
       </div>
 
-      {/* Painel de negócios (CRM) */}
-      {modules.crm && crm && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-4">
-          <div className="bg-card border border-border rounded-xl p-6">
-            <h3 className="font-display font-semibold text-white mb-6">Vendas fechadas por mês</h3>
-            {crm.monthlyWon.every(m => m.ganho === 0) ? (
-              <p className="text-muted text-sm font-body py-10 text-center">Nenhum negócio fechado ainda.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={crm.monthlyWon} barSize={28}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E1E9E4" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fill: '#5F6A65', fontSize: 12, fontFamily: 'Archivo' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#5F6A65', fontSize: 12, fontFamily: 'Archivo' }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(13,91,255,0.06)' }} />
-                  <Bar dataKey="ganho" fill="#0D5BFF" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-          <div className="bg-card border border-border rounded-xl p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="font-display font-semibold text-white">Funil de vendas</h3>
-              <Link to="/negocios" className="text-muted text-xs font-body hover:text-white transition-colors flex items-center gap-1">Ver <ChevronRight size={12} /></Link>
+      {/* Grid Central: Vendas Recentes x Alertas de Estoque */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Tabela de Vendas Recentes (7 cols) */}
+        <div className="lg:col-span-7 bg-card border border-border rounded-2xl p-5 space-y-4 shadow-xs">
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <div className="flex items-center gap-2">
+              <ShoppingCart size={17} className="text-accent" />
+              <h3 className="font-display font-bold text-base text-ink">Últimas Vendas Realizadas</h3>
             </div>
-            <div className="space-y-3">
-              {crm.byStage.map(s => {
-                const max = Math.max(...crm.byStage.map(x => x.count), 1)
-                return (
-                  <div key={s.stage}>
-                    <div className="flex justify-between text-xs font-body mb-1">
-                      <span className="text-muted">{s.stage}</span>
-                      <span className="text-white">{s.count} · {money(s.value)}</span>
-                    </div>
-                    <div className="h-1.5 bg-surface rounded-full overflow-hidden">
-                      <div className="h-full bg-accent rounded-full" style={{ width: `${(s.count / max) * 100}%` }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+            <Link to="/negocios" className="text-xs text-accent font-semibold hover:underline">
+              Ver todas →
+            </Link>
           </div>
-        </div>
-      )}
 
-      {/* Produtos mais vendidos / Curva ABC — só com negócios Ganhos
-          registrados; classe A/B/C pelo critério clássico de Pareto
-          (80/95/100% da receita acumulada). */}
-      {modules.crm && crm && crm.topProducts?.length > 0 && (
-        <div className="bg-card border border-border rounded-xl p-6">
-          <h3 className="font-display font-semibold text-white mb-5">Produtos mais vendidos</h3>
-          <div className="space-y-2">
-            {crm.topProducts.map(p => (
-              <div key={p.name} className="flex items-center justify-between bg-surface/60 rounded-lg px-4 py-2.5">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-[11px] font-mono font-bold ${
-                    p.classe === 'A' ? 'bg-green-400/10 text-green-400' : p.classe === 'B' ? 'bg-amber-400/10 text-amber-400' : 'bg-muted/10 text-muted'
-                  }`}>{p.classe}</span>
-                  <span className="text-sm text-white font-body truncate">{p.name}</span>
-                </div>
-                <span className="text-sm text-muted font-body shrink-0 ml-3">{p.qty} un · {money(p.value)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Painel de estoque — o que precisa de atenção agora, não só a
-          foto geral (igual painel "aguardando aprovação" de referência). */}
-      {modules.estoque && erp && !erp.notConnected && (
-        <div className="bg-card border border-border rounded-xl p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="font-display font-semibold text-white flex items-center gap-2"><AlertTriangle size={16} className="text-amber-400" /> Estoque baixo</h3>
-            <Link to="/stock" className="text-muted text-xs font-body hover:text-white transition-colors flex items-center gap-1">Ver estoque <ChevronRight size={12} /></Link>
-          </div>
-          {erp.lowStock.length === 0 ? (
-            <p className="text-muted text-sm font-body py-6 text-center">Nenhum produto com estoque baixo. 🎉</p>
+          {recentSales.length === 0 ? (
+            <p className="text-center text-xs text-muted py-8 font-body">Nenhuma venda registrada hoje ainda.</p>
           ) : (
-            <div className="space-y-2">
-              {erp.lowStock.map(p => (
-                <div key={p.id} className="flex items-center justify-between bg-surface/60 rounded-lg px-4 py-2.5">
-                  <span className="text-sm text-white font-body flex items-center gap-2"><Package size={13} className="text-muted" /> {p.nome}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-body ${p.estoque === 0 ? 'text-red-400 bg-red-400/10' : 'text-amber-400 bg-amber-400/10'}`}>{p.estoque} un.</span>
+            <div className="divide-y divide-border/60">
+              {recentSales.map(sale => (
+                <div key={sale.id} className="py-2.5 flex items-center justify-between text-xs">
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-ink">{sale.title}</p>
+                    <span className="text-[10px] text-muted font-mono">
+                      Horário: {sale.time} · Método: <strong className="uppercase">{sale.method}</strong>
+                    </span>
+                  </div>
+                  <div className="text-right font-mono">
+                    <span className="font-bold text-emerald-600 text-sm">{money(sale.total)}</span>
+                    <span className="block text-[10px] text-muted">Pago & Baixado</span>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
-      )}
 
-      {/* Aniversários alerta */}
-      {stats.birthdays > 0 && (
-        <div className="bg-accent/10 border border-accent/30 rounded-xl p-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Cake size={20} className="text-accent" />
-            <div>
-              <p className="text-white font-body font-medium">{stats.birthdays} aniversariante{stats.birthdays > 1 ? 's' : ''} hoje!</p>
-              <p className="text-muted text-sm font-body">Não perca a oportunidade de enviar uma mensagem especial</p>
+        {/* Alertas de Reposição de Estoque (5 cols) */}
+        <div className="lg:col-span-5 bg-card border border-border rounded-2xl p-5 space-y-4 shadow-xs">
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={17} className="text-amber-500" />
+              <h3 className="font-display font-bold text-base text-ink">Alertas de Reposição</h3>
             </div>
+            <Link to="/stock" className="text-xs text-accent font-semibold hover:underline">
+              Gerenciar estoque →
+            </Link>
           </div>
-          <Link to="/birthdays" className="text-accent text-sm font-display font-bold hover:underline flex items-center gap-1">
-            Ver <ChevronRight size={14} />
-          </Link>
-        </div>
-      )}
 
-      {/* Campanhas recentes */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-display font-bold text-lg text-white">Últimas campanhas</h2>
-          <Link to="/campaigns" className="text-muted text-sm font-body hover:text-white transition-colors">Ver todas →</Link>
-        </div>
-
-        {recent.length === 0 ? (
-          <div className="bg-card border border-border rounded-xl p-10 text-center">
-            <Megaphone size={32} className="text-muted mx-auto mb-3" />
-            <p className="text-muted font-body">Nenhuma campanha ainda.</p>
-            <Link to="/campaigns/new" className="inline-block mt-4 text-accent text-sm font-display font-bold hover:underline">Criar primeiro disparo →</Link>
-          </div>
-        ) : (
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-5 py-3 text-xs text-muted font-body font-medium">Campanha</th>
-                  <th className="text-left px-5 py-3 text-xs text-muted font-body font-medium">Loja</th>
-                  <th className="text-left px-5 py-3 text-xs text-muted font-body font-medium">Enviados</th>
-                  <th className="text-left px-5 py-3 text-xs text-muted font-body font-medium">Status</th>
-                  <th className="text-left px-5 py-3 text-xs text-muted font-body font-medium">Data</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map(c => (
-                  <tr key={c.id} className="border-b border-border/50 last:border-0 hover:bg-surface/30 transition-colors">
-                    <td className="px-5 py-4 text-sm text-white font-body">{c.name || 'Disparo'}</td>
-                    <td className="px-5 py-4 text-sm text-muted font-body">{c.number?.label || '—'}</td>
-                    <td className="px-5 py-4 text-sm text-white font-body">{c.sent_count || 0}/{c.total_count || 0}</td>
-                    <td className="px-5 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-body ${statusColors[c.status] || statusColors.draft}`}>
-                        {statusLabels[c.status] || c.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-sm text-muted font-body">{new Date(c.created_at).toLocaleDateString('pt-BR')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {stockSummary.lowStockItems.length === 0 ? (
+            <div className="text-center py-8 space-y-2">
+              <CheckCircle2 size={24} className="text-emerald-500 mx-auto" />
+              <p className="text-xs text-muted font-body">Todas as peças estão com estoque saudável!</p>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="space-y-2.5">
+              {stockSummary.lowStockItems.map(item => (
+                <div key={item.id} className="p-2.5 rounded-xl bg-surface/50 border border-border flex items-center justify-between text-xs">
+                  <div className="min-w-0 pr-2">
+                    <p className="font-medium text-ink truncate">{item.name}</p>
+                    <span className="text-[10px] text-muted font-mono">
+                      Mínimo alertado: {item.min_stock_alert || 2} un
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded font-mono font-bold text-xs bg-red-500/10 text-red-600 shrink-0">
+                    {item.stock_qty} un restando
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

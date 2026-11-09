@@ -173,8 +173,8 @@ const PLANS = [
 // -------------------------------------------------------------
 const FAQS = [
   {
-    q: 'O ZapFlow depende do Bling ou de outro sistema ERP externo?',
-    a: 'Não. O ZapFlow possui um motor próprio e independente de catálogo, grade de variações (cores e tamanhos), movimentação de estoque com Kardex, PDV de balcão e gestão de caixa. Você economiza mensalidades adicionais e elimina a latência de sistemas externos.'
+    q: 'Preciso contratar outro sistema ou ERP para emitir notas ou controlar estoque?',
+    a: 'Não. O ZapFlow é 100% autônomo. Ele possui banco de dados próprio, controle de grade com fotos reais, frente de caixa de balcão e motor fiscal direto com seu certificado A1. Tudo em uma única mensalidade, sem custos surpresa de plataformas externas.'
   },
   {
     q: 'O PDV funciona se a internet da loja física cair?',
@@ -229,6 +229,21 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-bg text-ink flex flex-col font-body selection:bg-accent selection:text-white">
+      {/* --------------------------------------------------------- */}
+      {/* 0. FAIXA NO TOPO / ANNOUNCEMENT BAR                       */}
+      {/* --------------------------------------------------------- */}
+      <div className="bg-[#0b101b] text-white/90 py-2.5 px-4 text-center font-body text-xs border-b border-white/10 relative z-50 flex items-center justify-center gap-2">
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-accent text-white font-mono text-[10px] uppercase font-bold tracking-wider">
+          Novo ZapFlow 2.4
+        </span>
+        <span className="text-white/85">
+          Terminal PDV com modo offline, catálogo com fotos reais e atendente de vendas no WhatsApp.
+        </span>
+        <a href="#demo" className="text-accent hover:text-white underline underline-offset-4 font-semibold ml-1 transition-colors">
+          Ver demonstração ao vivo →
+        </a>
+      </div>
+
       {/* --------------------------------------------------------- */}
       {/* 1. NAVBAR / HEADER DE ALTA PRECISÃO                      */}
       {/* --------------------------------------------------------- */}
@@ -287,7 +302,7 @@ export default function Landing() {
           <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface border border-border text-xs font-mono text-muted">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Sem Bling. Sem terceiros. 100% nativo e independente.</span>
+              <span>Plataforma 100% autônoma · ERP, Balcão e WhatsApp no mesmo motor</span>
             </div>
 
             <h1 className="font-display font-bold text-4xl sm:text-5xl lg:text-[68px] leading-[1.08] tracking-tight text-ink">
@@ -633,7 +648,7 @@ export default function Landing() {
                 </li>
                 <li className="flex items-start gap-2">
                   <X size={15} className="text-red-500 shrink-0 mt-0.5" />
-                  <span>Pagar mensalidade cara do Bling/Tiny só para emitir nota e controlar estoque básico.</span>
+                  <span>Pagar mensalidades extras de múltiplos ERPs e integrações só para emitir notas e cadastrar peças.</span>
                 </li>
               </ul>
             </div>
