@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard, Gauge, Image as ImageIcon, Bot, Clock } from 'lucide-react'
+import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard, Gauge, Image as ImageIcon, Bot, Clock, FileText, Trash2, Upload } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -226,6 +226,7 @@ export default function Settings() {
           (horário de funcionamento), não um segredo de integração — fica
           aqui mesmo no Settings do cliente. */}
       {modules.ia_agent && <AiAgentHoursCard clientId={profile.client_id} />}
+      {modules.ia_agent && <KnowledgeBaseCard clientId={profile.client_id} />}
 
       {/* Add-ons (order bump) — mais capacidade sem trocar de plano inteiro */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
@@ -413,6 +414,91 @@ function AiAgentHoursCard({ clientId }) {
         className="flex items-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2.5 rounded-lg text-sm font-display font-bold transition-colors">
         {saving ? 'Salvando...' : saved ? 'Salvo!' : 'Salvar horário'}
       </button>
+    </div>
+  )
+}
+
+const MAX_DOC_CHARS = 8000
+
+function KnowledgeBaseCard({ clientId }) {
+  const [docs, setDocs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { fetchDocs() }, [])
+
+  async function fetchDocs() {
+    const { data } = await supabase.from('knowledge_documents').select('id, title, content, created_at').eq('client_id', clientId).order('created_at', { ascending: false })
+    setDocs(data || [])
+    setLoading(false)
+  }
+
+  function handleFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.name.endsWith('.txt')) { alert('Por enquanto só aceito arquivo .txt — cole o texto direto se for PDF.'); return }
+    const reader = new FileReader()
+    reader.onload = () => { setContent(String(reader.result).slice(0, MAX_DOC_CHARS)); if (!title) setTitle(file.name.replace(/\.txt$/, '')) }
+    reader.readAsText(file)
+  }
+
+  async function save() {
+    if (!title.trim() || !content.trim()) return
+    setSaving(true)
+    const { error } = await supabase.from('knowledge_documents').insert({ client_id: clientId, title: title.trim(), content: content.trim().slice(0, MAX_DOC_CHARS) })
+    setSaving(false)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
+    setTitle(''); setContent('')
+    fetchDocs()
+  }
+
+  async function remove(id) {
+    if (!confirm('Remover esse documento da base de conhecimento?')) return
+    await supabase.from('knowledge_documents').delete().eq('id', id)
+    fetchDocs()
+  }
+
+  const totalChars = docs.reduce((s, d) => s + d.content.length, 0)
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+      <h3 className="font-display font-semibold text-white flex items-center gap-2"><FileText size={16} /> Base de conhecimento do Agente de IA</h3>
+      <p className="text-muted text-xs font-body">Cole seu catálogo, tabela de preços, regras de frete ou FAQ. O agente usa esse texto pra responder com precisão sobre sua empresa.</p>
+
+      {!loading && docs.length > 0 && (
+        <div className="space-y-2">
+          {docs.map(d => (
+            <div key={d.id} className="flex items-center justify-between bg-surface border border-border rounded-lg px-4 py-2.5">
+              <div className="min-w-0">
+                <p className="text-sm text-white font-body font-medium truncate">{d.title}</p>
+                <p className="text-muted text-xs font-body">{d.content.length.toLocaleString()} caracteres</p>
+              </div>
+              <button onClick={() => remove(d.id)} className="text-muted hover:text-red-400 transition-colors p-1 shrink-0"><Trash2 size={14} /></button>
+            </div>
+          ))}
+          <p className="text-muted text-[11px] font-body">{totalChars.toLocaleString()} caracteres no total.</p>
+        </div>
+      )}
+
+      <div className="border-t border-border pt-4 space-y-3">
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Título (ex: Catálogo de produtos)"
+          className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent" />
+        <textarea value={content} onChange={e => setContent(e.target.value.slice(0, MAX_DOC_CHARS))} rows={5} placeholder="Cole o texto aqui..."
+          className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent resize-none" />
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex items-center gap-2 text-xs text-accent font-display font-bold cursor-pointer hover:underline">
+            <Upload size={13} /> Enviar arquivo .txt
+            <input type="file" accept=".txt" className="hidden" onChange={handleFile} />
+          </label>
+          <span className="text-muted text-[11px] font-mono">{content.length}/{MAX_DOC_CHARS}</span>
+        </div>
+        <button onClick={save} disabled={saving || !title.trim() || !content.trim()}
+          className="bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2.5 rounded-lg text-sm font-display font-bold transition-colors">
+          {saving ? 'Salvando...' : 'Adicionar documento'}
+        </button>
+      </div>
     </div>
   )
 }

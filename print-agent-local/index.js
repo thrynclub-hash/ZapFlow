@@ -40,6 +40,18 @@ async function printJob(job) {
     printer.drawLine()
   }
   for (const line of job.lines || []) printer.println(line)
+  // Etiqueta com código de barras (2026-11-09) — só quando job.barcode
+  // vier preenchido (telas de Estoque geram isso pro SKU do produto).
+  // NÃO TESTADO AO VIVO com impressora real ainda — node-thermal-printer
+  // documenta printBarcode(data) pra CODE128, que é o formato mais
+  // comum em etiqueta de varejo BR; se a impressora específica não
+  // suportar, cai em erro tratado no catch de tick() como qualquer job.
+  if (job.barcode) {
+    printer.alignCenter()
+    printer.printBarcode(job.barcode)
+    printer.println(job.barcode)
+    printer.alignLeft()
+  }
   printer.cut()
   await printer.execute()
 }
