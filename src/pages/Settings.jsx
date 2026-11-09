@@ -226,7 +226,7 @@ export default function Settings() {
           (horário de funcionamento), não um segredo de integração — fica
           aqui mesmo no Settings do cliente. */}
       {modules.ia_agent && <AiAgentHoursCard clientId={profile.client_id} />}
-      {modules.ia_agent && <KnowledgeBaseCard clientId={profile.client_id} />
+      {modules.ia_agent && <KnowledgeBaseCard clientId={profile.client_id} />}
 
       {/* Add-ons (order bump) — mais capacidade sem trocar de plano inteiro */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
