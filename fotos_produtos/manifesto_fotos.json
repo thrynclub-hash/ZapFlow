@@ -1,0 +1,695 @@
+[
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0000-018-02",
+    "parent_sku": "PR0-0000-018",
+    "local_path": "fotos_produtos/Netshoes/PR0-0000-018/01_PR0-0000-018-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/short-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/18/PR0-0000-018/PR0-0000-018_zoom1.jpg?ts=1791200176",
+    "bytes": 83536,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0000-018-02",
+    "parent_sku": "PR0-0000-018",
+    "local_path": "fotos_produtos/Netshoes/PR0-0000-018/02_PR0-0000-018-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/short-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/18/PR0-0000-018/PR0-0000-018_zoom2.jpg?ts=1791200176",
+    "bytes": 70586,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0000-018-02",
+    "parent_sku": "PR0-0000-018",
+    "local_path": "fotos_produtos/Netshoes/PR0-0000-018/03_PR0-0000-018-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/short-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/18/PR0-0000-018/PR0-0000-018_vitrine1.jpg?ts=1791200176",
+    "bytes": 3112,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-244-02",
+    "parent_sku": "PR0-0005-244",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-244/01_PR0-0005-244-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/44/PR0-0005-244/PR0-0005-244_zoom1.jpg?ts=1793786628",
+    "bytes": 64114,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-244-02",
+    "parent_sku": "PR0-0005-244",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-244/02_PR0-0005-244-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/44/PR0-0005-244/PR0-0005-244_zoom2.jpg?ts=1793786628",
+    "bytes": 73971,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-244-02",
+    "parent_sku": "PR0-0005-244",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-244/03_PR0-0005-244-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/44/PR0-0005-244/PR0-0005-244_zoom3.jpg?ts=1793786628",
+    "bytes": 61731,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-244-02",
+    "parent_sku": "PR0-0005-244",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-244/04_PR0-0005-244-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/44/PR0-0005-244/PR0-0005-244_zoom4.jpg?ts=1793786628",
+    "bytes": 70059,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-244-02",
+    "parent_sku": "PR0-0005-244",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-244/05_PR0-0005-244-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/44/PR0-0005-244/PR0-0005-244_zoom5.jpg?ts=1793786628",
+    "bytes": 71213,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-244-02",
+    "parent_sku": "PR0-0005-244",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-244/06_PR0-0005-244-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/44/PR0-0005-244/PR0-0005-244_zoom6.jpg?ts=1793786628",
+    "bytes": 73971,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-244-02",
+    "parent_sku": "PR0-0005-244",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-244/07_PR0-0005-244-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/44/PR0-0005-244/PR0-0005-244_vitrine1.jpg?ts=1793786628",
+    "bytes": 2487,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-026-02",
+    "parent_sku": "PR0-0007-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-026/01_PR0-0007-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0007-026/PR0-0007-026_zoom1.jpg?ts=1787179192",
+    "bytes": 52213,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-026-02",
+    "parent_sku": "PR0-0007-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-026/02_PR0-0007-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0007-026/PR0-0007-026_zoom2.jpg?ts=1787179192",
+    "bytes": 73971,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-026-02",
+    "parent_sku": "PR0-0007-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-026/03_PR0-0007-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0007-026/PR0-0007-026_zoom3.jpg?ts=1787179192",
+    "bytes": 61731,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-026-02",
+    "parent_sku": "PR0-0007-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-026/04_PR0-0007-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0007-026/PR0-0007-026_zoom4.jpg?ts=1787179192",
+    "bytes": 71213,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-026-02",
+    "parent_sku": "PR0-0007-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-026/05_PR0-0007-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0007-026/PR0-0007-026_zoom5.jpg?ts=1787179192",
+    "bytes": 64415,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-026-02",
+    "parent_sku": "PR0-0007-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-026/06_PR0-0007-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0007-026/PR0-0007-026_vitrine1.jpg?ts=1787179192",
+    "bytes": 2101,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-108-02",
+    "parent_sku": "PR0-0007-108",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-108/01_PR0-0007-108-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/08/PR0-0007-108/PR0-0007-108_zoom1.jpg?ts=1786297674",
+    "bytes": 67345,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-108-02",
+    "parent_sku": "PR0-0007-108",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-108/02_PR0-0007-108-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/08/PR0-0007-108/PR0-0007-108_zoom2.jpg?ts=1786297674",
+    "bytes": 74091,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-108-02",
+    "parent_sku": "PR0-0007-108",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-108/03_PR0-0007-108-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/08/PR0-0007-108/PR0-0007-108_zoom3.jpg?ts=1786297674",
+    "bytes": 65053,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-108-02",
+    "parent_sku": "PR0-0007-108",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-108/04_PR0-0007-108-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/08/PR0-0007-108/PR0-0007-108_zoom4.jpg?ts=1786297674",
+    "bytes": 61858,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-108-02",
+    "parent_sku": "PR0-0007-108",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-108/05_PR0-0007-108-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/08/PR0-0007-108/PR0-0007-108_zoom5.jpg?ts=1786297674",
+    "bytes": 70144,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-108-02",
+    "parent_sku": "PR0-0007-108",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-108/06_PR0-0007-108-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/08/PR0-0007-108/PR0-0007-108_zoom6.jpg?ts=1786297674",
+    "bytes": 71692,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-108-02",
+    "parent_sku": "PR0-0007-108",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-108/07_PR0-0007-108-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/08/PR0-0007-108/PR0-0007-108_vitrine1.jpg?ts=1786297674",
+    "bytes": 2754,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0000-342-02",
+    "parent_sku": "PR0-0000-342",
+    "local_path": "fotos_produtos/Netshoes/PR0-0000-342/01_PR0-0000-342-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/short-violeta-shock-liso-tactel-masculino/42/PR0-0000-342/PR0-0000-342_zoom1.jpg?ts=1787656593",
+    "bytes": 70174,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0000-342-02",
+    "parent_sku": "PR0-0000-342",
+    "local_path": "fotos_produtos/Netshoes/PR0-0000-342/02_PR0-0000-342-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/short-violeta-shock-liso-tactel-masculino/42/PR0-0000-342/PR0-0000-342_zoom2.jpg?ts=1787656593",
+    "bytes": 71727,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0000-342-02",
+    "parent_sku": "PR0-0000-342",
+    "local_path": "fotos_produtos/Netshoes/PR0-0000-342/03_PR0-0000-342-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/short-violeta-shock-liso-tactel-masculino/42/PR0-0000-342/PR0-0000-342_zoom3.jpg?ts=1787656593",
+    "bytes": 65532,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0000-342-02",
+    "parent_sku": "PR0-0000-342",
+    "local_path": "fotos_produtos/Netshoes/PR0-0000-342/04_PR0-0000-342-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/short-violeta-shock-liso-tactel-masculino/42/PR0-0000-342/PR0-0000-342_vitrine1.jpg?ts=1787656593",
+    "bytes": 2917,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-006-02",
+    "parent_sku": "PR0-0007-006",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-006/01_PR0-0007-006-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/06/PR0-0007-006/PR0-0007-006_zoom1.jpg?ts=1783939479",
+    "bytes": 64525,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-006-02",
+    "parent_sku": "PR0-0007-006",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-006/02_PR0-0007-006-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/06/PR0-0007-006/PR0-0007-006_zoom2.jpg?ts=1783939479",
+    "bytes": 74091,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-006-02",
+    "parent_sku": "PR0-0007-006",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-006/03_PR0-0007-006-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/06/PR0-0007-006/PR0-0007-006_zoom3.jpg?ts=1783939479",
+    "bytes": 65053,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-006-02",
+    "parent_sku": "PR0-0007-006",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-006/04_PR0-0007-006-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/06/PR0-0007-006/PR0-0007-006_zoom4.jpg?ts=1783939479",
+    "bytes": 61858,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-006-02",
+    "parent_sku": "PR0-0007-006",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-006/05_PR0-0007-006-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/06/PR0-0007-006/PR0-0007-006_vitrine1.jpg?ts=1783939479",
+    "bytes": 2728,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-111-02",
+    "parent_sku": "PR0-0007-111",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-111/01_PR0-0007-111-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/11/PR0-0007-111/PR0-0007-111_zoom1.jpg?ts=1787882624",
+    "bytes": 67636,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-111-02",
+    "parent_sku": "PR0-0007-111",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-111/02_PR0-0007-111-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/11/PR0-0007-111/PR0-0007-111_zoom2.jpg?ts=1787882624",
+    "bytes": 74091,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-111-02",
+    "parent_sku": "PR0-0007-111",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-111/03_PR0-0007-111-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/11/PR0-0007-111/PR0-0007-111_zoom3.jpg?ts=1787882624",
+    "bytes": 65053,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-111-02",
+    "parent_sku": "PR0-0007-111",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-111/04_PR0-0007-111-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/11/PR0-0007-111/PR0-0007-111_zoom4.jpg?ts=1787882624",
+    "bytes": 61858,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-111-02",
+    "parent_sku": "PR0-0007-111",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-111/05_PR0-0007-111-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/11/PR0-0007-111/PR0-0007-111_zoom5.jpg?ts=1787882624",
+    "bytes": 80820,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-111-02",
+    "parent_sku": "PR0-0007-111",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-111/06_PR0-0007-111-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/11/PR0-0007-111/PR0-0007-111_zoom6.jpg?ts=1787882624",
+    "bytes": 76628,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0007-111-02",
+    "parent_sku": "PR0-0007-111",
+    "local_path": "fotos_produtos/Netshoes/PR0-0007-111/07_PR0-0007-111-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-2-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/11/PR0-0007-111/PR0-0007-111_vitrine1.jpg?ts=1787882624",
+    "bytes": 2852,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-026-02",
+    "parent_sku": "PR0-0005-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-026/01_PR0-0005-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0005-026/PR0-0005-026_zoom1.jpg?ts=1784535973",
+    "bytes": 63974,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-026-02",
+    "parent_sku": "PR0-0005-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-026/02_PR0-0005-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0005-026/PR0-0005-026_zoom2.jpg?ts=1784535973",
+    "bytes": 71213,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-026-02",
+    "parent_sku": "PR0-0005-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-026/03_PR0-0005-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0005-026/PR0-0005-026_zoom3.jpg?ts=1784535973",
+    "bytes": 64415,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-026-02",
+    "parent_sku": "PR0-0005-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-026/04_PR0-0005-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0005-026/PR0-0005-026_zoom4.jpg?ts=1784535973",
+    "bytes": 83536,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-026-02",
+    "parent_sku": "PR0-0005-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-026/05_PR0-0005-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0005-026/PR0-0005-026_zoom5.jpg?ts=1784535973",
+    "bytes": 73971,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-026-02",
+    "parent_sku": "PR0-0005-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-026/06_PR0-0005-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0005-026/PR0-0005-026_zoom6.jpg?ts=1784535973",
+    "bytes": 70059,
+    "status": "ok"
+  },
+  {
+    "site": "Netshoes",
+    "sku": "PR0-0005-026-02",
+    "parent_sku": "PR0-0005-026",
+    "local_path": "fotos_produtos/Netshoes/PR0-0005-026/07_PR0-0005-026-02.jpg",
+    "source_url": "https://static.clube.netshoes.com.br/produtos/kit-4-shorts-masculino-liso-basico-bermuda-tactel-agua-praia-treino-academia-corrida/26/PR0-0005-026/PR0-0005-026_vitrine1.jpg?ts=1784535973",
+    "bytes": 2537,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0014-028-02",
+    "parent_sku": "PR0-0014-028",
+    "local_path": "fotos_produtos/Zattini/PR0-0014-028/01_PR0-0014-028-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-3-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/28/PR0-0014-028/PR0-0014-028_zoom1.jpg?ts=1789080469",
+    "bytes": 94142,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0014-028-02",
+    "parent_sku": "PR0-0014-028",
+    "local_path": "fotos_produtos/Zattini/PR0-0014-028/02_PR0-0014-028-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-3-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/28/PR0-0014-028/PR0-0014-028_zoom2.jpg?ts=1789080469",
+    "bytes": 56555,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0014-028-02",
+    "parent_sku": "PR0-0014-028",
+    "local_path": "fotos_produtos/Zattini/PR0-0014-028/03_PR0-0014-028-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-3-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/28/PR0-0014-028/PR0-0014-028_zoom3.jpg?ts=1789080469",
+    "bytes": 51869,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0014-028-02",
+    "parent_sku": "PR0-0014-028",
+    "local_path": "fotos_produtos/Zattini/PR0-0014-028/04_PR0-0014-028-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-3-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/28/PR0-0014-028/PR0-0014-028_zoom4.jpg?ts=1789080469",
+    "bytes": 49607,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0014-028-02",
+    "parent_sku": "PR0-0014-028",
+    "local_path": "fotos_produtos/Zattini/PR0-0014-028/05_PR0-0014-028-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-3-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/28/PR0-0014-028/PR0-0014-028_zoom5.jpg?ts=1789080469",
+    "bytes": 49421,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0014-028-02",
+    "parent_sku": "PR0-0014-028",
+    "local_path": "fotos_produtos/Zattini/PR0-0014-028/06_PR0-0014-028-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-3-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/28/PR0-0014-028/PR0-0014-028_zoom6.jpg?ts=1789080469",
+    "bytes": 46252,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0014-028-02",
+    "parent_sku": "PR0-0014-028",
+    "local_path": "fotos_produtos/Zattini/PR0-0014-028/07_PR0-0014-028-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-3-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/28/PR0-0014-028/PR0-0014-028_vitrine1.jpg?ts=1789080469",
+    "bytes": 3505,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-172-02",
+    "parent_sku": "PR0-0012-172",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-172/01_PR0-0012-172-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/72/PR0-0012-172/PR0-0012-172_zoom1.jpg?ts=1793749457",
+    "bytes": 60374,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-172-02",
+    "parent_sku": "PR0-0012-172",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-172/02_PR0-0012-172-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/72/PR0-0012-172/PR0-0012-172_zoom2.jpg?ts=1793749457",
+    "bytes": 60386,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-172-02",
+    "parent_sku": "PR0-0012-172",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-172/03_PR0-0012-172-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/72/PR0-0012-172/PR0-0012-172_zoom3.jpg?ts=1793749457",
+    "bytes": 50892,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-172-02",
+    "parent_sku": "PR0-0012-172",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-172/04_PR0-0012-172-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/72/PR0-0012-172/PR0-0012-172_zoom4.jpg?ts=1793749457",
+    "bytes": 63762,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-172-02",
+    "parent_sku": "PR0-0012-172",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-172/05_PR0-0012-172-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/72/PR0-0012-172/PR0-0012-172_zoom5.jpg?ts=1793749457",
+    "bytes": 52953,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-172-02",
+    "parent_sku": "PR0-0012-172",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-172/06_PR0-0012-172-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/72/PR0-0012-172/PR0-0012-172_zoom6.jpg?ts=1793749457",
+    "bytes": 82477,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-172-02",
+    "parent_sku": "PR0-0012-172",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-172/07_PR0-0012-172-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/72/PR0-0012-172/PR0-0012-172_vitrine1.jpg?ts=1793749457",
+    "bytes": 2430,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-006-02",
+    "parent_sku": "PR0-0012-006",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-006/01_PR0-0012-006-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/06/PR0-0012-006/PR0-0012-006_zoom1.jpg?ts=1793749451",
+    "bytes": 60529,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-006-02",
+    "parent_sku": "PR0-0012-006",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-006/02_PR0-0012-006-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/06/PR0-0012-006/PR0-0012-006_zoom2.jpg?ts=1793749451",
+    "bytes": 60367,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-006-02",
+    "parent_sku": "PR0-0012-006",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-006/03_PR0-0012-006-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/06/PR0-0012-006/PR0-0012-006_zoom3.jpg?ts=1793749451",
+    "bytes": 50875,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-006-02",
+    "parent_sku": "PR0-0012-006",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-006/04_PR0-0012-006-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/06/PR0-0012-006/PR0-0012-006_zoom4.jpg?ts=1793749451",
+    "bytes": 82433,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0012-006-02",
+    "parent_sku": "PR0-0012-006",
+    "local_path": "fotos_produtos/Zattini/PR0-0012-006/05_PR0-0012-006-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-dry-uv-masculina-blusa-camisa-basica/06/PR0-0012-006/PR0-0012-006_vitrine1.jpg?ts=1793749451",
+    "bytes": 2386,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0015-014-02",
+    "parent_sku": "PR0-0015-014",
+    "local_path": "fotos_produtos/Zattini/PR0-0015-014/01_PR0-0015-014-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/14/PR0-0015-014/PR0-0015-014_zoom1.jpg?ts=1793784538",
+    "bytes": 78234,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0015-014-02",
+    "parent_sku": "PR0-0015-014",
+    "local_path": "fotos_produtos/Zattini/PR0-0015-014/02_PR0-0015-014-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/14/PR0-0015-014/PR0-0015-014_zoom2.jpg?ts=1793784538",
+    "bytes": 49464,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0015-014-02",
+    "parent_sku": "PR0-0015-014",
+    "local_path": "fotos_produtos/Zattini/PR0-0015-014/03_PR0-0015-014-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/14/PR0-0015-014/PR0-0015-014_zoom3.jpg?ts=1793784538",
+    "bytes": 55893,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0015-014-02",
+    "parent_sku": "PR0-0015-014",
+    "local_path": "fotos_produtos/Zattini/PR0-0015-014/04_PR0-0015-014-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/14/PR0-0015-014/PR0-0015-014_zoom4.jpg?ts=1793784538",
+    "bytes": 49767,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0015-014-02",
+    "parent_sku": "PR0-0015-014",
+    "local_path": "fotos_produtos/Zattini/PR0-0015-014/05_PR0-0015-014-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/14/PR0-0015-014/PR0-0015-014_zoom5.jpg?ts=1793784538",
+    "bytes": 148075,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0015-014-02",
+    "parent_sku": "PR0-0015-014",
+    "local_path": "fotos_produtos/Zattini/PR0-0015-014/06_PR0-0015-014-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/14/PR0-0015-014/PR0-0015-014_zoom6.jpg?ts=1793784538",
+    "bytes": 125879,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0015-014-02",
+    "parent_sku": "PR0-0015-014",
+    "local_path": "fotos_produtos/Zattini/PR0-0015-014/07_PR0-0015-014-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-2-camisetas-masculina-segunda-pele-manga-longa-suplex-esportiva-casual/14/PR0-0015-014/PR0-0015-014_vitrine1.jpg?ts=1793784538",
+    "bytes": 2877,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0008-006-02",
+    "parent_sku": "PR0-0008-006",
+    "local_path": "fotos_produtos/Zattini/PR0-0008-006/01_PR0-0008-006-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-6-camisetas-dry-uv-masculina-blusa-camisa-fitness-academia-basica-lisa/06/PR0-0008-006/PR0-0008-006_zoom1.jpg?ts=1785885230",
+    "bytes": 75019,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0008-006-02",
+    "parent_sku": "PR0-0008-006",
+    "local_path": "fotos_produtos/Zattini/PR0-0008-006/02_PR0-0008-006-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-6-camisetas-dry-uv-masculina-blusa-camisa-fitness-academia-basica-lisa/06/PR0-0008-006/PR0-0008-006_zoom2.jpg?ts=1785885230",
+    "bytes": 60295,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0008-006-02",
+    "parent_sku": "PR0-0008-006",
+    "local_path": "fotos_produtos/Zattini/PR0-0008-006/03_PR0-0008-006-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-6-camisetas-dry-uv-masculina-blusa-camisa-fitness-academia-basica-lisa/06/PR0-0008-006/PR0-0008-006_zoom3.jpg?ts=1785885230",
+    "bytes": 50783,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0008-006-02",
+    "parent_sku": "PR0-0008-006",
+    "local_path": "fotos_produtos/Zattini/PR0-0008-006/04_PR0-0008-006-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-6-camisetas-dry-uv-masculina-blusa-camisa-fitness-academia-basica-lisa/06/PR0-0008-006/PR0-0008-006_zoom4.jpg?ts=1785885230",
+    "bytes": 82425,
+    "status": "ok"
+  },
+  {
+    "site": "Zattini",
+    "sku": "PR0-0008-006-02",
+    "parent_sku": "PR0-0008-006",
+    "local_path": "fotos_produtos/Zattini/PR0-0008-006/05_PR0-0008-006-02.jpg",
+    "source_url": "https://static.zattini.com.br/produtos/kit-6-camisetas-dry-uv-masculina-blusa-camisa-fitness-academia-basica-lisa/06/PR0-0008-006/PR0-0008-006_vitrine1.jpg?ts=1785885230",
+    "bytes": 2414,
+    "status": "ok"
+  }
+]

@@ -72,3 +72,21 @@
 .animate-shimmer {
   animation: shimmer 2s infinite;
 }
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print, header, aside, nav, button {
+    display: none !important;
+  }
+  #printable-receipt, #printable-nfce, #printable-label {
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}

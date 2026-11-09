@@ -6,6 +6,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import Modal from '../components/Modal'
+import ThermalReceiptModal from '../components/ThermalReceiptModal'
 
 // ZapFlow — Terminal PDV de Balcão (Nativo, Rápido e Offline-Ready)
 // Conectado diretamente ao catálogo próprio de produtos, grade de variações,
