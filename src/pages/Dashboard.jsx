@@ -12,12 +12,12 @@ function StatCard({ icon: Icon, label, value, color = 'accent' }) {
     purple: 'text-purple-400 bg-purple-400/10',
   }
   return (
-    <div className="bg-card border border-border rounded-xl p-5">
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-4 ${colors[color]}`}>
-        <Icon size={20} />
+    <div className="bg-card border border-border rounded-[14px] p-5 transition-shadow hover:shadow-sm">
+      <div className={`w-10 h-10 rounded-[10px] flex items-center justify-center mb-4 ${colors[color]}`}>
+        <Icon size={19} strokeWidth={1.8} />
       </div>
-      <p className="text-3xl font-display font-bold text-white">{value}</p>
-      <p className="text-muted text-sm font-body mt-1">{label}</p>
+      <p className="text-[28px] leading-none font-display font-bold text-white tabular-nums">{value}</p>
+      <p className="text-muted text-[12.5px] font-mono tracking-wide uppercase mt-2">{label}</p>
     </div>
   )
 }
