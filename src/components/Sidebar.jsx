@@ -21,15 +21,16 @@ const clientNavGroups = [
     title: 'Relacionamento',
     items: [
       { to: '/contacts', icon: Users, label: 'Contatos' },
-      { to: '/pipeline', icon: Columns3, label: 'Pipeline' },
+      { to: '/pipeline', icon: Columns3, label: 'Pipeline', module: 'crm' },
       { to: '/conversations', icon: MessageCircle, label: 'Conversas' },
       { to: '/birthdays', icon: Cake, label: 'Aniversários' },
     ],
   },
   {
     title: 'ERP',
+    module: 'estoque',
     items: [
-      { to: '/stock', icon: Package, label: 'Estoque' },
+      { to: '/stock', icon: Package, label: 'Estoque', module: 'estoque' },
     ],
   },
   {
@@ -81,7 +82,16 @@ function initials(name) {
 export default function Sidebar({ isAdmin, isReseller = false, open = false, onClose = () => {} }) {
   const { profile, client, resellerBrand, logout } = useAuth()
   const navigate = useNavigate()
-  const navGroups = isAdmin ? adminNavGroups : isReseller ? resellerNavGroups : clientNavGroups
+  const rawNavGroups = isAdmin ? adminNavGroups : isReseller ? resellerNavGroups : clientNavGroups
+  // Módulos opcionais (estoque, crm) — mesmo padrão de clients.modules.ia_agent
+  // (zapi-webhook): sem o módulo ligado, zero mudança pro cliente (Hassum/
+  // Sodie usam só o sistema de mensagens normal, não cadastrei Estoque/
+  // Pipeline pra eles — não pode aparecer sozinho no menu).
+  const modules = profile?.client?.modules || {}
+  const navGroups = rawNavGroups
+    .filter((g) => !g.module || modules[g.module] === true)
+    .map((g) => ({ ...g, items: g.items.filter((i) => !i.module || modules[i.module] === true) }))
+    .filter((g) => g.items.length > 0)
   // White-label: cliente final de revendedor vê a marca dele; o próprio
   // revendedor, gerenciando os clientes dele, vê a própria marca (se já
   // configurou logo_url/nome) — nunca "ZapFlow" nesses dois casos.
