@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard, Gauge, Image as ImageIcon } from 'lucide-react'
+import { Settings as SettingsIcon, Smartphone, CheckCircle, XCircle, RefreshCw, MessageCircle, Users, CreditCard, Gauge, Image as ImageIcon, Bot, Clock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -23,6 +23,7 @@ export default function Settings() {
   const [usage, setUsage] = useState(null) // { contacts, numbers, campaigns, limits: {...} }
   const [logoUrl, setLogoUrl] = useState(client?.logo_url || null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
+  const modules = profile?.client?.modules || {}
 
   // Upload do logo (white-label, 2026-11-07) — só revendedor usa isto.
   // RPC update_own_logo (security definer) grava só logo_url da própria
@@ -219,6 +220,13 @@ export default function Settings() {
         )}
       </div>
 
+      {/* Agente de IA: horário de atendimento (2026-11-09) — fora disso o
+          agente nem chama o modelo, só avisa o cliente e notifica a equipe
+          (igual um atendente real faria). Config é da própria empresa
+          (horário de funcionamento), não um segredo de integração — fica
+          aqui mesmo no Settings do cliente. */}
+      {modules.ia_agent && <AiAgentHoursCard clientId={profile.client_id} />}
+
       {/* Add-ons (order bump) — mais capacidade sem trocar de plano inteiro */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
         <h3 className="font-display font-semibold text-white flex items-center gap-2"><Users size={16} /> Precisa de mais capacidade?</h3>
@@ -307,6 +315,104 @@ function Row({ label, value, accent }) {
     <div className="flex justify-between items-center py-2 border-b border-border/50 last:border-0">
       <span className="text-muted text-sm font-body">{label}</span>
       <span className={`text-sm font-body font-medium ${accent ? 'text-accent' : 'text-white'}`}>{value}</span>
+    </div>
+  )
+}
+
+const WEEKDAYS = [
+  ['mon', 'Seg'], ['tue', 'Ter'], ['wed', 'Qua'], ['thu', 'Qui'], ['fri', 'Sex'], ['sat', 'Sáb'], ['sun', 'Dom'],
+]
+const DEFAULT_DAY = { start: '09:00', end: '18:00' }
+
+function AiAgentHoursCard({ clientId }) {
+  const [hours, setHours] = useState({})
+  const [handoffMessage, setHandoffMessage] = useState('')
+  const [notifyPhone, setNotifyPhone] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => { fetchConfig() }, [])
+
+  async function fetchConfig() {
+    const { data } = await supabase.from('reply_flows').select('ai_business_hours, ai_handoff_message, notify_phone').eq('client_id', clientId).maybeSingle()
+    setHours(data?.ai_business_hours || { mon: DEFAULT_DAY, tue: DEFAULT_DAY, wed: DEFAULT_DAY, thu: DEFAULT_DAY, fri: DEFAULT_DAY })
+    setHandoffMessage(data?.ai_handoff_message || 'Nosso atendimento automático está fora do horário agora. Já avisei a equipe, te respondem assim que possível!')
+    setNotifyPhone(data?.notify_phone || '')
+    setLoading(false)
+  }
+
+  function toggleDay(key) {
+    setHours(h => {
+      const next = { ...h }
+      if (next[key]) delete next[key]
+      else next[key] = { ...DEFAULT_DAY }
+      return next
+    })
+  }
+  function updateDay(key, field, value) {
+    setHours(h => ({ ...h, [key]: { ...h[key], [field]: value } }))
+  }
+
+  async function save() {
+    setSaving(true)
+    setSaved(false)
+    const { error } = await supabase.from('reply_flows').upsert({
+      client_id: clientId, ai_business_hours: hours, ai_handoff_message: handoffMessage, notify_phone: notifyPhone || null,
+    }, { onConflict: 'client_id' })
+    setSaving(false)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  if (loading) return null
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+      <h3 className="font-display font-semibold text-white flex items-center gap-2"><Bot size={16} /> Agente de IA — horário de atendimento</h3>
+      <p className="text-muted text-xs font-body">Fora desse horário, o agente avisa o cliente que vai responder depois e chama a equipe — não tenta resolver sozinho.</p>
+
+      <div className="space-y-2">
+        {WEEKDAYS.map(([key, label]) => {
+          const day = hours[key]
+          return (
+            <div key={key} className="flex items-center gap-3">
+              <button onClick={() => toggleDay(key)}
+                className={`w-16 shrink-0 text-xs font-body font-medium rounded-lg px-2 py-2 transition-colors ${day ? 'bg-accent/10 text-accent' : 'bg-surface text-muted'}`}>
+                {label}
+              </button>
+              {day ? (
+                <div className="flex items-center gap-2 flex-1">
+                  <input type="time" value={day.start} onChange={e => updateDay(key, 'start', e.target.value)}
+                    className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs text-white font-body focus:outline-none focus:border-accent" />
+                  <span className="text-muted text-xs">até</span>
+                  <input type="time" value={day.end} onChange={e => updateDay(key, 'end', e.target.value)}
+                    className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs text-white font-body focus:outline-none focus:border-accent" />
+                </div>
+              ) : (
+                <span className="text-muted text-xs font-body flex-1">Fechado</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div>
+        <label className="block text-xs text-muted font-body mb-1.5 flex items-center gap-1.5"><Clock size={12} /> Mensagem fora do horário</label>
+        <textarea value={handoffMessage} onChange={e => setHandoffMessage(e.target.value)} rows={2}
+          className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body focus:outline-none focus:border-accent resize-none" />
+      </div>
+      <div>
+        <label className="block text-xs text-muted font-body mb-1.5">WhatsApp da equipe (pra receber os avisos)</label>
+        <input value={notifyPhone} onChange={e => setNotifyPhone(e.target.value)} placeholder="5519999999999"
+          className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent" />
+      </div>
+
+      <button onClick={save} disabled={saving}
+        className="flex items-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2.5 rounded-lg text-sm font-display font-bold transition-colors">
+        {saving ? 'Salvando...' : saved ? 'Salvo!' : 'Salvar horário'}
+      </button>
     </div>
   )
 }
