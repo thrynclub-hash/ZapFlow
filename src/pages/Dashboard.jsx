@@ -103,7 +103,7 @@ export default function Dashboard() {
     const clientId = profile.client_id
     const { data: opps } = await supabase
       .from('opportunities')
-      .select('stage, closed_at, created_at, opportunity_items(qty, unit_price)')
+      .select('stage, closed_at, created_at, opportunity_items(description, qty, unit_price)')
       .eq('client_id', clientId)
 
     const withTotal = (opps || []).map(o => ({ ...o, total: (o.opportunity_items || []).reduce((s, i) => s + Number(i.qty) * Number(i.unit_price), 0) }))
@@ -122,11 +122,36 @@ export default function Dashboard() {
       if (m) m.ganho += o.total
     })
 
+    // Curva ABC / produtos mais vendidos — só itens de negócios Ganhos,
+    // agrupados por descrição (funciona com produto do catálogo local OU
+    // descrição livre, já que opportunity_items aceita os dois). Classe A
+    // = acumula até 80% da receita, B = até 95%, C = o resto (Pareto).
+    const soldByName = {}
+    withTotal.filter(o => o.stage === 'Ganho').forEach(o => {
+      for (const item of o.opportunity_items || []) {
+        const key = item.description || 'Item sem nome'
+        const value = Number(item.qty) * Number(item.unit_price)
+        if (!soldByName[key]) soldByName[key] = { name: key, qty: 0, value: 0 }
+        soldByName[key].qty += Number(item.qty)
+        soldByName[key].value += value
+      }
+    })
+    const ranked = Object.values(soldByName).sort((a, b) => b.value - a.value)
+    const totalSold = ranked.reduce((s, p) => s + p.value, 0)
+    let cumulative = 0
+    const topProducts = ranked.slice(0, 8).map(p => {
+      cumulative += p.value
+      const pct = totalSold > 0 ? cumulative / totalSold : 0
+      const classe = pct <= 0.8 ? 'A' : pct <= 0.95 ? 'B' : 'C'
+      return { ...p, classe }
+    })
+
     setCrm({
       openValue: open.reduce((s, o) => s + o.total, 0),
       openCount: open.length,
       byStage,
       monthlyWon: months,
+      topProducts,
     })
   }
 
@@ -218,6 +243,28 @@ export default function Dashboard() {
                 )
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Produtos mais vendidos / Curva ABC — só com negócios Ganhos
+          registrados; classe A/B/C pelo critério clássico de Pareto
+          (80/95/100% da receita acumulada). */}
+      {modules.crm && crm && crm.topProducts?.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-6">
+          <h3 className="font-display font-semibold text-white mb-5">Produtos mais vendidos</h3>
+          <div className="space-y-2">
+            {crm.topProducts.map(p => (
+              <div key={p.name} className="flex items-center justify-between bg-surface/60 rounded-lg px-4 py-2.5">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-[11px] font-mono font-bold ${
+                    p.classe === 'A' ? 'bg-green-400/10 text-green-400' : p.classe === 'B' ? 'bg-amber-400/10 text-amber-400' : 'bg-muted/10 text-muted'
+                  }`}>{p.classe}</span>
+                  <span className="text-sm text-white font-body truncate">{p.name}</span>
+                </div>
+                <span className="text-sm text-muted font-body shrink-0 ml-3">{p.qty} un · {money(p.value)}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}

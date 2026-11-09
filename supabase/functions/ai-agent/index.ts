@@ -316,11 +316,22 @@ Deno.serve(async (req: Request) => {
       .limit(10);
     const recent = (history || []).reverse().map((h: any) => h.message).filter((m: string) => m !== message);
 
+    // Base de conhecimento (RAG simplificado, 2026-11-09): sem embeddings
+    // — o texto inteiro que o cliente cadastrou (Settings > Base de
+    // conhecimento) entra direto no system prompt. Cap total de ~16k
+    // caracteres (2 documentos de 8k) é de sobra pra catálogo/FAQ de
+    // negócio local; se algum cliente precisar de mais, aí sim vale
+    // trocar por retrieval de verdade.
+    const { data: knowledgeDocs } = await supabase.from("knowledge_documents").select("title, content").eq("client_id", client_id).limit(5);
+    const knowledgeBlock = (knowledgeDocs || []).length > 0
+      ? `\n\nBASE DE CONHECIMENTO DA EMPRESA (use pra responder com precisão, não repita isso literalmente pro cliente):\n${knowledgeDocs.map((d: any) => `### ${d.title}\n${d.content}`).join("\n\n")}`
+      : "";
+
     const system = `Você é o atendente virtual da ${client?.name || "empresa"} (${client?.vertical || "negócio"}), conversando pelo WhatsApp com ${contact.name || "um cliente"}.
 Converse como um humano de verdade conversaria — natural, direto, sem parecer script. Nunca mande mensagem robótica ou lista de opções numeradas.
 Use as ferramentas disponíveis quando precisar checar estoque, registrar uma venda ou marcar um horário — não invente disponibilidade ou preço sem checar.
 Se o cliente pedir pra falar com uma pessoa/atendente, ou perguntar algo que você não tem certeza, use notify_staff e avise o cliente que a equipe foi chamada.
-Responda sempre em português do Brasil, em 1-3 frases curtas (é WhatsApp, não e-mail).`;
+Responda sempre em português do Brasil, em 1-3 frases curtas (é WhatsApp, não e-mail).${knowledgeBlock}`;
 
     const tools = buildTools(modules);
     const messages: any[] = [
