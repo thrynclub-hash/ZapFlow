@@ -23,7 +23,6 @@ export default function Settings() {
   const [usage, setUsage] = useState(null) // { contacts, numbers, campaigns, limits: {...} }
   const [logoUrl, setLogoUrl] = useState(client?.logo_url || null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
-
   // Upload do logo (white-label, 2026-11-07) — só revendedor usa isto.
   // RPC update_own_logo (security definer) grava só logo_url da própria
   // linha, não dá pra editar plan/access_key por aqui.
