@@ -109,11 +109,47 @@ function mapProduto(p: any) {
     nome: p.nome,
     codigo: p.codigo || null,
     preco: p.preco ?? 0,
+    precoCusto: p.precoCusto ?? null,
+    descricaoCurta: p.descricaoCurta || null,
     estoque: p.estoque?.saldoVirtualTotal ?? null,
     situacao: p.situacao,
     formato: p.formato,
     imagem: p.midia?.imagens?.internas?.[0]?.linkMiniatura || p.midia?.imagens?.imagensURL?.[0]?.link || null,
   };
+}
+
+// Cria um produto simples no Bling (usado tanto pra produto sem variação
+// quanto pra cada variação filha de um produto "V"). imagemUrl vira o
+// mesmo formato que já lemos em mapProduto (midia.imagens.imagensURL).
+async function createBlingProduto(clientId: string, fields: { nome: string; codigo?: string; preco?: number; precoCusto?: number; descricaoCurta?: string; imagemUrl?: string; formato: "S" | "V"; produtoPaiId?: number }) {
+  const payload: any = {
+    nome: fields.nome,
+    tipo: "P",
+    situacao: "A",
+    formato: fields.formato,
+  };
+  if (fields.codigo) payload.codigo = fields.codigo;
+  if (fields.preco != null) payload.preco = Number(fields.preco) || 0;
+  if (fields.precoCusto != null && fields.precoCusto !== "") payload.precoCusto = Number(fields.precoCusto) || 0;
+  if (fields.descricaoCurta) payload.descricaoCurta = fields.descricaoCurta;
+  if (fields.imagemUrl) payload.midia = { imagens: { imagensURL: [{ link: fields.imagemUrl }] } };
+  if (fields.produtoPaiId) payload.produtoPai = { id: fields.produtoPaiId };
+
+  const res = await blingFetch(clientId, "/produtos", { method: "POST", body: JSON.stringify(payload) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || data?.error?.description || `Bling: ${res.status}`);
+  return data?.data?.id as number;
+}
+
+async function setInitialStock(clientId: string, produtoId: number, quantidade: number) {
+  if (!quantidade || quantidade <= 0) return;
+  const { channel } = await getValidToken(clientId);
+  const depositoId = channel?.credentials?.deposito_id;
+  if (!depositoId) return;
+  await blingFetch(clientId, "/estoques", {
+    method: "POST",
+    body: JSON.stringify({ produto: { id: produtoId }, deposito: { id: Number(depositoId) }, operacao: "B", quantidade: Number(quantidade), observacoes: "Estoque inicial via ZapFlow" }),
+  }).catch(() => {}); // produto já foi criado; falha de estoque não desfaz a criação
 }
 
 Deno.serve(async (req: Request) => {
@@ -150,36 +186,36 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "create") {
-      const { nome, codigo, preco, estoque_inicial } = body;
+      const { nome, codigo, preco, precoCusto, descricaoCurta, imagemUrl, estoque_inicial, variacoes } = body;
       if (!nome) return ok({ ok: false, error: "Nome é obrigatório." });
-      let res;
       try {
-        res = await blingFetch(clientId, "/produtos", {
-          method: "POST",
-          body: JSON.stringify({ nome, codigo: codigo || undefined, preco: Number(preco) || 0, tipo: "P", situacao: "A", formato: "S" }),
-        });
-      } catch (e: any) {
-        return ok({ ok: false, error: e?.userMessage || String(e) });
-      }
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return ok({ ok: false, error: data?.error?.message || data?.error?.description || `Bling: ${res.status}` });
-      const novoId = data?.data?.id;
-
-      if (novoId && Number(estoque_inicial) > 0) {
-        const { channel } = await getValidToken(clientId);
-        const depositoId = channel?.credentials?.deposito_id;
-        if (depositoId) {
-          await blingFetch(clientId, "/estoques", {
-            method: "POST",
-            body: JSON.stringify({ produto: { id: novoId }, deposito: { id: Number(depositoId) }, operacao: "B", quantidade: Number(estoque_inicial), observacoes: "Estoque inicial via ZapFlow" }),
-          }).catch(() => {}); // produto já foi criado; falha de estoque não desfaz a criação
+        // Produto com variações (tamanho/cor): cria o pai formato "V" (sem
+        // código/preço próprio — quem carrega isso é cada variação) e um
+        // filho formato "S" por variação, com produtoPai apontando pro pai.
+        // Mesmo padrão que a listagem já reconhece (ver mapProduto/filter).
+        if (Array.isArray(variacoes) && variacoes.length > 0) {
+          const paiId = await createBlingProduto(clientId, { nome, descricaoCurta, imagemUrl, formato: "V" });
+          for (const v of variacoes) {
+            if (!v.nome) continue;
+            const filhoId = await createBlingProduto(clientId, {
+              nome: `${nome} - ${v.nome}`, codigo: v.codigo, preco: Number(v.preco) || Number(preco) || 0,
+              produtoPaiId: paiId, formato: "S",
+            });
+            await setInitialStock(clientId, filhoId, Number(v.estoque) || 0);
+          }
+          return ok({ ok: true, id: paiId });
         }
+
+        const novoId = await createBlingProduto(clientId, { nome, codigo, preco: Number(preco) || 0, precoCusto, descricaoCurta, imagemUrl, formato: "S" });
+        await setInitialStock(clientId, novoId, Number(estoque_inicial) || 0);
+        return ok({ ok: true, id: novoId });
+      } catch (e: any) {
+        return ok({ ok: false, error: e?.userMessage || e?.message || String(e) });
       }
-      return ok({ ok: true, id: novoId });
     }
 
     if (action === "update") {
-      const { id, nome, codigo, preco } = body;
+      const { id, nome, codigo, preco, precoCusto, descricaoCurta, imagemUrl } = body;
       if (!id || !nome) return ok({ ok: false, error: "id e nome são obrigatórios." });
       // Bling v3 exige payload completo no PUT (não aceita parcial) —
       // busca o produto atual primeiro pra preencher tipo/situacao/formato.
@@ -192,10 +228,15 @@ Deno.serve(async (req: Request) => {
       const current = (await getRes.json().catch(() => ({})))?.data;
       if (!getRes.ok || !current) return ok({ ok: false, error: "Produto não encontrado no Bling." });
 
-      const res = await blingFetch(clientId, `/produtos/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ nome, codigo: codigo || current.codigo, preco: preco != null ? Number(preco) : current.preco, tipo: current.tipo, situacao: current.situacao, formato: current.formato }),
-      });
+      const payload: any = {
+        nome, codigo: codigo || current.codigo, preco: preco != null ? Number(preco) : current.preco,
+        tipo: current.tipo, situacao: current.situacao, formato: current.formato,
+      };
+      if (precoCusto != null && precoCusto !== "") payload.precoCusto = Number(precoCusto);
+      if (descricaoCurta != null) payload.descricaoCurta = descricaoCurta;
+      if (imagemUrl) payload.midia = { imagens: { imagensURL: [{ link: imagemUrl }] } };
+
+      const res = await blingFetch(clientId, `/produtos/${id}`, { method: "PUT", body: JSON.stringify(payload) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return ok({ ok: false, error: data?.error?.message || `Bling: ${res.status}` });
       return ok({ ok: true });
