@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Megaphone, Plus, Cake,
   BarChart2, Settings, LogOut, Shield, Building2, Tag, Smartphone, Workflow, Image, X, MessageCircle,
-  Package, Columns3, DollarSign
+  Package, Columns3, DollarSign, ShoppingCart, Wallet
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -29,9 +29,10 @@ const clientNavGroups = [
   },
   {
     title: 'ERP',
-    module: 'estoque',
     items: [
       { to: '/stock', icon: Package, label: 'Estoque', module: 'estoque' },
+      { to: '/pdv', icon: ShoppingCart, label: 'PDV', module: 'pdv' },
+      { to: '/caixa', icon: Wallet, label: 'Caixa', module: 'pdv' },
     ],
   },
   {

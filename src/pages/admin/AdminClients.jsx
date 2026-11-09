@@ -439,6 +439,7 @@ function AddonsModal({ client, onClose }) {
 const MODULE_OPTIONS = [
   { key: 'crm', label: 'CRM (Pipeline)', desc: 'Kanban de funil de vendas/relacionamento' },
   { key: 'estoque', label: 'Estoque (ERP)', desc: 'Catálogo e estoque em tempo real via Bling' },
+  { key: 'pdv', label: 'PDV + Caixa', desc: 'Venda de balcão, abertura/fechamento de caixa, sangria/suprimento' },
   { key: 'ia_agent', label: 'Agente de IA', desc: 'Resposta automática por IA nas conversas' },
 ]
 
