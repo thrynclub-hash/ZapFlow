@@ -1,15 +1,113 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/zap.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ZapFlow — Automação WhatsApp</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    
+    <!-- Primary Meta Tags (SEO / GEO / AEO) -->
+    <title>ZapFlow — Sistema Operacional do Varejo | ERP, PDV, Grade de Estoque & Atendente 24/7</title>
+    <meta name="title" content="ZapFlow — Sistema Operacional do Varejo | ERP, PDV, Grade de Estoque & Atendente 24/7" />
+    <meta name="description" content="O sistema completo para comércio e lojas: PDV de balcão offline-first, catálogo com grade de cores e tamanhos, emissão de NFC-e/NF-e A1 e atendente no WhatsApp que envia fotos das peças e gera Pix na hora." />
+    <meta name="keywords" content="sistema para loja de roupas, pdv offline varejo, controle de estoque com grade, emissão nfce rapida, atendente de vendas whatsapp, catalogo com fotos whatsapp, erp sem mensalidade abusiva, zapflow" />
+    <meta name="author" content="ZapFlow" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="theme-color" content="#0B0E14" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://zapflow.app/" />
+    <meta property="og:site_name" content="ZapFlow" />
+    <meta property="og:title" content="ZapFlow — Sistema Operacional do Comércio Moderno" />
+    <meta property="og:description" content="Venda no balcão e no WhatsApp sem furo de estoque. Catálogo com fotos, PDV offline, emissão fiscal própria e atendente de vendas integrado." />
+    <meta property="og:image" content="https://zapflow.app/assets/og-zapflow.png" />
+    <meta property="og:locale" content="pt_BR" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://zapflow.app/" />
+    <meta property="twitter:title" content="ZapFlow — ERP, PDV & Vendas no WhatsApp" />
+    <meta property="twitter:description" content="Tudo que a sua loja precisa num painel só: estoque com grade, terminal de caixa offline e atendente que envia fotos das peças e fecha no Pix." />
+    <meta property="twitter:image" content="https://zapflow.app/assets/og-zapflow.png" />
+
+    <!-- Canonical -->
+    <link rel="canonical" href="https://zapflow.app/" />
+
+    <!-- Fonts (Archivo + IBM Plex Mono) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+    <!-- Schema.org JSON-LD for AI Search Engines & Rich Results (GEO / AEO) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "name": "ZapFlow",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "Web, Windows, macOS, Android, iOS",
+          "offers": {
+            "@type": "Offer",
+            "price": "149.00",
+            "priceCurrency": "BRL"
+          },
+          "description": "Sistema de gestão comercial nativo para lojas e varejo com PDV offline, catálogo de grade com fotos, gestão de caixa e atendente de vendas para WhatsApp.",
+          "featureList": [
+            "PDV de Balcão Offline-First com leitor de código de barras",
+            "Catálogo de Estoque com grade de cores, tamanhos e fotos múltiplas",
+            "Atendente autônomo de vendas para WhatsApp com envio de fotos e Pix",
+            "Abertura, fechamento de caixa, sangria e suprimento",
+            "Emissão nativa de NFC-e e NF-e com certificado A1",
+            "Modelo de parceria whitelabel com domínio próprio"
+          ]
+        },
+        {
+          "@type": "Organization",
+          "name": "ZapFlow",
+          "url": "https://zapflow.app",
+          "logo": "https://zapflow.app/zap.svg",
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "contactType": "Customer Support",
+            "availableLanguage": "Portuguese"
+          }
+        },
+        {
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "O ZapFlow precisa de outro sistema ERP por trás?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Não. O ZapFlow possui motor próprio de catálogo, estoque com grade de variações, fluxo de caixa, PDV e emissão fiscal, dispensando mensalidades adicionais com ERPs terceiros."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "O que acontece se a internet da loja física cair durante as vendas?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "O PDV do ZapFlow é offline-first. Ele continua registrando vendas, controlando itens e emitindo comprovantes mesmo sem internet, e sincroniza os dados no banco assim que a conexão restabelecer."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Como o atendente de WhatsApp sabe se tem a peça em estoque e manda a foto?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "O atendente consulta o catálogo nativo do ZapFlow em tempo real. Se o cliente pedir uma peça ou tamanho específico, ele verifica a disponibilidade, envia a foto correspondente da peça no WhatsApp e gera o Pix para fechar a compra."
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
   </head>
-  <body>
+  <body class="bg-bg text-ink antialiased selection:bg-accent selection:text-bg">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

@@ -1,194 +1,420 @@
-import { useState } from 'react'
-import { Tag, Download } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Tag, Download, Calculator, Bot, Sparkles, Copy, Check, DollarSign, ShieldCheck, ArrowRight, Layers } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
-// =============================================
-// Precificação por custo real + margem (2026-07-01)
-// Fórmula pedida pelo Leonardo: mensalidade = custo de infra do plano
-// (Z-API por número + fatia do custo fixo) × 1,30 (30% de lucro em cima
-// do custo, não 30% de margem sobre a receita — são coisas diferentes;
-// isso aqui é markup de 30%).
-//
-// Custos reais (ajuste aqui se o valor pago mudar):
-// =============================================
-const ZAPI_PER_INSTANCE = 99.99   // pago por número/instância WhatsApp
-const MAKE_CORE = 45              // Make.com — pode cair pra R$0 (free tier)
-                                    // agora que nenhuma automação de cliente
-                                    // depende mais do Make (ver decisão de
-                                    // 2026-07-01 no AGENT.md do CTO-ZapFlow)
-const SUPABASE_PRO = 125          // banco + auth + edge functions, fixo
-const FIXED_OVERHEAD = MAKE_CORE + SUPABASE_PRO
-const MARKUP = 1.30               // 30% de lucro em cima do custo
-const BASELINE_CLIENTS = 10       // premissa pra ratear custo fixo ao definir PREÇO DE TABELA
-                                    // (diferente do simulador de margem abaixo, que usa a
-                                    // contagem real de clientes ativos)
+// ZapFlow — Precificação & Simulador de Propostas Comerciais (Grokbot + ERP Whitelabel)
+// Permite ao Leonardo e aos Revendedores simularem custos de tokens, infraestrutura,
+// margem de lucro garantida e gerarem propostas prontas para o lojista final.
 
-function computeMonthly(numbers) {
-  const cost = numbers * ZAPI_PER_INSTANCE + FIXED_OVERHEAD / BASELINE_CLIENTS
-  return { cost, monthly: cost * MARKUP }
-}
+const ZAPI_PER_INSTANCE = 99.99
+const SUPABASE_PRO = 125
+const FIXED_OVERHEAD = SUPABASE_PRO
+const BASELINE_CLIENTS = 10
 
-// Nomes/estrutura substituem Starter/Basic/Pro/Business/Enterprise antigos.
-// Setup começa em R$800 (pedido explícito) e escala com a complexidade —
-// não é fórmula de custo, é decisão comercial; ajuste livremente.
-const PLANS = [
-  { name: 'Starter', numbers: 1, maxContacts: 1000, setup: 800 },
-  { name: 'Growth', numbers: 2, maxContacts: 2000, setup: 1500 },
-  { name: 'Scale', numbers: 5, maxContacts: 5000, setup: 2800 },
-  { name: 'Enterprise', numbers: 10, maxContacts: null, setup: 4500 },
-].map(p => {
-  const { cost, monthly } = computeMonthly(p.numbers)
-  // Arredonda pra terminar em 9 (convenção comum de SaaS BR) sem se afastar
-  // muito do valor calculado pela fórmula.
-  const monthlyRounded = Math.round(monthly / 10) * 10 - 1
-  return { ...p, costBasis: cost, monthly: monthlyRounded }
-})
+// Custo estimado xAI Grok (por conversa média com 10 interações + ferramentas de fotos e catálogo)
+const GROK_COST_PER_CONVERSATION = 0.045 // ~R$ 0,045 por atendimento completo
 
-function calcMargin(plan, clientCount) {
-  const zapiCost = plan.numbers * ZAPI_PER_INSTANCE
-  const fixedPc = FIXED_OVERHEAD / Math.max(1, clientCount)
-  const totalCost = zapiCost + fixedPc
-  const margin = plan.monthly - totalCost
-  const pct = Math.round((margin / plan.monthly) * 100)
-  return { zapiCost, fixedPc, totalCost, margin, pct }
+const VERTICALS = [
+  { id: 'moda', name: 'Moda & Loja de Roupas', defaultVolume: 1500, setupSuggested: 1500, monthlySuggested: 790 },
+  { id: 'estetica', name: 'Clínica & Estética', defaultVolume: 800, setupSuggested: 1200, monthlySuggested: 690 },
+  { id: 'varejo', name: 'Varejo & Acessórios', defaultVolume: 2000, setupSuggested: 1800, monthlySuggested: 890 },
+  { id: 'alimentacao', name: 'Doceria & Alimentação', defaultVolume: 2500, setupSuggested: 1600, monthlySuggested: 850 },
+  { id: 'servicos', name: 'Prestadores de Serviço', defaultVolume: 600, setupSuggested: 1000, monthlySuggested: 590 },
+]
+
+function money(val) {
+  return `R$ ${Number(val || 0).toFixed(2).replace('.', ',')}`
 }
 
 export default function AdminPricing() {
-  const [clientCount, setClientCount] = useState(5)
+  const [activeTab, setActiveTab] = useState('simulador') // simulador | infra
+  const [clientCount, setClientCount] = useState(10)
 
-  function exportExcel() {
-    const data = PLANS.map(p => {
-      const { zapiCost, fixedPc, totalCost, margin, pct } = calcMargin(p, clientCount)
-      return {
-        Plano: p.name,
-        'Números WPP': p.numbers,
-        'Máx. contatos': p.maxContacts || 'Ilimitado',
-        'Setup (R$)': p.setup,
-        'Mensalidade (R$)': p.monthly,
-        'Custo Z-API (R$)': zapiCost.toFixed(2),
-        'Custo fixo/cliente (R$)': fixedPc.toFixed(2),
-        'Custo total estimado (R$)': totalCost.toFixed(2),
-        'Margem estimada (R$)': margin.toFixed(0),
-        'Margem (%)': pct + '%',
-      }
-    })
-    const ws = XLSX.utils.json_to_sheet(data)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Precificação')
-    XLSX.writeFile(wb, 'zapflow_precificacao.xlsx')
+  // Estados do Simulador
+  const [selectedVertical, setSelectedVertical] = useState('moda')
+  const [conversations, setConversations] = useState(1500)
+  const [hasGrok, setHasGrok] = useState(true)
+  const [hasStock, setHasStock] = useState(true)
+  const [hasPdv, setHasPdv] = useState(true)
+  const [hasFiscal, setHasFiscal] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // Margem personalizada do revendedor
+  const currentVertical = VERTICALS.find(v => v.id === selectedVertical) || VERTICALS[0]
+  const [customMonthly, setCustomMonthly] = useState(currentVertical.monthlySuggested)
+  const [customSetup, setCustomSetup] = useState(currentVertical.setupSuggested)
+
+  // Atualiza valores sugeridos ao mudar vertical
+  function handleVerticalChange(vertId) {
+    setSelectedVertical(vertId)
+    const vert = VERTICALS.find(v => v.id === vertId)
+    if (vert) {
+      setConversations(vert.defaultVolume)
+      setCustomMonthly(vert.monthlySuggested)
+      setCustomSetup(vert.setupSuggested)
+    }
+  }
+
+  // Cálculos do Simulador
+  const simulation = useMemo(() => {
+    // 1. Custo Real de Infraestrutura
+    const zapiCost = ZAPI_PER_INSTANCE
+    const grokTokenCost = hasGrok ? conversations * GROK_COST_PER_CONVERSATION : 0
+    const fixedInfraShare = FIXED_OVERHEAD / Math.max(1, clientCount)
+    const totalRealCost = zapiCost + grokTokenCost + fixedInfraShare
+
+    // 2. Preço Cobrado pela Plataforma ZapFlow (Leonardo)
+    // Cobre custos reais + margem saudável de 40%
+    const zapflowBaseCharge = Math.max(249, Math.round((totalRealCost * 1.45) / 10) * 10 - 1)
+
+    // 3. Lucro Líquido do Parceiro / Revendedor
+    const partnerMonthlyProfit = customMonthly - zapflowBaseCharge
+    const partnerFirstMonthTotal = Number(customSetup) + partnerMonthlyProfit
+    const partnerMarginPct = Math.round((partnerMonthlyProfit / customMonthly) * 100)
+
+    return {
+      zapiCost,
+      grokTokenCost,
+      fixedInfraShare,
+      totalRealCost,
+      zapflowBaseCharge,
+      partnerMonthlyProfit,
+      partnerFirstMonthTotal,
+      partnerMarginPct
+    }
+  }, [conversations, hasGrok, clientCount, customMonthly, customSetup])
+
+  // Gerador de Proposta para WhatsApp
+  function copyProposal() {
+    const text = `*PROPOSTA COMERCIAL — SISTEMA DE VENDAS & GESTÃO*
+Segmento: ${currentVertical.name}
+
+Olá! Conforme conversamos, estruturei a solução ideal para automatizar o atendimento e as vendas da sua loja:
+
+*O que está incluso na plataforma:*
+${hasGrok ? '✅ Atendente de Vendas 24/7 no WhatsApp (envia fotos das peças, tira dúvidas de tamanhos, calcula frete e gera o Pix na hora sem parecer robô)' : ''}
+${hasStock ? '✅ Catálogo & Controle de Estoque com Grade (cores, tamanhos P/M/G e fotos organizadas)' : ''}
+${hasPdv ? '✅ Terminal PDV de Balcão Offline (sua loja nunca trava mesmo se a internet oscilar)' : ''}
+${hasFiscal ? '✅ Emissão Integrada de NFC-e / NF-e no balcão' : ''}
+✅ Zero dependência de ERP terceiro: tudo centralizado em um único painel.
+
+*Investimento:*
+• *Implantação & Setup*: ${money(customSetup)} (único — inclui cadastro inicial do catálogo, fotos e configuração da persona de atendimento)
+• *Mensalidade Operacional*: ${money(customMonthly)}/mês (sem surpresas de faturas adicionais)
+
+Com apenas 2 a 3 vendas a mais por mês recuperadas pelo atendimento rápido, o sistema já se paga totalmente.
+
+Podemos dar início à implantação essa semana?`
+
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2500)
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="font-display font-bold text-3xl text-white">Planilha de Precificação</h1>
-          <p className="text-muted text-sm font-body mt-1">Mensalidade = (custo real de infra) × 1,30 — 30% de lucro em cima do custo</p>
-        </div>
-        <button onClick={exportExcel} className="flex items-center gap-2 border border-border text-muted hover:text-white px-4 py-2.5 rounded-lg text-sm font-body transition-colors">
-          <Download size={14} /> Exportar Excel
-        </button>
-      </div>
-
-      <div className="bg-card border border-border rounded-xl p-5">
-        <h3 className="font-display font-semibold text-white mb-4">Custos fixos mensais (sua infra)</h3>
-        <div className="grid grid-cols-3 gap-4 mb-4">
-          <CostCard label="Make.com (Core)" value="R$ 45" note="/mês — reavaliar, sem uso ativo hoje" />
-          <CostCard label="Supabase Pro" value="R$ 125" note="/mês" />
-          <CostCard label="Z-API" value="R$ 99,99" note="por instância/mês" color />
-        </div>
-        <div className="bg-surface rounded-xl p-4 flex items-center gap-4">
-          <div>
-            <p className="text-muted text-xs font-body">Quantos clientes ativos você tem agora?</p>
-            <p className="text-xs text-muted font-body mt-0.5">Só afeta a simulação de margem abaixo — o preço de tabela usa uma base fixa de {BASELINE_CLIENTS} clientes pra não mudar toda hora</p>
+          <div className="flex items-center gap-2">
+            <h1 className="font-display font-bold text-3xl text-ink">Precificação & Propostas</h1>
+            <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-accent/10 text-accent font-semibold">
+              Motor Grokbot + Whitelabel
+            </span>
           </div>
-          <input type="number" min={1} max={200} value={clientCount} onChange={e => setClientCount(Number(e.target.value))}
-            className="w-20 bg-card border border-border rounded-lg px-3 py-2 text-white text-sm font-body text-center focus:outline-none focus:border-accent ml-auto" />
-        </div>
-      </div>
-
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-border">
-          <h3 className="font-display font-semibold text-white">Análise de margem por plano (com {clientCount} clientes ativos)</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left px-5 py-3 text-xs text-muted font-body">Plano</th>
-                <th className="text-right px-5 py-3 text-xs text-muted font-body">Números</th>
-                <th className="text-right px-5 py-3 text-xs text-muted font-body">Setup</th>
-                <th className="text-right px-5 py-3 text-xs text-muted font-body">Mensalidade</th>
-                <th className="text-right px-5 py-3 text-xs text-muted font-body">Custo Z-API</th>
-                <th className="text-right px-5 py-3 text-xs text-muted font-body">Custo fixo/cliente</th>
-                <th className="text-right px-5 py-3 text-xs text-muted font-body">Custo total</th>
-                <th className="text-right px-5 py-3 text-xs text-muted font-body">Margem R$</th>
-                <th className="text-right px-5 py-3 text-xs text-muted font-body">Margem %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {PLANS.map(p => {
-                const { zapiCost, fixedPc, totalCost, margin, pct } = calcMargin(p, clientCount)
-                const marginColor = pct >= 50 ? 'text-green-400' : pct >= 30 ? 'text-accent' : 'text-red-400'
-                return (
-                  <tr key={p.name} className="border-b border-border/50 last:border-0 hover:bg-surface/30 transition-colors">
-                    <td className="px-5 py-4">
-                      <span className="text-white font-body font-medium">{p.name}</span>
-                      <span className="ml-2 text-xs text-muted font-body">{p.maxContacts ? `${p.maxContacts.toLocaleString()} ctts` : '∞'}</span>
-                    </td>
-                    <td className="px-5 py-4 text-right text-sm text-white font-body">{p.numbers}</td>
-                    <td className="px-5 py-4 text-right text-sm text-white font-body">R$ {p.setup.toLocaleString()}</td>
-                    <td className="px-5 py-4 text-right text-sm font-body font-medium text-accent">R$ {p.monthly}</td>
-                    <td className="px-5 py-4 text-right text-sm text-muted font-body">R$ {zapiCost.toFixed(0)}</td>
-                    <td className="px-5 py-4 text-right text-sm text-muted font-body">R$ {fixedPc.toFixed(0)}</td>
-                    <td className="px-5 py-4 text-right text-sm text-red-400 font-body">R$ {totalCost.toFixed(0)}</td>
-                    <td className={`px-5 py-4 text-right text-sm font-body font-medium ${marginColor}`}>R$ {margin.toFixed(0)}</td>
-                    <td className={`px-5 py-4 text-right text-sm font-body font-bold ${marginColor}`}>{pct}%</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="bg-card border border-border rounded-xl p-5">
-        <div className="flex items-start gap-3">
-          <Tag size={16} className="text-accent mt-0.5 shrink-0" />
-          <p className="text-xs text-muted font-body">
-            <strong className="text-white">Onde isso trava de verdade:</strong> os limites de número e contato de cada plano (tabela <code className="text-accent">plan_limits</code>, ver <code className="text-accent">supabase_planos_limites.sql</code>) bloqueiam de fato quem tenta importar mais contatos ou cadastrar mais números do que o plano permite — não é só informativo, essa página aqui é a referência de preço, quem trava é o sistema.
+          <p className="text-muted text-sm font-body mt-1">
+            Simulador de lucro para revendedores, cálculo de tokens e propostas sem risco de prejuízo.
           </p>
         </div>
-      </div>
 
-      <div>
-        <h3 className="font-display font-semibold text-white mb-4">Planos</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {PLANS.map(p => (
-            <div key={p.name} className={`bg-card border rounded-xl p-5 ${p.name === 'Growth' ? 'border-accent' : 'border-border'}`}>
-              {p.name === 'Growth' && <span className="text-xs bg-accent text-bg px-2 py-0.5 rounded font-body font-medium mb-3 inline-block">Mais vendido</span>}
-              <h4 className="font-display font-bold text-xl text-white">{p.name}</h4>
-              <p className="text-3xl font-display font-bold text-accent mt-2">R$ {p.monthly}<span className="text-base text-muted font-body font-normal">/mês</span></p>
-              <p className="text-xs text-muted font-body mt-1">+ R$ {p.setup.toLocaleString()} de setup (único)</p>
-              <ul className="mt-4 space-y-2">
-                <li className="flex items-center gap-2 text-xs text-muted font-body"><span className="text-accent">✓</span> {p.numbers} número{p.numbers > 1 ? 's' : ''} WhatsApp</li>
-                <li className="flex items-center gap-2 text-xs text-muted font-body"><span className="text-accent">✓</span> {p.maxContacts ? `${p.maxContacts.toLocaleString()} contatos` : 'Contatos ilimitados'}</li>
-                <li className="flex items-center gap-2 text-xs text-muted font-body"><span className="text-accent">✓</span> Campanhas e automações (sem disparo manual — tudo passa pelo motor automático)</li>
-              </ul>
-            </div>
-          ))}
+        <div className="flex items-center gap-1 bg-card border border-border rounded-xl p-1">
+          <button
+            onClick={() => setActiveTab('simulador')}
+            className={`px-4 py-2 rounded-lg text-xs font-display font-bold transition-colors ${
+              activeTab === 'simulador' ? 'bg-accent text-white shadow-xs' : 'text-muted hover:text-ink'
+            }`}
+          >
+            Simulador de Proposta
+          </button>
+          <button
+            onClick={() => setActiveTab('infra')}
+            className={`px-4 py-2 rounded-lg text-xs font-display font-bold transition-colors ${
+              activeTab === 'infra' ? 'bg-accent text-white shadow-xs' : 'text-muted hover:text-ink'
+            }`}
+          >
+            Custos de Infra
+          </button>
         </div>
       </div>
+
+      {activeTab === 'simulador' ? (
+        <div className="space-y-6">
+          {/* Grid de Configuração do Cliente da Ponta */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Lado Esquerdo: Configuração do Cenário (7 cols) */}
+            <div className="lg:col-span-7 bg-card border border-border rounded-2xl p-6 space-y-5 shadow-xs">
+              <div className="flex items-center gap-2 border-b border-border pb-3">
+                <Calculator size={18} className="text-accent" />
+                <h3 className="font-display font-bold text-lg text-ink">Simular Novo Cliente / Loja</h3>
+              </div>
+
+              {/* Nicho */}
+              <div>
+                <label className="block text-xs font-body text-muted mb-2">Segmento da Loja do Cliente</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {VERTICALS.map(v => (
+                    <button
+                      key={v.id}
+                      onClick={() => handleVerticalChange(v.id)}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        selectedVertical === v.id
+                          ? 'border-accent bg-accent/10 text-accent font-semibold'
+                          : 'border-border bg-surface/30 text-muted hover:text-ink'
+                      }`}
+                    >
+                      <p className="text-xs font-body">{v.name}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Volume de Conversas da IA */}
+              <div className="bg-surface/40 border border-border rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-body font-medium text-ink block">
+                      Volume Estimado de Atendimentos no WhatsApp
+                    </label>
+                    <span className="text-[11px] text-muted">Contatos vindos de anúncios, posts e clientes da base</span>
+                  </div>
+                  <span className="font-mono text-sm font-bold text-accent bg-card px-3 py-1 rounded-lg border border-border">
+                    {conversations.toLocaleString()} conversas/mês
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min="200"
+                  max="10000"
+                  step="100"
+                  value={conversations}
+                  onChange={e => setConversations(Number(e.target.value))}
+                  className="w-full accent-accent"
+                />
+
+                <div className="flex justify-between text-[10px] text-muted font-mono">
+                  <span>200 (Loja início)</span>
+                  <span>1.500 (Média com tráfego)</span>
+                  <span>10.000 (Franquia)</span>
+                </div>
+              </div>
+
+              {/* Módulos Habilitados */}
+              <div className="space-y-2">
+                <label className="block text-xs font-body text-muted">Módulos Contratados na Proposta</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex items-center gap-2 p-3 rounded-xl border border-border bg-surface/30 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hasGrok}
+                      onChange={e => setHasGrok(e.target.checked)}
+                      className="rounded text-accent focus:ring-accent"
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-ink">Atendente Grokbot</p>
+                      <p className="text-[10px] text-muted">Fotos + Pix + Promoções</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-3 rounded-xl border border-border bg-surface/30 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hasStock}
+                      onChange={e => setHasStock(e.target.checked)}
+                      className="rounded text-accent focus:ring-accent"
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-ink">Estoque & Grade</p>
+                      <p className="text-[10px] text-muted">Variações e Kardex nativo</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-3 rounded-xl border border-border bg-surface/30 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hasPdv}
+                      onChange={e => setHasPdv(e.target.checked)}
+                      className="rounded text-accent focus:ring-accent"
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-ink">PDV & Balcão</p>
+                      <p className="text-[10px] text-muted">Venda rápida e Caixa</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-3 rounded-xl border border-border bg-surface/30 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hasFiscal}
+                      onChange={e => setHasFiscal(e.target.checked)}
+                      className="rounded text-accent focus:ring-accent"
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-ink">Emissor Fiscal A1</p>
+                      <p className="text-[10px] text-muted">NFC-e e NF-e própria</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Ajuste Fino dos Valores de Venda */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div>
+                  <label className="block text-xs font-body text-muted mb-1">Taxa de Setup / Implantação (R$)</label>
+                  <input
+                    type="number"
+                    value={customSetup}
+                    onChange={e => setCustomSetup(Number(e.target.value))}
+                    className="w-full bg-surface border border-border rounded-xl px-3.5 py-2.5 text-sm text-ink font-mono focus:outline-none focus:border-accent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-body text-muted mb-1">Mensalidade Cobrada do Lojista (R$)</label>
+                  <input
+                    type="number"
+                    value={customMonthly}
+                    onChange={e => setCustomMonthly(Number(e.target.value))}
+                    className="w-full bg-surface border border-border rounded-xl px-3.5 py-2.5 text-sm text-ink font-mono focus:outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Lado Direito: Breakdown Financeiro & Lucro Líquido (5 cols) */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="bg-card border border-border rounded-2xl p-6 space-y-4 shadow-xs">
+                <div className="flex items-center gap-2 border-b border-border pb-3">
+                  <DollarSign size={18} className="text-emerald-600" />
+                  <h3 className="font-display font-bold text-lg text-ink">Retorno & Margem Garantida</h3>
+                </div>
+
+                {/* Card de Lucro do Revendedor */}
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 space-y-3">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-xs font-body uppercase text-emerald-800 font-semibold tracking-wider">
+                      Seu Lucro no 1º Mês
+                    </span>
+                    <span className="font-display font-bold text-2xl text-emerald-700">
+                      {money(simulation.partnerFirstMonthTotal)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline border-t border-emerald-500/20 pt-2 text-xs font-body text-emerald-900">
+                    <span>Lucro Mensal Recorrente:</span>
+                    <span className="font-mono font-bold text-sm">+{money(simulation.partnerMonthlyProfit)}/mês</span>
+                  </div>
+                  <div className="flex justify-between items-baseline text-xs font-body text-emerald-900">
+                    <span>Sua Margem Líquida:</span>
+                    <span className="font-mono font-bold">{simulation.partnerMarginPct}% de margem</span>
+                  </div>
+                </div>
+
+                {/* Composição de Custos Ocultos */}
+                <div className="space-y-2 pt-2 border-t border-border font-mono text-xs">
+                  <p className="text-[11px] font-body text-muted uppercase tracking-wider mb-2">Composição de Custos</p>
+
+                  <div className="flex justify-between text-muted">
+                    <span>Instância WhatsApp (Z-API):</span>
+                    <span>{money(simulation.zapiCost)}</span>
+                  </div>
+
+                  {hasGrok && (
+                    <div className="flex justify-between text-muted">
+                      <span>Tokens Grokbot (~{conversations} conv):</span>
+                      <span>{money(simulation.grokTokenCost)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-muted">
+                    <span>Fatia Infraestrutura Supabase:</span>
+                    <span>{money(simulation.fixedInfraShare)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-red-500 font-medium pt-1 border-t border-border/50">
+                    <span>Custo Real de Operação:</span>
+                    <span>{money(simulation.totalRealCost)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-accent font-bold pt-1">
+                    <span>Custo ZapFlow (Repasse Leonardo):</span>
+                    <span>{money(simulation.zapflowBaseCharge)}</span>
+                  </div>
+                </div>
+
+                {/* Botão Copiar Proposta */}
+                <button
+                  onClick={copyProposal}
+                  className="w-full bg-accent hover:bg-accent-dim text-white font-display font-bold py-3.5 rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2"
+                >
+                  {copied ? (
+                    <>
+                      <Check size={16} /> Proposta Copiada!
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={16} /> Copiar Proposta para WhatsApp
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Dica de Segurança e Anti-Prejuízo */}
+              <div className="bg-surface/50 border border-border rounded-2xl p-4 flex items-start gap-3">
+                <ShieldCheck size={18} className="text-accent shrink-0 mt-0.5" />
+                <p className="text-xs text-muted font-body leading-relaxed">
+                  <strong className="text-ink">Trava Anti-Prejuízo:</strong> O custo dos tokens do Grokbot e do WhatsApp já está embutido na taxa do ZapFlow. O cliente nunca recebe faturas surpresa de APIs e você tem margem previsível todo mês.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Aba de Custos de Infraestrutura Fixos */
+        <div className="space-y-6">
+          <div className="bg-card border border-border rounded-2xl p-5">
+            <h3 className="font-display font-semibold text-ink mb-4">Custos Fixos Mensais (Infraestrutura)</h3>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <CostCard label="Supabase Pro" value="R$ 125,00" note="/mês (PostgreSQL + Auth + Storage)" />
+              <CostCard label="Z-API WhatsApp" value="R$ 99,99" note="por instância/mês" color />
+              <CostCard label="xAI Grok API" value="R$ 0,045" note="custo médio por conversa" />
+            </div>
+
+            <div className="bg-surface rounded-xl p-4 flex items-center gap-4">
+              <div>
+                <p className="text-muted text-xs font-body">Quantos clientes ativos na base?</p>
+                <p className="text-xs text-muted font-body mt-0.5">Usado para ratear custos fixos e calcular a margem líquida global da plataforma.</p>
+              </div>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={clientCount}
+                onChange={e => setClientCount(Number(e.target.value))}
+                className="w-24 bg-card border border-border rounded-xl px-3 py-2 text-ink text-sm font-mono text-center focus:outline-none focus:border-accent ml-auto"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 function CostCard({ label, value, note, color }) {
   return (
-    <div className={`bg-surface border rounded-xl p-4 ${color ? 'border-accent/30' : 'border-border'}`}>
+    <div className={`bg-surface border rounded-xl p-4 ${color ? 'border-accent/40 bg-accent/5' : 'border-border'}`}>
       <p className="text-xs text-muted font-body">{label}</p>
-      <p className={`text-2xl font-display font-bold mt-1 ${color ? 'text-accent' : 'text-white'}`}>{value}</p>
-      <p className="text-xs text-muted font-body">{note}</p>
+      <p className={`text-2xl font-display font-bold mt-1 ${color ? 'text-accent' : 'text-ink'}`}>{value}</p>
+      <p className="text-xs text-muted font-body mt-0.5">{note}</p>
     </div>
   )
 }
