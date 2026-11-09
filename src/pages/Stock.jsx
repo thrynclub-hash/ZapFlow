@@ -18,6 +18,10 @@ function money(val) {
 export default function Stock() {
   const { profile } = useAuth()
   const clientId = profile?.client_id
+  // Nome do item configurável por cliente (Peça, Doce, Bolo...) — bug real
+  // 2026-11-09: "Cadastrar Peça" hardcoded quebrava pra quem não vende roupa.
+  const itemNoun = profile?.client?.item_noun || 'Produto'
+  const itemNounPlural = itemNoun + 's'
 
   const [loading, setLoading] = useState(true)
   const [products, setProducts] = useState([])
@@ -122,7 +126,7 @@ export default function Stock() {
             </span>
           </div>
           <p className="text-muted text-sm font-body mt-1">
-            Controle de grade, fotos das peças para o WhatsApp, leitor de código e promoções.
+            Controle de grade, fotos de {itemNounPlural.toLowerCase()} para o WhatsApp, leitor de código e promoções.
           </p>
         </div>
 
@@ -137,7 +141,7 @@ export default function Stock() {
             onClick={() => setEditing({})}
             className="flex items-center gap-2 bg-accent hover:bg-accent-dim text-white font-display font-bold px-4 py-2.5 rounded-xl transition-colors text-sm shadow-sm"
           >
-            <Plus size={16} /> Cadastrar Peça
+            <Plus size={16} /> Cadastrar {itemNoun}
           </button>
         </div>
       </div>
@@ -152,7 +156,7 @@ export default function Stock() {
 
         <div className="bg-card border border-border rounded-2xl p-4">
           <div className="flex items-center justify-between">
-            <p className="text-xs text-muted font-body uppercase tracking-wider">Peças em Promoção</p>
+            <p className="text-xs text-muted font-body uppercase tracking-wider">{itemNounPlural} em Promoção</p>
             <Tag size={14} className="text-amber-500" />
           </div>
           <p className="font-display font-bold text-2xl text-amber-600 mt-1">{stats.inPromo}</p>
@@ -239,13 +243,13 @@ export default function Stock() {
           </div>
           <h3 className="font-display font-bold text-lg text-ink">Catálogo vazio</h3>
           <p className="text-muted text-sm font-body mt-1 max-w-sm mx-auto">
-            Cadastre suas primeiras peças com grade de tamanhos, fotos e preços para alimentar o PDV e o WhatsApp.
+            Cadastre {itemNounPlural.toLowerCase()} com grade de tamanhos, fotos e preços para alimentar o PDV e o WhatsApp.
           </p>
           <button
             onClick={() => setEditing({})}
             className="mt-4 bg-accent hover:bg-accent-dim text-white font-display font-bold px-4 py-2.5 rounded-xl text-sm transition-colors"
           >
-            + Cadastrar Primeira Peça
+            + Cadastrar Primeiro {itemNoun}
           </button>
         </div>
       ) : (
@@ -254,7 +258,7 @@ export default function Stock() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-surface/40">
-                  <th className="text-left px-5 py-3 text-[11px] text-muted font-mono uppercase tracking-wider">Peça / Produto</th>
+                  <th className="text-left px-5 py-3 text-[11px] text-muted font-mono uppercase tracking-wider">{itemNoun}</th>
                   <th className="text-left px-5 py-3 text-[11px] text-muted font-mono uppercase tracking-wider">Código / EAN</th>
                   <th className="text-left px-5 py-3 text-[11px] text-muted font-mono uppercase tracking-wider">Preço</th>
                   <th className="text-left px-5 py-3 text-[11px] text-muted font-mono uppercase tracking-wider">Promoção</th>
@@ -430,6 +434,7 @@ export default function Stock() {
           product={editing}
           clientId={clientId}
           categories={categories}
+          itemNoun={itemNoun}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
@@ -443,6 +448,7 @@ export default function Stock() {
         <StockAdjustModal
           product={adjusting}
           clientId={clientId}
+          itemNoun={itemNoun}
           onClose={() => setAdjusting(null)}
           onSaved={() => {
             setAdjusting(null)
@@ -469,7 +475,7 @@ export default function Stock() {
             >
               <X size={16} />
             </button>
-            <img src={previewPhoto} alt="Preview da peça" className="w-full h-auto max-h-[80vh] object-contain rounded-xl" />
+            <img src={previewPhoto} alt="Preview do item" className="w-full h-auto max-h-[80vh] object-contain rounded-xl" />
           </div>
         </Modal>
       )}
@@ -480,7 +486,7 @@ export default function Stock() {
 // -------------------------------------------------------------
 // Componente: Modal de Cadastro / Edição de Produto Completo
 // -------------------------------------------------------------
-function ProductModal({ product, clientId, categories, onClose, onSaved }) {
+function ProductModal({ product, clientId, categories, onClose, onSaved, itemNoun = 'Produto' }) {
   const isEdit = !!product.id
 
   const [name, setName] = useState(product.name || '')
@@ -622,7 +628,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved }) {
         <div className="flex items-center justify-between border-b border-border pb-3">
           <div>
             <h3 className="font-display font-bold text-xl text-ink">
-              {isEdit ? 'Editar Peça / Produto' : 'Cadastrar Nova Peça'}
+              {isEdit ? `Editar ${itemNoun}` : `Cadastrar Novo ${itemNoun}`}
             </h3>
             <p className="text-muted text-xs font-body">
               Grade de variações e fotos prontas para o envio no WhatsApp e PDV.
@@ -635,7 +641,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved }) {
           {/* Dados Principais */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="md:col-span-2">
-              <label className="block text-xs font-body text-muted mb-1">Nome da Peça / Produto *</label>
+              <label className="block text-xs font-body text-muted mb-1">Nome d{itemNoun.toLowerCase().endsWith('a') ? 'a' : 'o'} {itemNoun} *</label>
               <input
                 required
                 value={name}
@@ -728,7 +734,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved }) {
 
           {/* Fotos da Peça (Para Envio no WhatsApp e PDV) */}
           <div className="space-y-2">
-            <label className="block text-xs font-body text-muted">Fotos da Peça (URLs das imagens)</label>
+            <label className="block text-xs font-body text-muted">Fotos d{itemNoun.toLowerCase().endsWith('a') ? 'a' : 'o'} {itemNoun} (URLs das imagens)</label>
             <div className="flex gap-2">
               <input
                 value={newImageUrl}
@@ -767,7 +773,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved }) {
           {/* Grade de Variações (Tamanho / Cor) */}
           <div className="bg-surface/40 border border-border rounded-2xl p-4 space-y-3">
             <span className="text-xs font-mono uppercase tracking-wider text-muted font-medium">Grade de Variações</span>
-            <p className="text-[11px] text-muted font-body">Se a peça tiver tamanhos (P, M, G) ou cores, cadastre abaixo:</p>
+            <p className="text-[11px] text-muted font-body">Se {itemNoun.toLowerCase().endsWith('a') ? 'a' : 'o'} {itemNoun.toLowerCase()} tiver tamanhos (P, M, G) ou cores, cadastre abaixo:</p>
 
             <div className="flex gap-2">
               <input
@@ -843,7 +849,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved }) {
               disabled={saving}
               className="bg-accent hover:bg-accent-dim disabled:opacity-50 text-white font-display font-bold px-6 py-2.5 rounded-xl text-sm transition-colors shadow-sm"
             >
-              {saving ? 'Salvando...' : isEdit ? 'Atualizar Peça' : 'Cadastrar Peça'}
+              {saving ? 'Salvando...' : isEdit ? `Atualizar ${itemNoun}` : `Cadastrar ${itemNoun}`}
             </button>
           </div>
         </form>
@@ -855,7 +861,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved }) {
 // -------------------------------------------------------------
 // Componente: Modal de Ajuste de Saldo de Estoque com Kardex
 // -------------------------------------------------------------
-function StockAdjustModal({ product, clientId, onClose, onSaved }) {
+function StockAdjustModal({ product, clientId, onClose, onSaved, itemNoun = 'Produto' }) {
   const [type, setType] = useState('add') // add | remove | set
   const [qty, setQty] = useState('')
   const [reason, setReason] = useState('Entrada de mercadoria')
@@ -915,7 +921,7 @@ function StockAdjustModal({ product, clientId, onClose, onSaved }) {
         </div>
 
         <p className="text-xs text-muted font-body">
-          Peça: <strong className="text-ink">{product.name}</strong> (Saldo atual: {current} un)
+          {itemNoun}: <strong className="text-ink">{product.name}</strong> (Saldo atual: {current} un)
         </p>
 
         <form onSubmit={handleAdjust} className="space-y-3.5">
@@ -961,7 +967,7 @@ function StockAdjustModal({ product, clientId, onClose, onSaved }) {
               <option value="Entrada de mercadoria">Entrada de mercadoria</option>
               <option value="Devolução / Troca">Devolução / Troca</option>
               <option value="Ajuste de inventário">Ajuste de inventário</option>
-              <option value="Peça danificada / Perda">Peça danificada / Perda</option>
+              <option value="Item danificado / Perda">Item danificado / Perda</option>
               <option value="Outro motivo">Outro motivo</option>
             </select>
           </div>
@@ -1032,7 +1038,7 @@ function KardexHistoryModal({ product, onClose }) {
             <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
           </div>
         ) : movements.length === 0 ? (
-          <p className="text-center text-xs text-muted py-8 font-body">Nenhuma movimentação registrada para esta peça ainda.</p>
+          <p className="text-center text-xs text-muted py-8 font-body">Nenhuma movimentação registrada para este item ainda.</p>
         ) : (
           <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
             {movements.map(m => (

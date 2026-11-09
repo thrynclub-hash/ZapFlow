@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
     const { data: prof } = await supabase.from('profiles').select('*').eq('id', userId).single()
     setProfileRow(prof || null)
     if (prof?.role === 'client' && prof.client_id) {
-      const { data: cli } = await supabase.from('clients').select('id, name, email, plan, status, reseller_id, is_reseller, logo_url, modules').eq('id', prof.client_id).single()
+      const { data: cli } = await supabase.from('clients').select('id, name, email, plan, status, reseller_id, is_reseller, logo_url, modules, item_noun, vertical').eq('id', prof.client_id).single()
       setClientRow(cli || null)
       // Retorna o client_row carregado pra quem chamou (ex: loginWithKey)
       // poder decidir o redirect na hora — setClientRow só reflete no

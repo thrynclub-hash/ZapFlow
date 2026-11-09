@@ -26,6 +26,8 @@ function money(n) {
 export default function Pdv() {
   const { profile } = useAuth()
   const clientId = profile?.client_id
+  const itemNoun = profile?.client?.item_noun || 'Produto'
+  const itemNounPlural = (itemNoun + 's').toLowerCase()
 
   const [session, setSession] = useState(null) // sessão de caixa aberta
   const [loading, setLoading] = useState(true)
@@ -296,7 +298,7 @@ export default function Pdv() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
-                placeholder="Escaneie o código de barras ou digite o nome da peça..."
+                placeholder={`Escaneie o código de barras ou digite o nome d${itemNoun.toLowerCase().endsWith('a') ? 'a' : 'o'} ${itemNoun.toLowerCase()}...`}
                 className="w-full bg-surface/50 border border-border rounded-xl pl-11 pr-4 py-3 text-sm text-ink placeholder-muted focus:outline-none focus:border-accent font-body"
               />
             </div>
@@ -320,7 +322,7 @@ export default function Pdv() {
                       )}
                       <div>
                         <p className="text-sm font-medium text-ink">{p.name}</p>
-                        <p className="text-[10px] text-muted font-mono">{p.barcode || p.category || 'Peça'}</p>
+                        <p className="text-[10px] text-muted font-mono">{p.barcode || p.category || itemNoun}</p>
                       </div>
                     </div>
 
@@ -341,7 +343,7 @@ export default function Pdv() {
             )}
           </div>
 
-          {/* Atalhos de Peças Mais Vendidas / Em Promoção */}
+          {/* Atalhos de itens mais vendidos / em promoção */}
           <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono uppercase tracking-wider text-muted font-medium">Catálogo de Balcão Rápido</span>
@@ -419,7 +421,7 @@ export default function Pdv() {
           {/* Lista de Itens no Carrinho */}
           <div className="border border-border rounded-xl divide-y divide-border/60 max-h-56 overflow-y-auto">
             {cart.length === 0 ? (
-              <p className="text-center text-xs text-muted py-8 font-body">Nenhuma peça adicionada ainda.</p>
+              <p className="text-center text-xs text-muted py-8 font-body">Nenhum item adicionado ainda.</p>
             ) : (
               cart.map(item => (
                 <div key={item.product_id} className="p-3 flex items-center justify-between gap-2">
@@ -590,7 +592,7 @@ export default function Pdv() {
               </div>
               <div className="flex justify-between text-muted">
                 <span>Itens:</span>
-                <span>{completedSale.items.length} peças</span>
+                <span>{completedSale.items.length} {itemNounPlural}</span>
               </div>
               <div className="flex justify-between font-bold text-ink text-sm border-t border-border/60 pt-2">
                 <span>Total Pago:</span>

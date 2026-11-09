@@ -19,6 +19,8 @@ function money(val) {
 export default function Dashboard() {
   const { profile } = useAuth()
   const clientId = profile?.client_id
+  const itemNoun = profile?.client?.item_noun || 'Produto'
+  const itemNounPlural = (itemNoun + 's').toLowerCase()
 
   const [loading, setLoading] = useState(true)
   const [todaySales, setTodaySales] = useState({ total: 0, count: 0 })
@@ -153,7 +155,7 @@ export default function Dashboard() {
             className="bg-card hover:bg-surface border border-border text-ink text-xs font-display font-bold px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
           >
             <Plus size={15} />
-            <span>Cadastrar Peça</span>
+            <span>Cadastrar {itemNoun}</span>
           </Link>
         </div>
       </div>
@@ -209,7 +211,7 @@ export default function Dashboard() {
             </span>
           </div>
           <p className="font-display font-bold text-2xl text-ink tabular-nums">
-            {stockSummary.totalItems} <span className="text-sm font-normal text-muted">peças</span>
+            {stockSummary.totalItems} <span className="text-sm font-normal text-muted">{itemNounPlural}</span>
           </p>
           <div className="flex items-center justify-between text-xs text-muted font-mono pt-1 border-t border-border/50">
             <span>Valor: {money(stockSummary.totalValue)}</span>
@@ -290,7 +292,7 @@ export default function Dashboard() {
           {stockSummary.lowStockItems.length === 0 ? (
             <div className="text-center py-8 space-y-2">
               <CheckCircle2 size={24} className="text-emerald-500 mx-auto" />
-              <p className="text-xs text-muted font-body">Todas as peças estão com estoque saudável!</p>
+              <p className="text-xs text-muted font-body">{itemNounPlural.endsWith('as') ? 'Todas as' : 'Todos os'} {itemNounPlural} estão com estoque saudável!</p>
             </div>
           ) : (
             <div className="space-y-2.5">
