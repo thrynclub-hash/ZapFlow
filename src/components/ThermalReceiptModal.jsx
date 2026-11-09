@@ -33,9 +33,10 @@ export default function ThermalReceiptModal({
   sale,
   store = {},
   operator = 'Balcão 01',
+  initialTab = 'cupom',
   onClose = () => {}
 }) {
-  const [activeTab, setActiveTab] = useState('cupom') // cupom | nfce | etiqueta
+  const [activeTab, setActiveTab] = useState(initialTab) // cupom | nfce | etiqueta
   const [copiedKey, setCopiedKey] = useState(false)
   const printRef = useRef(null)
 
@@ -137,6 +138,17 @@ export default function ThermalReceiptModal({
             Etiqueta de Envio
           </button>
         </div>
+
+        {/* Aviso: NFC-e ainda é simulação de layout, não documento fiscal real */}
+        {activeTab === 'nfce' && (
+          <div className="mx-4 mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-[11px] rounded-xl p-3 no-print">
+            <ShieldCheck size={14} className="shrink-0 mt-0.5" />
+            <span>
+              <strong>Simulação de layout.</strong> Esta chave e QR Code não são emitidos pela SEFAZ — falta integração
+              fiscal real conectada para este cliente. Não use como nota fiscal válida.
+            </span>
+          </div>
+        )}
 
         {/* Área de Visualização do Documento (Com suporte a print CSS) */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-surface/30 flex justify-center">

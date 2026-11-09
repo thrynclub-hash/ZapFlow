@@ -42,6 +42,7 @@ export default function Pdv() {
   const [payReceived, setPayReceived] = useState('')
   const [finishing, setFinishing] = useState(false)
   const [completedSale, setCompletedSale] = useState(null) // modal pós-venda (cupom/NFC-e)
+  const [printTab, setPrintTab] = useState(null) // abre ThermalReceiptModal na aba 'cupom' | 'nfce' | 'etiqueta'
 
   const searchInputRef = useRef(null)
 
@@ -295,6 +296,7 @@ export default function Pdv() {
               <Barcode size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
               <input
                 ref={searchInputRef}
+                autoFocus
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
@@ -600,34 +602,53 @@ export default function Pdv() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-3 gap-2">
               <button
-                onClick={() => {
-                  alert('Comprovante térmico enviado para impressão!')
-                }}
-                className="flex items-center justify-center gap-2 bg-surface hover:bg-surface/80 border border-border text-ink py-2.5 rounded-xl text-xs font-body font-medium"
+                onClick={() => setPrintTab('cupom')}
+                className="flex flex-col items-center justify-center gap-1 bg-surface hover:bg-surface/80 border border-border text-ink py-2.5 rounded-xl text-[11px] font-body font-medium"
               >
-                <Printer size={14} /> Imprimir Cupom
+                <Printer size={14} /> Cupom
               </button>
 
               <button
-                onClick={() => {
-                  alert('NFC-e autorizada e emitida com sucesso!')
-                }}
-                className="flex items-center justify-center gap-2 bg-accent hover:bg-accent-dim text-white py-2.5 rounded-xl text-xs font-display font-bold"
+                onClick={() => setPrintTab('nfce')}
+                className="flex flex-col items-center justify-center gap-1 bg-accent hover:bg-accent-dim text-white py-2.5 rounded-xl text-[11px] font-display font-bold"
               >
-                <FileText size={14} /> Emitir NFC-e
+                <FileText size={14} /> NFC-e
+              </button>
+
+              <button
+                onClick={() => setPrintTab('etiqueta')}
+                className="flex flex-col items-center justify-center gap-1 bg-surface hover:bg-surface/80 border border-border text-ink py-2.5 rounded-xl text-[11px] font-body font-medium"
+              >
+                <Tag size={14} /> Etiqueta
               </button>
             </div>
 
             <button
-              onClick={() => setCompletedSale(null)}
+              onClick={() => {
+                setCompletedSale(null)
+                if (searchInputRef.current) searchInputRef.current.focus()
+              }}
               className="text-xs text-muted hover:text-ink font-body"
             >
               Nova Venda (Esc)
             </button>
           </div>
         </Modal>
+      )}
+
+      {/* Central de Impressão (cupom térmico / NFC-e / etiqueta) */}
+      {printTab && completedSale && (
+        <ThermalReceiptModal
+          initialTab={printTab}
+          sale={{
+            ...completedSale,
+            items: completedSale.items.map(i => ({ ...i, price: i.unit_price })),
+          }}
+          store={{ name: profile?.client?.name }}
+          onClose={() => setPrintTab(null)}
+        />
       )}
     </div>
   )
