@@ -377,15 +377,17 @@ export default function Stock() {
                             )}
                           </div>
 
-                          {/* Chips de variações de tamanho */}
+                          {/* Chips de variações de tamanho — com foto quando a
+                              variação veio de importação (image_url preenchido) */}
                           {hasVariants && (
                             <div className="flex flex-wrap gap-1 max-w-xs">
                               {p.product_variants.map(v => (
                                 <span
                                   key={v.id}
-                                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-muted"
+                                  className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-muted"
                                 >
-                                  {v.name}: {v.stock_qty}
+                                  {v.image_url && <img src={v.image_url} alt="" className="w-4 h-4 rounded-sm object-cover" />}
+                                  {v.color ? `${v.color}${v.size ? ' · ' + v.size : ''}` : v.name}: {v.stock_qty}
                                 </span>
                               ))}
                             </div>
@@ -545,10 +547,85 @@ function ImportCatalogModal({ clientId, existingNames, onClose, onImported }) {
   )
 }
 
+// Bug real achado ao vivo (2026-11-10): Mercado Livre não devolve
+// variations[] pra essa conta — cada cor/tamanho que a Lisa postou é um
+// anúncio SEPARADO, com o nome completo embutido no título ("...Bolso
+// Laranja Lisa 40 O P", "...Bolso Azul Celeste Lisa 42 O M"). Não tem
+// campo de variação pra puxar da API, então agrupa por maior prefixo de
+// palavras em comum entre títulos — vira 1 produto com grade, em vez de
+// 1 produto por cor/tamanho.
+function commonPrefixLen(a, b) {
+  let n = 0
+  while (n < a.length && n < b.length && a[n].toLowerCase() === b[n].toLowerCase()) n++
+  return n
+}
+
+function groupByTitle(list) {
+  const words = list.map(i => i.title.trim().split(/\s+/))
+  const used = new Set()
+  const groups = []
+  for (let i = 0; i < list.length; i++) {
+    if (used.has(i)) continue
+    const groupIdx = [i]
+    used.add(i)
+    for (let j = i + 1; j < list.length; j++) {
+      if (used.has(j)) continue
+      const common = commonPrefixLen(words[i], words[j])
+      const minLen = Math.min(words[i].length, words[j].length)
+      if (common >= 4 && common / minLen >= 0.5) {
+        groupIdx.push(j)
+        used.add(j)
+      }
+    }
+    const prefixLen = groupIdx.reduce((min, idx) => Math.min(min, commonPrefixLen(words[i], words[idx])), words[i].length)
+    groups.push({
+      key: list[i].id,
+      baseName: words[i].slice(0, prefixLen).join(' ') || list[i].title,
+      items: groupIdx.map(idx => ({
+        ...list[idx],
+        variantLabel: words[idx].slice(prefixLen).join(' ').trim() || 'Padrão',
+      })),
+    })
+  }
+  return groups
+}
+
+// Dentro do que sobrou depois do prefixo comum ("Laranja Lisa 40 O P"),
+// separa cor de tamanho: tamanho é a letra (P/M/G/GG/PP/XG/XGG), às vezes
+// com número antes ("40 O P") — resto é cor. "Lisa" aqui é enchimento
+// (tecido liso), não cor — remove se vier logo antes do tamanho.
+const SIZE_LETTERS = ['PP', 'P', 'M', 'G', 'GG', 'XG', 'XGG']
+function parseColorSize(label) {
+  const tokens = label.split(/\s+/).filter(Boolean)
+  let letterIdx = -1
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (SIZE_LETTERS.includes(tokens[i].toUpperCase())) { letterIdx = i; break }
+  }
+  if (letterIdx === -1) return { color: label, size: '' }
+
+  const sizeLetter = tokens[letterIdx].toUpperCase()
+  let cut = letterIdx
+  // "O"/"Ou" conector antes da letra ("40 O P")
+  if (cut > 0 && /^ou?$/i.test(tokens[cut - 1])) cut--
+  let sizeNumber = ''
+  if (cut > 0 && /^\d{2,3}$/.test(tokens[cut - 1])) {
+    sizeNumber = tokens[cut - 1]
+    cut--
+  }
+  let colorTokens = tokens.slice(0, cut)
+  if (colorTokens.length > 0 && /^lisa$/i.test(colorTokens[colorTokens.length - 1])) colorTokens = colorTokens.slice(0, -1)
+
+  return {
+    color: colorTokens.join(' ') || 'Único',
+    size: sizeNumber ? `${sizeNumber}/${sizeLetter}` : sizeLetter,
+  }
+}
+
 function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
   const [loading, setLoading] = useState(true)
   const [connected, setConnected] = useState(null)
-  const [items, setItems] = useState([])
+  const [groups, setGroups] = useState([])
+  const [hiddenDupeCount, setHiddenDupeCount] = useState(0)
   const [channelId, setChannelId] = useState(null)
   const [selected, setSelected] = useState(new Set())
   const [importing, setImportingState] = useState(false)
@@ -556,9 +633,6 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
 
   useEffect(() => { load() }, [])
 
-  // Duplicata = mesmo nome (case-insensitive) já existe no catálogo local.
-  // Sinal simples e real (sem fuzzy match) — suficiente pra avisar e não
-  // marcar pra importar de novo por padrão.
   const existingNamesLower = new Set(existingNames.map(n => n.toLowerCase().trim()))
 
   async function load() {
@@ -571,66 +645,28 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
       return
     }
     setConnected(data.connected)
-    const fetchedItems = data.items || []
-    setItems(fetchedItems)
     setChannelId(data.channel_id || null)
-    // tudo marcado por padrão, EXCETO os que já existem no catálogo local
-    setSelected(new Set(fetchedItems.filter(i => !existingNamesLower.has(i.title.toLowerCase().trim())).map(i => i.id)))
+
+    const allGroups = groupByTitle(data.items || [])
+    // Duplicata = mesmo nome (do produto já agrupado) já existe no catálogo
+    // local — some da lista por completo, não vem nem pra marcar/desmarcar.
+    const fresh = allGroups.filter(g => !existingNamesLower.has(g.baseName.toLowerCase().trim()))
+    setHiddenDupeCount(allGroups.length - fresh.length)
+    setGroups(fresh)
+    setSelected(new Set(fresh.map(g => g.key)))
     setLoading(false)
   }
 
-  function toggle(id) {
+  function toggle(key) {
     setSelected(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      next.has(key) ? next.delete(key) : next.add(key)
       return next
     })
   }
 
-  // Bug real achado ao vivo (2026-11-10): Mercado Livre não devolve
-  // variations[] pra essa conta — cada cor/tamanho que a Lisa postou é
-  // um anúncio SEPARADO, com o nome completo embutido no título
-  // ("...Bolso Laranja Lisa 40 O P", "...Bolso Azul Celeste Lisa 42 O M").
-  // Não tem campo de variação pra puxar da API, então agrupa por maior
-  // prefixo de palavras em comum entre títulos — vira 1 produto com
-  // grade, em vez de 1 produto por cor/tamanho.
-  function commonPrefixLen(a, b) {
-    let n = 0
-    while (n < a.length && n < b.length && a[n].toLowerCase() === b[n].toLowerCase()) n++
-    return n
-  }
-
-  function groupByTitle(list) {
-    const words = list.map(i => i.title.trim().split(/\s+/))
-    const used = new Set()
-    const groups = []
-    for (let i = 0; i < list.length; i++) {
-      if (used.has(i)) continue
-      const groupIdx = [i]
-      used.add(i)
-      for (let j = i + 1; j < list.length; j++) {
-        if (used.has(j)) continue
-        const common = commonPrefixLen(words[i], words[j])
-        const minLen = Math.min(words[i].length, words[j].length)
-        if (common >= 4 && common / minLen >= 0.5) {
-          groupIdx.push(j)
-          used.add(j)
-        }
-      }
-      const prefixLen = groupIdx.reduce((min, idx) => Math.min(min, commonPrefixLen(words[i], words[idx])), words[i].length)
-      groups.push({
-        baseName: words[i].slice(0, prefixLen).join(' ') || list[i].title,
-        items: groupIdx.map(idx => ({
-          ...list[idx],
-          variantLabel: words[idx].slice(prefixLen).join(' ').trim() || 'Padrão',
-        })),
-      })
-    }
-    return groups
-  }
-
   async function handleImport() {
-    const toImport = items.filter(i => selected.has(i.id))
+    const toImport = groups.filter(g => selected.has(g.key))
     if (toImport.length === 0) return
     setImportingState(true)
     try {
@@ -639,7 +675,7 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
       const { count } = await supabase.from('products').select('id', { count: 'exact', head: true }).eq('client_id', clientId)
       let nextSkuNum = (count || 0) + 1
 
-      for (const group of groupByTitle(toImport)) {
+      for (const group of toImport) {
         const isGrade = group.items.length > 1
         const first = group.items[0]
         const totalStock = group.items.reduce((s, it) => s + (Number(it.available_quantity) || 0), 0)
@@ -670,10 +706,14 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
             })
           }
           if (isGrade) {
+            const { color, size } = parseColorSize(it.variantLabel)
             await supabase.from('product_variants').insert({
               product_id: prod.id,
               client_id: clientId,
-              name: it.variantLabel,
+              name: size ? `${color} · ${size}` : color,
+              color,
+              size,
+              image_url: it.thumbnail ? it.thumbnail.replace('http://', 'https://') : null,
               stock_qty: Number(it.available_quantity) || 0,
               unit_price: Number(it.price) || 0,
               active: true,
@@ -692,20 +732,17 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
   if (loading) return <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto my-8" />
   if (error) return <p className="text-center text-sm text-amber-600 font-body py-6">{error}</p>
   if (connected === false) return <p className="text-center text-sm text-muted font-body py-6">Mercado Livre ainda não conectado. Conecte em Configurações primeiro.</p>
-  if (items.length === 0) return <p className="text-center text-sm text-muted font-body py-6">Nenhum anúncio encontrado nesta conta.</p>
+  if (groups.length === 0 && hiddenDupeCount === 0) return <p className="text-center text-sm text-muted font-body py-6">Nenhum anúncio encontrado nesta conta.</p>
+  if (groups.length === 0) return <p className="text-center text-sm text-muted font-body py-6">Todos os {hiddenDupeCount} anúncios já existem no catálogo — nada novo pra importar.</p>
 
-  const dupeCount = items.filter(i => existingNamesLower.has(i.title.toLowerCase().trim())).length
-  const pausedCount = items.filter(i => i.status && i.status !== 'active').length
-  const selectedItems = items.filter(i => selected.has(i.id))
-  const previewGroups = selectedItems.length > 0 ? groupByTitle(selectedItems) : []
-  const previewGradeCount = previewGroups.filter(g => g.items.length > 1).length
+  const pausedCount = groups.reduce((s, g) => s + g.items.filter(it => it.status && it.status !== 'active').length, 0)
 
   return (
     <>
-      {previewGradeCount > 0 && (
-        <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl p-3">
+      {hiddenDupeCount > 0 && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl p-3">
           <AlertCircle size={14} className="shrink-0 mt-0.5" />
-          <span>{selectedItems.length} anúncios selecionados vão virar <b>{previewGroups.length} produtos</b> ({previewGradeCount} deles com grade de cor/tamanho agrupada pelo nome). Confira antes de importar.</span>
+          <span>{hiddenDupeCount} {hiddenDupeCount === 1 ? 'produto já existe' : 'produtos já existem'} no catálogo (mesmo nome) — não aparecem aqui, não duplicam.</span>
         </div>
       )}
       {pausedCount > 0 && (
@@ -714,30 +751,38 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
           <span>{pausedCount} {pausedCount === 1 ? 'anúncio está pausado' : 'anúncios estão pausados'} no Mercado Livre (não aparecem pra comprador) — ainda assim pode importar o cadastro.</span>
         </div>
       )}
-      {dupeCount > 0 && (
-        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl p-3">
-          <AlertCircle size={14} className="shrink-0 mt-0.5" />
-          <span>{dupeCount} {dupeCount === 1 ? 'anúncio parece já existir' : 'anúncios parecem já existir'} no catálogo (mesmo nome) — vieram desmarcados pra não duplicar. Revise antes de importar.</span>
-        </div>
-      )}
-      <div className="space-y-2 max-h-[45vh] overflow-y-auto">
-        {items.map(item => {
-          const isDupe = existingNamesLower.has(item.title.toLowerCase().trim())
-          const isPaused = item.status && item.status !== 'active'
+      <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+        {groups.map(group => {
+          const isGrade = group.items.length > 1
+          const first = group.items[0]
+          const totalStock = group.items.reduce((s, it) => s + (Number(it.available_quantity) || 0), 0)
           return (
-            <label key={item.id} className="flex items-center gap-3 bg-surface border border-border rounded-lg px-4 py-2.5 cursor-pointer">
-              <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} className="rounded text-accent" />
-              {item.thumbnail && <img src={item.thumbnail.replace('http://', 'https://')} alt="" className="w-9 h-9 rounded-md object-cover shrink-0" />}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-ink font-body font-medium truncate">{item.title}</p>
-                <p className="text-[11px] text-muted font-mono">
-                  {item.available_quantity} un.
-                  {isPaused && <span className="text-amber-600 font-bold"> · pausado no ML</span>}
-                  {isDupe && <span className="text-amber-600 font-bold"> · já existe no catálogo</span>}
-                </p>
-              </div>
-              <span className="text-sm font-mono text-ink font-bold shrink-0">{money(item.price)}</span>
-            </label>
+            <div key={group.key} className="bg-surface border border-border rounded-lg px-4 py-2.5">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={selected.has(group.key)} onChange={() => toggle(group.key)} className="rounded text-accent" />
+                {first.thumbnail && <img src={first.thumbnail.replace('http://', 'https://')} alt="" className="w-9 h-9 rounded-md object-cover shrink-0" />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-ink font-body font-medium truncate">{isGrade ? group.baseName : first.title}</p>
+                  <p className="text-[11px] text-muted font-mono">
+                    {totalStock} un. {isGrade && `· ${group.items.length} variações`}
+                  </p>
+                </div>
+                <span className="text-sm font-mono text-ink font-bold shrink-0">{money(first.price)}</span>
+              </label>
+              {isGrade && (
+                <div className="flex flex-wrap gap-1.5 mt-2 pl-7">
+                  {group.items.map(it => {
+                    const { color, size } = parseColorSize(it.variantLabel)
+                    return (
+                      <span key={it.id} className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-1 rounded bg-card border border-border text-muted">
+                        {it.thumbnail && <img src={it.thumbnail.replace('http://', 'https://')} alt="" className="w-4 h-4 rounded-sm object-cover" />}
+                        {color} {size && `· ${size}`}: {it.available_quantity}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )
         })}
       </div>
@@ -745,7 +790,7 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
         <button onClick={onClose} className="px-4 py-2 rounded-xl border border-border text-muted hover:text-ink text-xs font-body">Cancelar</button>
         <button onClick={handleImport} disabled={importing || selected.size === 0}
           className="bg-accent hover:bg-accent-dim disabled:opacity-50 text-white font-display font-bold px-5 py-2 rounded-xl text-xs shadow-xs">
-          {importing ? 'Importando...' : `Importar ${selected.size} ${selected.size === 1 ? 'item' : 'itens'}`}
+          {importing ? 'Importando...' : `Importar ${selected.size} ${selected.size === 1 ? 'produto' : 'produtos'}`}
         </button>
       </div>
     </>
