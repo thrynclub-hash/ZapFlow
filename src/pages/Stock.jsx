@@ -587,6 +587,48 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
     })
   }
 
+  // Bug real achado ao vivo (2026-11-10): Mercado Livre não devolve
+  // variations[] pra essa conta — cada cor/tamanho que a Lisa postou é
+  // um anúncio SEPARADO, com o nome completo embutido no título
+  // ("...Bolso Laranja Lisa 40 O P", "...Bolso Azul Celeste Lisa 42 O M").
+  // Não tem campo de variação pra puxar da API, então agrupa por maior
+  // prefixo de palavras em comum entre títulos — vira 1 produto com
+  // grade, em vez de 1 produto por cor/tamanho.
+  function commonPrefixLen(a, b) {
+    let n = 0
+    while (n < a.length && n < b.length && a[n].toLowerCase() === b[n].toLowerCase()) n++
+    return n
+  }
+
+  function groupByTitle(list) {
+    const words = list.map(i => i.title.trim().split(/\s+/))
+    const used = new Set()
+    const groups = []
+    for (let i = 0; i < list.length; i++) {
+      if (used.has(i)) continue
+      const groupIdx = [i]
+      used.add(i)
+      for (let j = i + 1; j < list.length; j++) {
+        if (used.has(j)) continue
+        const common = commonPrefixLen(words[i], words[j])
+        const minLen = Math.min(words[i].length, words[j].length)
+        if (common >= 4 && common / minLen >= 0.5) {
+          groupIdx.push(j)
+          used.add(j)
+        }
+      }
+      const prefixLen = groupIdx.reduce((min, idx) => Math.min(min, commonPrefixLen(words[i], words[idx])), words[i].length)
+      groups.push({
+        baseName: words[i].slice(0, prefixLen).join(' ') || list[i].title,
+        items: groupIdx.map(idx => ({
+          ...list[idx],
+          variantLabel: words[idx].slice(prefixLen).join(' ').trim() || 'Padrão',
+        })),
+      })
+    }
+    return groups
+  }
+
   async function handleImport() {
     const toImport = items.filter(i => selected.has(i.id))
     if (toImport.length === 0) return
@@ -596,29 +638,47 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
       // do cadastro manual — ML não manda SKU próprio, não deixa em branco.
       const { count } = await supabase.from('products').select('id', { count: 'exact', head: true }).eq('client_id', clientId)
       let nextSkuNum = (count || 0) + 1
-      for (const item of toImport) {
+
+      for (const group of groupByTitle(toImport)) {
+        const isGrade = group.items.length > 1
+        const first = group.items[0]
+        const totalStock = group.items.reduce((s, it) => s + (Number(it.available_quantity) || 0), 0)
+
         const { data: prod, error: prodError } = await supabase
           .from('products')
           .insert({
             client_id: clientId,
-            name: item.title,
+            name: isGrade ? group.baseName : first.title,
             sku: `P-${String(nextSkuNum++).padStart(4, '0')}`,
-            unit_price: Number(item.price) || 0,
-            stock_qty: Number(item.available_quantity) || 0,
-            images: item.thumbnail ? [item.thumbnail.replace('http://', 'https://')] : [],
+            unit_price: Number(first.price) || 0,
+            stock_qty: isGrade ? totalStock : (Number(first.available_quantity) || 0),
+            images: first.thumbnail ? [first.thumbnail.replace('http://', 'https://')] : [],
             active: true,
           })
           .select('id')
           .single()
         if (prodError || !prod) continue
-        if (channelId) {
-          await supabase.from('product_channel_links').insert({
-            product_id: prod.id,
-            channel_id: channelId,
-            external_id: item.id,
-            sync_status: 'synced',
-            last_synced_at: new Date().toISOString(),
-          })
+
+        for (const it of group.items) {
+          if (channelId) {
+            await supabase.from('product_channel_links').insert({
+              product_id: prod.id,
+              channel_id: channelId,
+              external_id: it.id,
+              sync_status: 'synced',
+              last_synced_at: new Date().toISOString(),
+            })
+          }
+          if (isGrade) {
+            await supabase.from('product_variants').insert({
+              product_id: prod.id,
+              client_id: clientId,
+              name: it.variantLabel,
+              stock_qty: Number(it.available_quantity) || 0,
+              unit_price: Number(it.price) || 0,
+              active: true,
+            })
+          }
         }
       }
       onImported()
@@ -636,9 +696,18 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
 
   const dupeCount = items.filter(i => existingNamesLower.has(i.title.toLowerCase().trim())).length
   const pausedCount = items.filter(i => i.status && i.status !== 'active').length
+  const selectedItems = items.filter(i => selected.has(i.id))
+  const previewGroups = selectedItems.length > 0 ? groupByTitle(selectedItems) : []
+  const previewGradeCount = previewGroups.filter(g => g.items.length > 1).length
 
   return (
     <>
+      {previewGradeCount > 0 && (
+        <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl p-3">
+          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+          <span>{selectedItems.length} anúncios selecionados vão virar <b>{previewGroups.length} produtos</b> ({previewGradeCount} deles com grade de cor/tamanho agrupada pelo nome). Confira antes de importar.</span>
+        </div>
+      )}
       {pausedCount > 0 && (
         <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl p-3">
           <AlertCircle size={14} className="shrink-0 mt-0.5" />
