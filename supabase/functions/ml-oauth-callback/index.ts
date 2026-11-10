@@ -12,7 +12,7 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const mlClientId = Deno.env.get("ML_CLIENT_ID") ?? "";
 const mlClientSecret = Deno.env.get("ML_CLIENT_SECRET") ?? "";
-const appUrl = Deno.env.get("APP_URL") ?? "https://app.zapflow.com.br";
+const appUrl = Deno.env.get("APP_URL") ?? "https://zap-flow-smoky.vercel.app";
 const redirectUri = `${supabaseUrl}/functions/v1/ml-oauth-callback`;
 
 async function hmac(value: string) {

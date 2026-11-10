@@ -426,6 +426,7 @@ function AiAgentHoursCard({ clientId }) {
 function MarketplaceConnectCard() {
   const [connected, setConnected] = useState(null) // null = carregando, false/true = status
   const [connecting, setConnecting] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
 
   useEffect(() => { fetchStatus() }, [])
 
@@ -451,6 +452,20 @@ function MarketplaceConnectCard() {
     }
   }
 
+  async function disconnect() {
+    if (!confirm('Desconectar o Mercado Livre? Sincronização de estoque/preço para até reconectar — útil se conectou a conta errada.')) return
+    setDisconnecting(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('ml-disconnect', { body: {} })
+      if (error || !data?.ok) { alert('Erro ao desconectar: ' + (data?.error || error.message)); return }
+      setConnected(false)
+    } catch (e) {
+      alert('Erro ao desconectar: ' + e.message)
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
   return (
     <div className="bg-card border border-border rounded-xl p-5 space-y-4">
       <h3 className="font-display font-semibold text-white flex items-center gap-2"><RefreshCw size={16} /> Sincronizar Marketplace</h3>
@@ -459,8 +474,11 @@ function MarketplaceConnectCard() {
       {connected === null ? (
         <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       ) : connected ? (
-        <div className="bg-surface border border-border rounded-xl p-4">
+        <div className="bg-surface border border-border rounded-xl p-4 flex items-center justify-between gap-4">
           <span className="flex items-center gap-1 text-green-400 text-xs font-body"><CheckCircle size={14} /> Mercado Livre conectado</span>
+          <button onClick={disconnect} disabled={disconnecting} className="text-xs text-muted hover:text-red-400 font-body disabled:opacity-50">
+            {disconnecting ? 'Desconectando...' : 'Desconectar'}
+          </button>
         </div>
       ) : (
         <button onClick={connect} disabled={connecting}

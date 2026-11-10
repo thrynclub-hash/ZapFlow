@@ -17,7 +17,7 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const blingClientId = Deno.env.get("BLING_CLIENT_ID") ?? "";
 const blingClientSecret = Deno.env.get("BLING_CLIENT_SECRET") ?? "";
-const appUrl = Deno.env.get("APP_URL") ?? "https://app.zapflow.com.br";
+const appUrl = Deno.env.get("APP_URL") ?? "https://zap-flow-smoky.vercel.app";
 const redirectUri = `${supabaseUrl}/functions/v1/bling-oauth-callback`;
 
 async function hmac(value: string) {
