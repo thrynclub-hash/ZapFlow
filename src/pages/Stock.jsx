@@ -35,6 +35,7 @@ export default function Stock() {
   const [adjusting, setAdjusting] = useState(null) // produto selecionado para ajuste de estoque
   const [kardexProduct, setKardexProduct] = useState(null) // produto selecionado para ver histórico
   const [previewPhoto, setPreviewPhoto] = useState(null) // foto em tamanho expandido
+  const [importing, setImporting] = useState(false) // modal de importação inicial de catálogo (onboarding)
 
   useEffect(() => {
     if (clientId) fetchStock()
@@ -136,6 +137,12 @@ export default function Stock() {
             className="flex items-center gap-2 bg-card border border-border hover:border-accent text-ink font-body font-medium px-4 py-2.5 rounded-xl transition-colors text-sm"
           >
             <RefreshCw size={15} /> Atualizar
+          </button>
+          <button
+            onClick={() => setImporting(true)}
+            className="flex items-center gap-2 bg-card border border-border hover:border-accent text-ink font-body font-medium px-4 py-2.5 rounded-xl transition-colors text-sm"
+          >
+            <Boxes size={15} /> Importar Catálogo
           </button>
           <button
             onClick={() => setEditing({})}
@@ -479,7 +486,183 @@ export default function Stock() {
           </div>
         </Modal>
       )}
+
+      {/* Importação inicial de catálogo (onboarding) — quem já tinha
+          produto no marketplace antes de comprar o ZapFlow traz pra cá
+          de uma vez, em vez de recadastrar manual. Depois disso o
+          ZapFlow vira a fonte e distribui pra fora (sync já existente). */}
+      {importing && (
+        <ImportCatalogModal
+          clientId={clientId}
+          existingNames={products.map(p => p.name)}
+          onClose={() => setImporting(false)}
+          onImported={() => { setImporting(false); fetchStock() }}
+        />
+      )}
     </div>
+  )
+}
+
+// -------------------------------------------------------------
+// Componente: Importação Inicial de Catálogo (onboarding, por marketplace)
+// -------------------------------------------------------------
+const CATALOG_MARKETPLACES = [
+  { key: 'mercadolivre', label: 'Mercado Livre' },
+  { key: 'shopee', label: 'Shopee' },
+]
+
+function ImportCatalogModal({ clientId, existingNames, onClose, onImported }) {
+  const [tab, setTab] = useState('mercadolivre')
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto animate-fadein space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display font-bold text-lg text-ink">Importar Catálogo</h3>
+          <button onClick={onClose} className="text-muted hover:text-ink"><X size={20} /></button>
+        </div>
+        <p className="text-muted text-xs font-body">Já tinha produto cadastrado no marketplace antes de usar o ZapFlow? Traz tudo de uma vez pra cá. Depois disso, qualquer mudança no ZapFlow sincroniza de volta sozinha.</p>
+
+        <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1 w-fit">
+          {CATALOG_MARKETPLACES.map(m => (
+            <button
+              key={m.key}
+              onClick={() => setTab(m.key)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-body font-medium transition-colors ${tab === m.key ? 'bg-accent text-white' : 'text-muted hover:text-ink'}`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'mercadolivre' ? (
+          <ImportMlTab clientId={clientId} existingNames={existingNames} onClose={onClose} onImported={onImported} />
+        ) : (
+          <p className="text-center text-sm text-muted font-body py-10">Shopee ainda não conectado nesta loja — aguardando aprovação da API deles.</p>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
+  const [loading, setLoading] = useState(true)
+  const [connected, setConnected] = useState(null)
+  const [items, setItems] = useState([])
+  const [channelId, setChannelId] = useState(null)
+  const [selected, setSelected] = useState(new Set())
+  const [importing, setImportingState] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => { load() }, [])
+
+  // Duplicata = mesmo nome (case-insensitive) já existe no catálogo local.
+  // Sinal simples e real (sem fuzzy match) — suficiente pra avisar e não
+  // marcar pra importar de novo por padrão.
+  const existingNamesLower = new Set(existingNames.map(n => n.toLowerCase().trim()))
+
+  async function load() {
+    setLoading(true)
+    setError('')
+    const { data, error: fnError } = await supabase.functions.invoke('ml-items', { body: {} })
+    if (fnError || !data?.ok) {
+      setError(data?.error || fnError?.message || 'Erro ao buscar anúncios.')
+      setLoading(false)
+      return
+    }
+    setConnected(data.connected)
+    const fetchedItems = data.items || []
+    setItems(fetchedItems)
+    setChannelId(data.channel_id || null)
+    // tudo marcado por padrão, EXCETO os que já existem no catálogo local
+    setSelected(new Set(fetchedItems.filter(i => !existingNamesLower.has(i.title.toLowerCase().trim())).map(i => i.id)))
+    setLoading(false)
+  }
+
+  function toggle(id) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  async function handleImport() {
+    const toImport = items.filter(i => selected.has(i.id))
+    if (toImport.length === 0) return
+    setImportingState(true)
+    try {
+      for (const item of toImport) {
+        const { data: prod, error: prodError } = await supabase
+          .from('products')
+          .insert({
+            client_id: clientId,
+            name: item.title,
+            unit_price: Number(item.price) || 0,
+            stock_qty: Number(item.available_quantity) || 0,
+            images: item.thumbnail ? [item.thumbnail.replace('http://', 'https://')] : [],
+            active: true,
+          })
+          .select('id')
+          .single()
+        if (prodError || !prod) continue
+        if (channelId) {
+          await supabase.from('product_channel_links').insert({
+            product_id: prod.id,
+            channel_id: channelId,
+            external_id: item.id,
+            sync_status: 'synced',
+            last_synced_at: new Date().toISOString(),
+          })
+        }
+      }
+      onImported()
+    } catch (e) {
+      alert('Erro ao importar: ' + e.message)
+    } finally {
+      setImportingState(false)
+    }
+  }
+
+  if (loading) return <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto my-8" />
+  if (error) return <p className="text-center text-sm text-amber-600 font-body py-6">{error}</p>
+  if (connected === false) return <p className="text-center text-sm text-muted font-body py-6">Mercado Livre ainda não conectado. Conecte em Configurações primeiro.</p>
+  if (items.length === 0) return <p className="text-center text-sm text-muted font-body py-6">Nenhum anúncio ativo encontrado.</p>
+
+  const dupeCount = items.filter(i => existingNamesLower.has(i.title.toLowerCase().trim())).length
+
+  return (
+    <>
+      {dupeCount > 0 && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl p-3">
+          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+          <span>{dupeCount} {dupeCount === 1 ? 'anúncio parece já existir' : 'anúncios parecem já existir'} no catálogo (mesmo nome) — vieram desmarcados pra não duplicar. Revise antes de importar.</span>
+        </div>
+      )}
+      <div className="space-y-2 max-h-[45vh] overflow-y-auto">
+        {items.map(item => {
+          const isDupe = existingNamesLower.has(item.title.toLowerCase().trim())
+          return (
+            <label key={item.id} className="flex items-center gap-3 bg-surface border border-border rounded-lg px-4 py-2.5 cursor-pointer">
+              <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} className="rounded text-accent" />
+              {item.thumbnail && <img src={item.thumbnail.replace('http://', 'https://')} alt="" className="w-9 h-9 rounded-md object-cover shrink-0" />}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-ink font-body font-medium truncate">{item.title}</p>
+                <p className="text-[11px] text-muted font-mono">{item.available_quantity} un. {isDupe && <span className="text-amber-600 font-bold">· já existe no catálogo</span>}</p>
+              </div>
+              <span className="text-sm font-mono text-ink font-bold shrink-0">{money(item.price)}</span>
+            </label>
+          )
+        })}
+      </div>
+      <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+        <button onClick={onClose} className="px-4 py-2 rounded-xl border border-border text-muted hover:text-ink text-xs font-body">Cancelar</button>
+        <button onClick={handleImport} disabled={importing || selected.size === 0}
+          className="bg-accent hover:bg-accent-dim disabled:opacity-50 text-white font-display font-bold px-5 py-2 rounded-xl text-xs shadow-xs">
+          {importing ? 'Importando...' : `Importar ${selected.size} ${selected.size === 1 ? 'item' : 'itens'}`}
+        </button>
+      </div>
+    </>
   )
 }
 
