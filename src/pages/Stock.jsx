@@ -491,6 +491,8 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
 
   const [name, setName] = useState(product.name || '')
   const [category, setCategory] = useState(product.category || '')
+  const [subcategory, setSubcategory] = useState(product.subcategory || '')
+  const [brand, setBrand] = useState(product.brand || '')
   const [sku, setSku] = useState(product.sku || '')
   const [barcode, setBarcode] = useState(product.barcode || '')
   const [description, setDescription] = useState(product.description || '')
@@ -498,8 +500,22 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
   const [unitPrice, setUnitPrice] = useState(product.unit_price || '')
   const [promoPrice, setPromoPrice] = useState(product.promo_price || '')
   const [isPromo, setIsPromo] = useState(product.is_promo || false)
+  const [wholesalePrice, setWholesalePrice] = useState(product.wholesale_price || '')
+  const [wholesaleMinQty, setWholesaleMinQty] = useState(product.wholesale_min_qty || '')
+  const [commissionPct, setCommissionPct] = useState(product.commission_pct || '')
+  const [supplierId, setSupplierId] = useState(product.supplier_id || '')
+  const [suppliers, setSuppliers] = useState([])
   const [stockQty, setStockQty] = useState(product.stock_qty || 0)
   const [minStockAlert, setMinStockAlert] = useState(product.min_stock_alert || 2)
+
+  useEffect(() => {
+    supabase.from('suppliers').select('id, name').eq('client_id', clientId).order('name').then(({ data }) => setSuppliers(data || []))
+  }, [clientId])
+
+  // Margem calculada ao vivo (custo x preço de venda) — gap real vs
+  // concorrente (eles mostram Lucro % e Lucro R$ direto no cadastro).
+  const marginValue = Number(unitPrice || 0) - Number(costPrice || 0)
+  const marginPct = Number(costPrice) > 0 ? (marginValue / Number(costPrice)) * 100 : null
 
   // Fotos da peça (lista de URLs)
   const [images, setImages] = useState(product.images || [])
@@ -556,6 +572,8 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
         client_id: clientId,
         name: name.trim(),
         category: category.trim() || null,
+        subcategory: subcategory.trim() || null,
+        brand: brand.trim() || null,
         sku: sku.trim() || null,
         barcode: barcode.trim() || null,
         description: description.trim() || null,
@@ -563,6 +581,10 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
         unit_price: Number(unitPrice) || 0,
         promo_price: promoPrice ? Number(promoPrice) : null,
         is_promo: isPromo,
+        wholesale_price: wholesalePrice ? Number(wholesalePrice) : null,
+        wholesale_min_qty: wholesaleMinQty ? Number(wholesaleMinQty) : null,
+        commission_pct: commissionPct ? Number(commissionPct) : null,
+        supplier_id: supplierId || null,
         stock_qty: totalStock,
         min_stock_alert: Number(minStockAlert) || 2,
         images: images,
@@ -666,6 +688,26 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
             </div>
 
             <div>
+              <label className="block text-xs font-body text-muted mb-1">Subcategoria</label>
+              <input
+                value={subcategory}
+                onChange={e => setSubcategory(e.target.value)}
+                placeholder="Ex: Manga Longa, Social..."
+                className="w-full bg-surface/50 border border-border rounded-xl px-3.5 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-body text-muted mb-1">Marca</label>
+              <input
+                value={brand}
+                onChange={e => setBrand(e.target.value)}
+                placeholder="Ex: Adidas, Marca Própria..."
+                className="w-full bg-surface/50 border border-border rounded-xl px-3.5 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+              />
+            </div>
+
+            <div>
               <label className="block text-xs font-body text-muted mb-1">Código de Barras (EAN-13)</label>
               <input
                 value={barcode}
@@ -729,6 +771,63 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
                   className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink font-mono disabled:opacity-40 focus:outline-none focus:border-accent"
                 />
               </div>
+            </div>
+
+            {marginPct !== null && (
+              <div className="flex items-center justify-between bg-card border border-border rounded-xl px-3.5 py-2 text-xs font-mono">
+                <span className="text-muted">Margem sobre o custo:</span>
+                <span className={`font-bold ${marginValue >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {marginPct.toFixed(1)}% ({money(marginValue)})
+                </span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="block text-[11px] font-body text-muted mb-1">Preço Atacado (R$)</label>
+                <input
+                  type="number" step="0.01"
+                  value={wholesalePrice}
+                  onChange={e => setWholesalePrice(e.target.value)}
+                  placeholder="0,00"
+                  className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink font-mono focus:outline-none focus:border-accent"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-body text-muted mb-1">Qtd. mínima pro atacado</label>
+                <input
+                  type="number" min="0"
+                  value={wholesaleMinQty}
+                  onChange={e => setWholesaleMinQty(e.target.value)}
+                  placeholder="Ex: 10"
+                  className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink font-mono focus:outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Comissão e Fornecedor */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-body text-muted mb-1">Comissão do Vendedor (%)</label>
+              <input
+                type="number" step="0.1" min="0" max="100"
+                value={commissionPct}
+                onChange={e => setCommissionPct(e.target.value)}
+                placeholder="Ex: 5"
+                className="w-full bg-surface/50 border border-border rounded-xl px-3.5 py-2.5 text-sm text-ink font-mono focus:outline-none focus:border-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-body text-muted mb-1">Fornecedor</label>
+              <select
+                value={supplierId}
+                onChange={e => setSupplierId(e.target.value)}
+                className="w-full bg-surface/50 border border-border rounded-xl px-3.5 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+              >
+                <option value="">— Nenhum —</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
             </div>
           </div>
 
@@ -866,7 +965,13 @@ function StockAdjustModal({ product, clientId, onClose, onSaved, itemNoun = 'Pro
   const [qty, setQty] = useState('')
   const [reason, setReason] = useState('Entrada de mercadoria')
   const [notes, setNotes] = useState('')
+  const [supplierId, setSupplierId] = useState(product.supplier_id || '')
+  const [suppliers, setSuppliers] = useState([])
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    supabase.from('suppliers').select('id, name').eq('client_id', clientId).order('name').then(({ data }) => setSuppliers(data || []))
+  }, [clientId])
 
   const current = product.stock_qty || 0
   const numQty = Number(qty) || 0
@@ -902,6 +1007,7 @@ function StockAdjustModal({ product, clientId, onClose, onSaved, itemNoun = 'Pro
         previous_stock: current,
         new_stock: newStock,
         notes: notes.trim() || null,
+        supplier_id: type === 'add' ? (supplierId || null) : null,
       })
 
       onSaved()

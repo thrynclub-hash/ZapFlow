@@ -228,6 +228,11 @@ export default function Settings() {
       {modules.ia_agent && <AiAgentHoursCard clientId={profile.client_id} />}
       {modules.ia_agent && <KnowledgeBaseCard clientId={profile.client_id} />}
 
+      {/* Conexão self-service de marketplace (2026-11-10) — cliente conecta
+          a PRÓPRIA conta Mercado Livre sem precisar de admin nem token:
+          OAuth de verdade, loga direto no site do Mercado Livre. */}
+      {modules.estoque && <MarketplaceConnectCard />}
+
       {/* Add-ons (order bump) — mais capacidade sem trocar de plano inteiro */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
         <h3 className="font-display font-semibold text-white flex items-center gap-2"><Users size={16} /> Precisa de mais capacidade?</h3>
@@ -414,6 +419,55 @@ function AiAgentHoursCard({ clientId }) {
         className="flex items-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2.5 rounded-lg text-sm font-display font-bold transition-colors">
         {saving ? 'Salvando...' : saved ? 'Salvo!' : 'Salvar horário'}
       </button>
+    </div>
+  )
+}
+
+function MarketplaceConnectCard() {
+  const [connected, setConnected] = useState(null) // null = carregando, false/true = status
+  const [connecting, setConnecting] = useState(false)
+
+  useEffect(() => { fetchStatus() }, [])
+
+  // Sem SELECT direto em marketplace_channels pro role client (de
+  // propósito — ver marketplace_channels_rls_fix.sql, credential não é
+  // RLS-filtrável por coluna). Status vem pela edge function, que já lê
+  // via service role mesmo.
+  async function fetchStatus() {
+    const { data } = await supabase.functions.invoke('ml-orders', { body: {} })
+    setConnected(!!data?.connected)
+  }
+
+  async function connect() {
+    setConnecting(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('ml-oauth-start', { body: {} })
+      if (error || !data?.ok) { alert('Erro ao iniciar conexão: ' + (data?.error || error.message)); return }
+      window.open(data.url, '_blank', 'noopener')
+    } catch (e) {
+      alert('Erro ao iniciar conexão: ' + e.message)
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+      <h3 className="font-display font-semibold text-white flex items-center gap-2"><RefreshCw size={16} /> Sincronizar Marketplace</h3>
+      <p className="text-muted text-xs font-body">Conecte sua conta do Mercado Livre pra sincronizar estoque e preço automaticamente. Você loga direto no site do Mercado Livre — o ZapFlow nunca pede nem guarda sua senha.</p>
+
+      {connected === null ? (
+        <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+      ) : connected ? (
+        <div className="bg-surface border border-border rounded-xl p-4">
+          <span className="flex items-center gap-1 text-green-400 text-xs font-body"><CheckCircle size={14} /> Mercado Livre conectado</span>
+        </div>
+      ) : (
+        <button onClick={connect} disabled={connecting}
+          className="bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2.5 rounded-lg text-xs font-display font-bold transition-colors">
+          {connecting ? 'Abrindo...' : 'Conectar Mercado Livre'}
+        </button>
+      )}
     </div>
   )
 }

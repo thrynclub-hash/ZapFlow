@@ -38,6 +38,7 @@ const Caixa = lazy(() => import('./pages/Caixa'))
 const CarneLeao = lazy(() => import('./pages/CarneLeao'))
 const Financeiro = lazy(() => import('./pages/Financeiro'))
 const MarketplaceOrders = lazy(() => import('./pages/MarketplaceOrders'))
+const Suppliers = lazy(() => import('./pages/Suppliers'))
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
 const AdminClients = lazy(() => import('./pages/admin/AdminClients'))
 const AdminPricing = lazy(() => import('./pages/admin/AdminPricing'))
@@ -109,6 +110,7 @@ export default function App() {
           <Route path="carne-leao" element={<CarneLeao />} />
           <Route path="financeiro" element={<Financeiro />} />
           <Route path="marketplace" element={<MarketplaceOrders />} />
+          <Route path="fornecedores" element={<Suppliers />} />
           <Route path="stock" element={<Stock />} />
           <Route path="conversations" element={<Conversations />} />
           <Route path="ai-agent" element={<AiAgentStudio />} />
