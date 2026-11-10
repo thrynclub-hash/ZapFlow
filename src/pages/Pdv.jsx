@@ -23,6 +23,12 @@ function money(n) {
   return `R$ ${Number(n || 0).toFixed(2).replace('.', ',')}`
 }
 
+// "1 peças" é erro de concordância real achado em teste ao vivo —
+// singular quando a contagem é 1.
+function qtyLabel(n, singular, plural) {
+  return `${n} ${n === 1 ? singular : plural}`
+}
+
 export default function Pdv() {
   const { profile } = useAuth()
   const clientId = profile?.client_id
@@ -459,7 +465,7 @@ export default function Pdv() {
           {/* Subtotal */}
           <div className="bg-surface/50 border border-border rounded-xl p-3.5 space-y-1 font-mono">
             <div className="flex items-center justify-between text-xs text-muted">
-              <span>Subtotal ({cart.reduce((s, i) => s + i.qty, 0)} itens):</span>
+              <span>Subtotal ({qtyLabel(cart.reduce((s, i) => s + i.qty, 0), 'item', 'itens')}):</span>
               <span>{money(cartTotal)}</span>
             </div>
             <div className="flex items-center justify-between text-base font-bold text-ink pt-1 border-t border-border/50">
@@ -575,7 +581,7 @@ export default function Pdv() {
       </div>
 
       {/* Modal Pós-Venda (Sucesso / Cupom / NFC-e) */}
-      {completedSale && (
+      {completedSale && !printTab && (
         <Modal onClose={() => setCompletedSale(null)}>
           <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md animate-fadein space-y-5 text-center">
             <div className="w-14 h-14 bg-emerald-500/10 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
@@ -594,7 +600,7 @@ export default function Pdv() {
               </div>
               <div className="flex justify-between text-muted">
                 <span>Itens:</span>
-                <span>{completedSale.items.length} {itemNounPlural}</span>
+                <span>{qtyLabel(completedSale.items.length, itemNoun.toLowerCase(), itemNounPlural)}</span>
               </div>
               <div className="flex justify-between font-bold text-ink text-sm border-t border-border/60 pt-2">
                 <span>Total Pago:</span>

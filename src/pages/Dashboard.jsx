@@ -16,6 +16,10 @@ function money(val) {
   return `R$ ${Number(val || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+function qtyLabel(n, singular, plural) {
+  return n === 1 ? singular : plural
+}
+
 export default function Dashboard() {
   const { profile } = useAuth()
   const clientId = profile?.client_id
@@ -224,7 +228,7 @@ export default function Dashboard() {
             </span>
           </div>
           <p className="font-display font-bold text-2xl text-ink tabular-nums">
-            {stockSummary.totalItems} <span className="text-sm font-normal text-muted">{itemNounPlural}</span>
+            {stockSummary.totalItems} <span className="text-sm font-normal text-muted">{qtyLabel(stockSummary.totalItems, itemNoun.toLowerCase(), itemNounPlural)}</span>
           </p>
           <div className="flex items-center justify-between text-xs text-muted font-mono pt-1 border-t border-border/50">
             <span>Valor: {money(stockSummary.totalValue)}</span>
@@ -243,7 +247,7 @@ export default function Dashboard() {
             </span>
           </div>
           <p className="font-display font-bold text-2xl text-ink tabular-nums">
-            {conversationsCount} <span className="text-sm font-normal text-muted">clientes</span>
+            {conversationsCount} <span className="text-sm font-normal text-muted">{qtyLabel(conversationsCount, 'cliente', 'clientes')}</span>
           </p>
           <div className="flex items-center justify-between text-xs text-muted font-mono pt-1 border-t border-border/50">
             <span className="text-emerald-600 font-bold">IA Sofia Ativa</span>
