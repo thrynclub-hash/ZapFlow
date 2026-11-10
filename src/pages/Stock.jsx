@@ -592,12 +592,17 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
     if (toImport.length === 0) return
     setImportingState(true)
     try {
+      // SKU gerado em sequência pra cada produto importado, mesma lógica
+      // do cadastro manual — ML não manda SKU próprio, não deixa em branco.
+      const { count } = await supabase.from('products').select('id', { count: 'exact', head: true }).eq('client_id', clientId)
+      let nextSkuNum = (count || 0) + 1
       for (const item of toImport) {
         const { data: prod, error: prodError } = await supabase
           .from('products')
           .insert({
             client_id: clientId,
             name: item.title,
+            sku: `P-${String(nextSkuNum++).padStart(4, '0')}`,
             unit_price: Number(item.price) || 0,
             stock_qty: Number(item.available_quantity) || 0,
             images: item.thumbnail ? [item.thumbnail.replace('http://', 'https://')] : [],
@@ -763,13 +768,21 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
         ? variants.reduce((s, v) => s + (Number(v.stock_qty) || 0), 0)
         : Number(stockQty) || 0
 
+      // SKU é só organização interna — se o usuário não preencheu, gera
+      // sozinho em sequência (P-0001, P-0002...) em vez de deixar em branco.
+      let finalSku = sku.trim()
+      if (!finalSku && !isEdit) {
+        const { count } = await supabase.from('products').select('id', { count: 'exact', head: true }).eq('client_id', clientId)
+        finalSku = `P-${String((count || 0) + 1).padStart(4, '0')}`
+      }
+
       const payload = {
         client_id: clientId,
         name: name.trim(),
         category: category.trim() || null,
         subcategory: subcategory.trim() || null,
         brand: brand.trim() || null,
-        sku: sku.trim() || null,
+        sku: finalSku || sku.trim() || null,
         barcode: barcode.trim() || null,
         description: description.trim() || null,
         cost_price: Number(costPrice) || 0,
