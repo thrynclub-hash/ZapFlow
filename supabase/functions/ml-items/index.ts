@@ -56,7 +56,12 @@ Deno.serve(async (req: Request) => {
     const { access_token, user_id } = channel.credentials || {};
     if (!access_token || !user_id) return ok({ ok: false, error: "Token Mercado Livre ausente — reconecte." });
 
-    const searchRes = await fetch(`https://api.mercadolibre.com/users/${user_id}/items/search?status=active`, {
+    // Bug real achado ao vivo (2026-11-10): conta certa (LISALABELLE),
+    // 120 anúncios reais, mas nenhum em status "active" — todos pausados
+    // (ML pausa por falta de garantia/estoque/etc). status=active sozinho
+    // devolvia sempre 0. Busca sem filtro de status e deixa o front avisar
+    // quando o anúncio não estiver ativo, em vez de escondê-lo.
+    const searchRes = await fetch(`https://api.mercadolibre.com/users/${user_id}/items/search`, {
       headers: { Authorization: `Bearer ${access_token}` },
     });
     const searchData = await searchRes.json().catch(() => ({}));
@@ -71,7 +76,7 @@ Deno.serve(async (req: Request) => {
     const itemsData = await itemsRes.json().catch(() => ([]));
     const items = (Array.isArray(itemsData) ? itemsData : [])
       .filter((r: any) => r.code === 200)
-      .map((r: any) => ({ id: r.body.id, title: r.body.title, price: r.body.price, available_quantity: r.body.available_quantity, thumbnail: r.body.thumbnail }));
+      .map((r: any) => ({ id: r.body.id, title: r.body.title, price: r.body.price, available_quantity: r.body.available_quantity, thumbnail: r.body.thumbnail, status: r.body.status }));
 
     return ok({ ok: true, connected: true, channel_id: channel.id, items });
   } catch (e: any) {

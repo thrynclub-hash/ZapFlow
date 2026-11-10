@@ -627,12 +627,19 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
   if (loading) return <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto my-8" />
   if (error) return <p className="text-center text-sm text-amber-600 font-body py-6">{error}</p>
   if (connected === false) return <p className="text-center text-sm text-muted font-body py-6">Mercado Livre ainda não conectado. Conecte em Configurações primeiro.</p>
-  if (items.length === 0) return <p className="text-center text-sm text-muted font-body py-6">Nenhum anúncio ativo encontrado.</p>
+  if (items.length === 0) return <p className="text-center text-sm text-muted font-body py-6">Nenhum anúncio encontrado nesta conta.</p>
 
   const dupeCount = items.filter(i => existingNamesLower.has(i.title.toLowerCase().trim())).length
+  const pausedCount = items.filter(i => i.status && i.status !== 'active').length
 
   return (
     <>
+      {pausedCount > 0 && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl p-3">
+          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+          <span>{pausedCount} {pausedCount === 1 ? 'anúncio está pausado' : 'anúncios estão pausados'} no Mercado Livre (não aparecem pra comprador) — ainda assim pode importar o cadastro.</span>
+        </div>
+      )}
       {dupeCount > 0 && (
         <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl p-3">
           <AlertCircle size={14} className="shrink-0 mt-0.5" />
@@ -642,13 +649,18 @@ function ImportMlTab({ clientId, existingNames, onClose, onImported }) {
       <div className="space-y-2 max-h-[45vh] overflow-y-auto">
         {items.map(item => {
           const isDupe = existingNamesLower.has(item.title.toLowerCase().trim())
+          const isPaused = item.status && item.status !== 'active'
           return (
             <label key={item.id} className="flex items-center gap-3 bg-surface border border-border rounded-lg px-4 py-2.5 cursor-pointer">
               <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} className="rounded text-accent" />
               {item.thumbnail && <img src={item.thumbnail.replace('http://', 'https://')} alt="" className="w-9 h-9 rounded-md object-cover shrink-0" />}
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-ink font-body font-medium truncate">{item.title}</p>
-                <p className="text-[11px] text-muted font-mono">{item.available_quantity} un. {isDupe && <span className="text-amber-600 font-bold">· já existe no catálogo</span>}</p>
+                <p className="text-[11px] text-muted font-mono">
+                  {item.available_quantity} un.
+                  {isPaused && <span className="text-amber-600 font-bold"> · pausado no ML</span>}
+                  {isDupe && <span className="text-amber-600 font-bold"> · já existe no catálogo</span>}
+                </p>
               </div>
               <span className="text-sm font-mono text-ink font-bold shrink-0">{money(item.price)}</span>
             </label>
