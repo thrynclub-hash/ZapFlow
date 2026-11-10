@@ -508,7 +508,38 @@ function IntegrationsModal({ client, onClose }) {
   const [shipToken, setShipToken] = useState('')
   const [savingShip, setSavingShip] = useState(false)
 
-  useEffect(() => { fetchChannel(); fetchShipAccount() }, [])
+  // Mercado Livre — OAuth igual Bling, mas o vínculo produto↔anúncio é
+  // manual por item (o ML não tem um "código do produto" universal, cada
+  // anúncio é um item_id próprio) — ver LinkMlProductsModal abaixo.
+  const [mlChannel, setMlChannel] = useState(null)
+  const [connectingMl, setConnectingMl] = useState(false)
+  const [linkingMl, setLinkingMl] = useState(false)
+
+  useEffect(() => { fetchChannel(); fetchShipAccount(); fetchMlChannel() }, [])
+
+  async function fetchMlChannel() {
+    const { data } = await supabase.from('marketplace_channels').select('id, platform, active').eq('client_id', client.id).eq('platform', 'mercadolivre').maybeSingle()
+    setMlChannel(data || false)
+  }
+
+  async function connectMl() {
+    setConnectingMl(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('ml-oauth-start', { body: { client_id: client.id } })
+      if (error || !data?.ok) { alert('Erro ao iniciar conexão: ' + (data?.error || error.message)); return }
+      window.open(data.url, '_blank', 'noopener')
+    } catch (e) {
+      alert('Erro ao iniciar conexão: ' + e.message)
+    } finally {
+      setConnectingMl(false)
+    }
+  }
+
+  async function disconnectMl() {
+    if (!confirm('Desconectar o Mercado Livre deste cliente? O sync automático para até reconectar.')) return
+    await supabase.from('marketplace_channels').update({ active: false }).eq('id', mlChannel.id)
+    fetchMlChannel()
+  }
 
   async function fetchChannel() {
     const { data } = await supabase.from('marketplace_channels').select('id, platform, active').eq('client_id', client.id).eq('platform', 'bling').maybeSingle()
@@ -641,6 +672,121 @@ function IntegrationsModal({ client, onClose }) {
             </div>
           )}
         </div>
+
+        <div className="border-t border-border pt-5 space-y-3">
+          <div>
+            <p className="text-sm text-white font-body font-medium">Mercado Livre</p>
+            <p className="text-xs text-muted font-body mt-0.5">Sincroniza estoque e preço automaticamente dos anúncios já publicados. O cliente nunca sai do ZapFlow.</p>
+          </div>
+
+          {mlChannel === null ? (
+            <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+          ) : mlChannel && mlChannel.active ? (
+            <div className="bg-surface border border-border rounded-xl p-4 flex items-center justify-between gap-4">
+              <span className="flex items-center gap-1 text-green-400 text-xs font-body"><Check size={14} /> Conectado</span>
+              <div className="flex items-center gap-3 shrink-0">
+                <button onClick={() => setLinkingMl(true)} className="text-xs text-accent hover:underline font-body">Vincular Produtos</button>
+                <button onClick={disconnectMl} className="text-xs text-muted hover:text-red-400 font-body">Desconectar</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={connectMl} disabled={connectingMl}
+              className="shrink-0 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2 rounded-lg text-xs font-display font-bold transition-colors">
+              {connectingMl ? 'Abrindo...' : 'Conectar Mercado Livre'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {linkingMl && <LinkMlProductsModal client={client} onClose={() => setLinkingMl(false)} />}
+    </Modal>
+  )
+}
+
+// Vínculo produto local ↔ anúncio Mercado Livre (necessário pro sync
+// automático saber qual item_id atualizar). O ML não tem código universal
+// de produto — cada anúncio ativo é listado de verdade via ml-items e o
+// admin escolhe qual corresponde a qual produto do catálogo.
+function LinkMlProductsModal({ client, onClose }) {
+  const [products, setProducts] = useState([])
+  const [mlItems, setMlItems] = useState([])
+  const [links, setLinks] = useState({}) // product_id -> external_id já vinculado
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(null) // product_id em gravação
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    setLoading(true)
+    const [{ data: prods }, { data: existingLinks }, itemsRes] = await Promise.all([
+      supabase.from('products').select('id, name, sku').eq('client_id', client.id).eq('active', true).order('name'),
+      supabase.from('product_channel_links').select('product_id, external_id, channel:marketplace_channels!inner(platform, client_id)').eq('channel.client_id', client.id).eq('channel.platform', 'mercadolivre'),
+      supabase.functions.invoke('ml-items', { body: { client_id: client.id } }),
+    ])
+    setProducts(prods || [])
+    const linkMap = {}
+    for (const l of existingLinks || []) linkMap[l.product_id] = l.external_id
+    setLinks(linkMap)
+    if (itemsRes.data?.ok) setMlItems(itemsRes.data.items || [])
+    else if (itemsRes.data?.error) alert('Erro ao buscar anúncios: ' + itemsRes.data.error)
+    setLoading(false)
+  }
+
+  async function setLink(productId, externalId) {
+    setSaving(productId)
+    try {
+      const { data: channel } = await supabase.from('marketplace_channels').select('id').eq('client_id', client.id).eq('platform', 'mercadolivre').single()
+      if (!externalId) {
+        await supabase.from('product_channel_links').delete().eq('product_id', productId).eq('channel_id', channel.id)
+      } else {
+        await supabase.from('product_channel_links').upsert({ product_id: productId, channel_id: channel.id, external_id: externalId, sync_status: 'pending' }, { onConflict: 'product_id,channel_id' })
+      }
+      setLinks(prev => ({ ...prev, [productId]: externalId || undefined }))
+    } catch (e) {
+      alert('Erro ao vincular: ' + e.message)
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  return (
+    <Modal>
+      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto animate-fadein space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display font-bold text-lg text-white">Vincular Produtos — Mercado Livre</h3>
+          <button onClick={onClose} className="text-muted hover:text-white"><X size={20} /></button>
+        </div>
+        <p className="text-muted text-xs font-body">Escolha qual anúncio do Mercado Livre corresponde a cada produto do catálogo. Depois de vinculado, estoque e preço sincronizam sozinhos.</p>
+
+        {loading ? (
+          <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto" />
+        ) : mlItems.length === 0 ? (
+          <p className="text-center text-sm text-muted py-8 font-body">Nenhum anúncio ativo encontrado nessa conta do Mercado Livre.</p>
+        ) : products.length === 0 ? (
+          <p className="text-center text-sm text-muted py-8 font-body">Esse cliente ainda não tem produtos cadastrados no Estoque.</p>
+        ) : (
+          <div className="space-y-2">
+            {products.map(p => (
+              <div key={p.id} className="flex items-center gap-3 bg-surface border border-border rounded-lg px-4 py-2.5">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white font-body font-medium truncate">{p.name}</p>
+                  {p.sku && <p className="text-[11px] text-muted font-mono">SKU: {p.sku}</p>}
+                </div>
+                <select
+                  value={links[p.id] || ''}
+                  onChange={e => setLink(p.id, e.target.value)}
+                  disabled={saving === p.id}
+                  className="shrink-0 w-64 bg-card border border-border rounded-lg px-3 py-2 text-xs text-white font-body focus:outline-none focus:border-accent"
+                >
+                  <option value="">— Não vinculado —</option>
+                  {mlItems.map(item => (
+                    <option key={item.id} value={item.id}>{item.title.slice(0, 50)}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </Modal>
   )

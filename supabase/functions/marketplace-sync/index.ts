@@ -65,12 +65,38 @@ async function pushBling(credentials: any, externalId: string, product: any) {
   if (!estoqueRes.ok) throw new Error(`Bling (estoque): ${estoqueRes.status} ${await estoqueRes.text()}`);
 }
 
-async function pushMercadoLivre(credentials: any, externalId: string, product: any) {
-  const res = await fetch(`https://api.mercadolibre.com/items/${externalId}`, {
+// Access token do ML expira em ~6h — refresh automático em 401, igual
+// pushBling faz pro Bling. Precisa do channelId pra persistir o token novo.
+async function refreshMlToken(credentials: any, channelId: string) {
+  const mlClientId = Deno.env.get("ML_CLIENT_ID") ?? "";
+  const mlClientSecret = Deno.env.get("ML_CLIENT_SECRET") ?? "";
+  const res = await fetch("https://api.mercadolibre.com/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body: `grant_type=refresh_token&client_id=${encodeURIComponent(mlClientId)}&client_secret=${encodeURIComponent(mlClientSecret)}&refresh_token=${encodeURIComponent(credentials.refresh_token)}`,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.access_token) throw new Error(`Mercado Livre (refresh): ${res.status} ${JSON.stringify(data)}`);
+  const newCredentials = { ...credentials, access_token: data.access_token, refresh_token: data.refresh_token };
+  await supabase.from("marketplace_channels").update({ credentials: newCredentials }).eq("id", channelId);
+  return newCredentials;
+}
+
+async function pushMercadoLivre(credentials: any, externalId: string, product: any, channelId: string) {
+  let token = credentials.access_token;
+  let res = await fetch(`https://api.mercadolibre.com/items/${externalId}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${credentials.access_token}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ available_quantity: product.stock_qty, price: product.unit_price }),
   });
+  if (res.status === 401 && credentials.refresh_token) {
+    const refreshed = await refreshMlToken(credentials, channelId);
+    res = await fetch(`https://api.mercadolibre.com/items/${externalId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${refreshed.access_token}` },
+      body: JSON.stringify({ available_quantity: product.stock_qty, price: product.unit_price }),
+    });
+  }
   if (!res.ok) throw new Error(`Mercado Livre: ${res.status} ${await res.text()}`);
 }
 
@@ -92,7 +118,7 @@ async function pushNuvemshop(credentials: any, externalId: string, product: any)
   if (!res.ok) throw new Error(`Nuvemshop: ${res.status} ${await res.text()}`);
 }
 
-const ADAPTERS: Record<string, (credentials: any, externalId: string, product: any) => Promise<void>> = {
+const ADAPTERS: Record<string, (credentials: any, externalId: string, product: any, channelId: string) => Promise<void>> = {
   bling: pushBling,
   tiny: async () => { throw new Error("Tiny: adapter não implementado ainda — avisar quando tiver cliente usando"); },
   omie: async () => { throw new Error("Omie: adapter não implementado ainda — avisar quando tiver cliente usando"); },
@@ -123,7 +149,7 @@ Deno.serve(async (req: Request) => {
         if (!product || !channel || !link) throw new Error("produto/canal/vínculo não encontrado");
         const adapter = ADAPTERS[channel.platform];
         if (!adapter) throw new Error(`plataforma desconhecida: ${channel.platform}`);
-        await adapter(channel.credentials, link.external_id, product);
+        await adapter(channel.credentials, link.external_id, product, job.channel_id);
 
         await supabase.from("marketplace_sync_jobs").update({ status: "done", processed_at: new Date().toISOString() }).eq("id", job.id);
         await supabase.from("product_channel_links").update({ sync_status: "synced", last_synced_at: new Date().toISOString(), last_error: null })

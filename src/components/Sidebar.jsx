@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Megaphone, Cake, BarChart2, Settings,
   LogOut, Shield, Building2, Tag, Smartphone, Workflow, X, MessageCircle,
-  Package, DollarSign, ShoppingCart, Wallet, Bot, Sparkles, Calculator, Landmark
+  Package, DollarSign, ShoppingCart, Wallet, Bot, Sparkles, Calculator, Landmark, ShoppingBag
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -26,6 +26,7 @@ const clientNavGroups = [
       { to: '/carne-leao', icon: Calculator, label: 'Apoio Carnê-Leão', module: 'pdv' },
       { to: '/financeiro', icon: Landmark, label: 'Contas a Pagar/Receber', module: 'financeiro' },
       { to: '/stock', icon: Package, label: 'Catálogo & Estoque', module: 'estoque' },
+      { to: '/marketplace', icon: ShoppingBag, label: 'Pedidos Marketplace', module: 'estoque' },
       { to: '/negocios', icon: DollarSign, label: 'Negócios & Pedidos', module: 'crm' },
       { to: '/contacts', icon: Users, label: 'Contatos & Clientes' },
     ],
