@@ -67,6 +67,17 @@ export default function Stock() {
   const [kardexProduct, setKardexProduct] = useState(null) // produto selecionado para ver histórico
   const [previewPhoto, setPreviewPhoto] = useState(null) // foto em tamanho expandido
   const [importing, setImporting] = useState(false) // modal de importação inicial de catálogo (onboarding)
+  // Grade com muita variação (ex: 10 cores x 5 tamanhos) tomava a tela
+  // inteira, lista virava impossível de rolar — colapsada por padrão,
+  // expande por produto sob demanda.
+  const [expandedGrades, setExpandedGrades] = useState(new Set())
+  function toggleGrade(productId) {
+    setExpandedGrades(prev => {
+      const next = new Set(prev)
+      next.has(productId) ? next.delete(productId) : next.add(productId)
+      return next
+    })
+  }
 
   useEffect(() => {
     if (clientId) fetchStock()
@@ -411,24 +422,40 @@ export default function Stock() {
                           {/* Grade agrupada por cor — antes era 1 chip por
                               combinação (50 linhas soltas pra um produto só),
                               bagunçado demais de ler. Agrupa por cor, 1 linha
-                              de tamanhos por cor, foto 1x por grupo. */}
-                          {hasVariants && (
-                            <div className="space-y-1 max-w-sm">
-                              {groupVariantsByColor(p.product_variants).map(group => (
-                                <div key={group.color} className="flex items-center gap-2">
-                                  {group.image_url && <img src={group.image_url} alt="" className="w-7 h-7 rounded object-cover border border-border shrink-0" />}
-                                  <span className="text-[11px] font-body font-medium text-ink shrink-0">{group.color}</span>
-                                  <div className="flex flex-wrap gap-1">
-                                    {group.sizes.map(s => (
-                                      <span key={s.id} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-muted">
-                                        {s.size || '—'}: {s.stock_qty}
-                                      </span>
-                                    ))}
+                              de tamanhos por cor, foto 1x por grupo.
+                              Colapsada por padrão (grade grande tomava a tela
+                              inteira) — expande por produto sob demanda. */}
+                          {hasVariants && (() => {
+                            const colorGroups = groupVariantsByColor(p.product_variants)
+                            const isExpanded = expandedGrades.has(p.id)
+                            const visibleGroups = isExpanded ? colorGroups : colorGroups.slice(0, 2)
+                            return (
+                              <div className="space-y-1 max-w-sm">
+                                {visibleGroups.map(group => (
+                                  <div key={group.color} className="flex items-center gap-2">
+                                    {group.image_url && <img src={group.image_url} alt="" className="w-7 h-7 rounded object-cover border border-border shrink-0" />}
+                                    <span className="text-[11px] font-body font-medium text-ink shrink-0">{group.color}</span>
+                                    <div className="flex flex-wrap gap-1">
+                                      {group.sizes.map(s => (
+                                        <span key={s.id} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-muted">
+                                          {s.size || '—'}: {s.stock_qty}
+                                        </span>
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                                ))}
+                                {colorGroups.length > 2 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleGrade(p.id)}
+                                    className="text-[11px] font-body font-medium text-accent hover:underline"
+                                  >
+                                    {isExpanded ? '▲ Mostrar menos' : `▼ Ver mais ${colorGroups.length - 2} cores`}
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          })()}
                         </div>
                       </td>
 
@@ -879,6 +906,48 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
   const [varImageUrl, setVarImageUrl] = useState('')
 
   const [saving, setSaving] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [uploadingVariantIdx, setUploadingVariantIdx] = useState(null)
+
+  // Upa foto de verdade (bucket 'creatives', mesmo usado em Settings/
+  // Campaigns) em vez de só aceitar URL colada — URL continua funcionando
+  // pra quem já tem link pronto (ex: foto puxada do marketplace).
+  async function uploadToStorage(file) {
+    const path = `products/${clientId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '')}`
+    const { error: upErr } = await supabase.storage.from('creatives').upload(path, file, { upsert: true })
+    if (upErr) throw upErr
+    return supabase.storage.from('creatives').getPublicUrl(path).data.publicUrl
+  }
+
+  async function handleImageFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingImage(true)
+    try {
+      const url = await uploadToStorage(file)
+      setImages(prev => [...prev, url])
+    } catch (err) {
+      alert('Erro ao enviar foto: ' + err.message)
+    } finally {
+      setUploadingImage(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleVariantImageFile(e, index) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingVariantIdx(index)
+    try {
+      const url = await uploadToStorage(file)
+      setVariantImage(index, url)
+    } catch (err) {
+      alert('Erro ao enviar foto: ' + err.message)
+    } finally {
+      setUploadingVariantIdx(null)
+      e.target.value = ''
+    }
+  }
 
   function addImage() {
     if (!newImageUrl.trim()) return
@@ -1201,12 +1270,17 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
 
           {/* Fotos da Peça (Para Envio no WhatsApp e PDV) */}
           <div className="space-y-2">
-            <label className="block text-xs font-body text-muted">Fotos d{itemNoun.toLowerCase().endsWith('a') ? 'a' : 'o'} {itemNoun} (URLs das imagens)</label>
+            <label className="block text-xs font-body text-muted">Fotos d{itemNoun.toLowerCase().endsWith('a') ? 'a' : 'o'} {itemNoun}</label>
             <div className="flex gap-2">
+              <label className="bg-card border border-border hover:border-accent text-ink px-4 py-2 rounded-xl text-xs font-body font-medium transition-colors cursor-pointer flex items-center gap-1.5">
+                <ImageIcon size={13} />
+                {uploadingImage ? 'Enviando...' : 'Upar Foto'}
+                <input type="file" accept="image/*" onChange={handleImageFile} disabled={uploadingImage} className="hidden" />
+              </label>
               <input
                 value={newImageUrl}
                 onChange={e => setNewImageUrl(e.target.value)}
-                placeholder="Cole o link da foto (ex: https://...)"
+                placeholder="ou cole o link da foto (ex: https://...)"
                 className="flex-1 bg-surface/50 border border-border rounded-xl px-3.5 py-2 text-sm text-ink focus:outline-none focus:border-accent"
               />
               <button
@@ -1214,7 +1288,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
                 onClick={addImage}
                 className="bg-card border border-border hover:border-accent text-ink px-4 py-2 rounded-xl text-xs font-body font-medium transition-colors"
               >
-                Adicionar Foto
+                Adicionar
               </button>
             </div>
 
