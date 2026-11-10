@@ -1,10 +1,12 @@
-// ZapFlow — lista os anúncios reais do Mercado Livre do cliente (pra tela
-// de vínculo produto-local ↔ anúncio, em Admin > Clientes > Integrações).
-// Só leitura. Mesmo padrão de resolução de client_id via profiles que
-// bling-estoque usa.
+// ZapFlow — lista os anúncios reais do Mercado Livre do cliente: usado
+// pela tela de vínculo produto-local ↔ anúncio em Admin > Integrações
+// (com client_id, só admin) E pelo self-service de importação de
+// catálogo em Catálogo & Estoque (sem client_id, resolve do próprio
+// usuário logado — igual ml-orders). Só leitura. Devolve channel_id
+// junto pra quem for criar product_channel_links na hora de importar.
 //
 // Deploy: supabase functions deploy ml-items
-// Requer JWT do usuário (admin).
+// Requer JWT do usuário.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -31,16 +33,20 @@ Deno.serve(async (req: Request) => {
     const { data: { user } } = await supabaseAsUser.auth.getUser();
     if (!user) return ok({ ok: false, error: "Não autenticado." });
 
-    const { data: profile } = await supabaseAsUser.from("profiles").select("role").eq("id", user.id).single();
-    if (profile?.role !== "admin") return ok({ ok: false, error: "Só admin." });
+    const { data: profile } = await supabaseAsUser.from("profiles").select("role, client_id").eq("id", user.id).single();
 
     const body = await req.json().catch(() => ({}));
-    const clientId = body?.client_id;
-    if (!clientId) return ok({ ok: false, error: "client_id obrigatório." });
+    let clientId = body?.client_id;
+    if (clientId) {
+      if (profile?.role !== "admin") return ok({ ok: false, error: "Só admin pode consultar em nome de outro cliente." });
+    } else {
+      clientId = profile?.client_id;
+    }
+    if (!clientId) return ok({ ok: false, error: "Nenhum cliente informado." });
 
     const { data: channel } = await supabaseService
       .from("marketplace_channels")
-      .select("credentials")
+      .select("id, credentials")
       .eq("client_id", clientId)
       .eq("platform", "mercadolivre")
       .eq("active", true)
@@ -65,9 +71,9 @@ Deno.serve(async (req: Request) => {
     const itemsData = await itemsRes.json().catch(() => ([]));
     const items = (Array.isArray(itemsData) ? itemsData : [])
       .filter((r: any) => r.code === 200)
-      .map((r: any) => ({ id: r.body.id, title: r.body.title, price: r.body.price, available_quantity: r.body.available_quantity }));
+      .map((r: any) => ({ id: r.body.id, title: r.body.title, price: r.body.price, available_quantity: r.body.available_quantity, thumbnail: r.body.thumbnail }));
 
-    return ok({ ok: true, connected: true, items });
+    return ok({ ok: true, connected: true, channel_id: channel.id, items });
   } catch (e: any) {
     return ok({ ok: false, error: e?.message || String(e) });
   }

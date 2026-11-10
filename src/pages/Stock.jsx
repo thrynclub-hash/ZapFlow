@@ -35,6 +35,7 @@ export default function Stock() {
   const [adjusting, setAdjusting] = useState(null) // produto selecionado para ajuste de estoque
   const [kardexProduct, setKardexProduct] = useState(null) // produto selecionado para ver histórico
   const [previewPhoto, setPreviewPhoto] = useState(null) // foto em tamanho expandido
+  const [importingMl, setImportingMl] = useState(false) // modal de importação do Mercado Livre
 
   useEffect(() => {
     if (clientId) fetchStock()
@@ -136,6 +137,12 @@ export default function Stock() {
             className="flex items-center gap-2 bg-card border border-border hover:border-accent text-ink font-body font-medium px-4 py-2.5 rounded-xl transition-colors text-sm"
           >
             <RefreshCw size={15} /> Atualizar
+          </button>
+          <button
+            onClick={() => setImportingMl(true)}
+            className="flex items-center gap-2 bg-card border border-border hover:border-accent text-ink font-body font-medium px-4 py-2.5 rounded-xl transition-colors text-sm"
+          >
+            <Boxes size={15} /> Importar do Mercado Livre
           </button>
           <button
             onClick={() => setEditing({})}
@@ -479,7 +486,141 @@ export default function Stock() {
           </div>
         </Modal>
       )}
+
+      {/* Importar catálogo real do Mercado Livre */}
+      {importingMl && (
+        <ImportMlModal
+          clientId={clientId}
+          onClose={() => setImportingMl(false)}
+          onImported={() => { setImportingMl(false); fetchStock() }}
+        />
+      )}
     </div>
+  )
+}
+
+// -------------------------------------------------------------
+// Componente: Importar Catálogo do Mercado Livre
+// -------------------------------------------------------------
+function ImportMlModal({ clientId, onClose, onImported }) {
+  const [loading, setLoading] = useState(true)
+  const [connected, setConnected] = useState(null)
+  const [items, setItems] = useState([])
+  const [channelId, setChannelId] = useState(null)
+  const [selected, setSelected] = useState(new Set())
+  const [importing, setImporting] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    setLoading(true)
+    setError('')
+    const { data, error: fnError } = await supabase.functions.invoke('ml-items', { body: {} })
+    if (fnError || !data?.ok) {
+      setError(data?.error || fnError?.message || 'Erro ao buscar anúncios.')
+      setLoading(false)
+      return
+    }
+    setConnected(data.connected)
+    setItems(data.items || [])
+    setChannelId(data.channel_id || null)
+    setSelected(new Set((data.items || []).map(i => i.id))) // tudo marcado por padrão
+    setLoading(false)
+  }
+
+  function toggle(id) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  // ponytail: sem checagem de duplicata contra product_channel_links
+  // existente — clicar Importar 2x no mesmo anúncio cria produto
+  // duplicado. Aceitável pra ação manual de 1 clique; se virar hábito,
+  // adicionar skip por external_id já vinculado.
+  async function handleImport() {
+    const toImport = items.filter(i => selected.has(i.id))
+    if (toImport.length === 0) return
+    setImporting(true)
+    try {
+      for (const item of toImport) {
+        const { data: prod, error: prodError } = await supabase
+          .from('products')
+          .insert({
+            client_id: clientId,
+            name: item.title,
+            unit_price: Number(item.price) || 0,
+            stock_qty: Number(item.available_quantity) || 0,
+            images: item.thumbnail ? [item.thumbnail.replace('http://', 'https://')] : [],
+            active: true,
+          })
+          .select('id')
+          .single()
+        if (prodError || !prod) continue
+        if (channelId) {
+          await supabase.from('product_channel_links').insert({
+            product_id: prod.id,
+            channel_id: channelId,
+            external_id: item.id,
+            sync_status: 'synced',
+            last_synced_at: new Date().toISOString(),
+          })
+        }
+      }
+      onImported()
+    } catch (e) {
+      alert('Erro ao importar: ' + e.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto animate-fadein space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display font-bold text-lg text-ink">Importar do Mercado Livre</h3>
+          <button onClick={onClose} className="text-muted hover:text-ink"><X size={20} /></button>
+        </div>
+        <p className="text-muted text-xs font-body">Traz preço e estoque reais dos seus anúncios ativos pro catálogo do ZapFlow. Depois disso, qualquer mudança aqui sincroniza de volta pro Mercado Livre sozinha.</p>
+
+        {loading ? (
+          <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto" />
+        ) : error ? (
+          <p className="text-center text-sm text-amber-600 font-body py-6">{error}</p>
+        ) : connected === false ? (
+          <p className="text-center text-sm text-muted font-body py-6">Mercado Livre ainda não conectado. Conecte em Configurações primeiro.</p>
+        ) : items.length === 0 ? (
+          <p className="text-center text-sm text-muted font-body py-6">Nenhum anúncio ativo encontrado.</p>
+        ) : (
+          <>
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+              {items.map(item => (
+                <label key={item.id} className="flex items-center gap-3 bg-surface border border-border rounded-lg px-4 py-2.5 cursor-pointer">
+                  <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} className="rounded text-accent" />
+                  {item.thumbnail && <img src={item.thumbnail.replace('http://', 'https://')} alt="" className="w-9 h-9 rounded-md object-cover shrink-0" />}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-ink font-body font-medium truncate">{item.title}</p>
+                    <p className="text-[11px] text-muted font-mono">{item.available_quantity} un.</p>
+                  </div>
+                  <span className="text-sm font-mono text-ink font-bold shrink-0">{money(item.price)}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <button onClick={onClose} className="px-4 py-2 rounded-xl border border-border text-muted hover:text-ink text-xs font-body">Cancelar</button>
+              <button onClick={handleImport} disabled={importing || selected.size === 0}
+                className="bg-accent hover:bg-accent-dim disabled:opacity-50 text-white font-display font-bold px-5 py-2 rounded-xl text-xs shadow-xs">
+                {importing ? 'Importando...' : `Importar ${selected.size} ${selected.size === 1 ? 'item' : 'itens'}`}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
   )
 }
 
@@ -650,7 +791,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
         <div className="flex items-center justify-between border-b border-border pb-3">
           <div>
             <h3 className="font-display font-bold text-xl text-ink">
-              {isEdit ? `Editar ${itemNoun}` : `Cadastrar Novo ${itemNoun}`}
+              {isEdit ? `Editar ${itemNoun}` : `Cadastrar ${itemNoun.toLowerCase().endsWith('a') ? 'Nova' : 'Novo'} ${itemNoun}`}
             </h3>
             <p className="text-muted text-xs font-body">
               Grade de variações e fotos prontas para o envio no WhatsApp e PDV.
