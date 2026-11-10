@@ -65,18 +65,27 @@ Deno.serve(async (req: Request) => {
       headers: { Authorization: `Bearer ${access_token}` },
     });
     const searchData = await searchRes.json().catch(() => ({}));
-    if (!searchRes.ok) return ok({ ok: false, error: searchData?.message || `Mercado Livre: ${searchRes.status}` });
+    if (!searchRes.ok) return ok({ ok: false, error: searchData?.message || `Mercado Livre: ${searchRes.status}`, debugRaw: searchData, debugStatus: searchRes.status });
 
     const ids: string[] = (searchData.results || []).slice(0, 100);
     if (ids.length === 0) return ok({ ok: true, connected: true, items: [] });
 
-    const itemsRes = await fetch(`https://api.mercadolibre.com/items?ids=${ids.join(",")}`, {
-      headers: { Authorization: `Bearer ${access_token}` },
-    });
-    const itemsData = await itemsRes.json().catch(() => ([]));
-    const items = (Array.isArray(itemsData) ? itemsData : [])
-      .filter((r: any) => r.code === 200)
-      .map((r: any) => ({ id: r.body.id, title: r.body.title, price: r.body.price, available_quantity: r.body.available_quantity, thumbnail: r.body.thumbnail, status: r.body.status }));
+    // Bug real achado ao vivo (2026-11-10): /items?ids= só aceita 20 por vez —
+    // mandar mais de 20 (tínhamos até 100) fazia a API rejeitar a chamada
+    // inteira com 400, zerando a lista. Busca em lotes de 20.
+    const items: Record<string, unknown>[] = [];
+    for (let i = 0; i < ids.length; i += 20) {
+      const chunk = ids.slice(i, i + 20);
+      const itemsRes = await fetch(`https://api.mercadolibre.com/items?ids=${chunk.join(",")}`, {
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      const itemsData = await itemsRes.json().catch(() => ([]));
+      if (Array.isArray(itemsData)) {
+        for (const r of itemsData) {
+          if (r.code === 200) items.push({ id: r.body.id, title: r.body.title, price: r.body.price, available_quantity: r.body.available_quantity, thumbnail: r.body.thumbnail, status: r.body.status });
+        }
+      }
+    }
 
     return ok({ ok: true, connected: true, channel_id: channel.id, items });
   } catch (e: any) {
