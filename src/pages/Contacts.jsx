@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Upload, Plus, Search, Trash2, Download, Users, MessageCircle, Tag, Pencil, CheckSquare, Square, X as XIcon, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Upload, Plus, Search, Trash2, Download, Users, MessageCircle, Tag, Pencil, CheckSquare, Square, X as XIcon, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import * as XLSX from 'xlsx'
@@ -50,6 +50,12 @@ export default function Contacts() {
   // (ex: clientes com 3-6 mil contatos importados).
   const PAGE_SIZE = 15
   const [currentPage, setCurrentPage] = useState(1)
+
+  // Ordenação de coluna (nome, telefone, nascimento) — clique no cabeçalho.
+  const [sort, setSort] = useState({ key: null, dir: 1 })
+  function toggleSort(key) {
+    setSort(cur => cur.key === key ? { key, dir: cur.dir * -1 } : { key, dir: 1 })
+  }
 
   const clientId = profile?.client_id
 
@@ -111,12 +117,18 @@ export default function Contacts() {
     return matchSearch && matchNumber && matchTag && matchLifecycle
   })
 
+  const sorted = sort.key ? [...filtered].sort((a, b) => {
+    const va = (sort.key === 'name' ? a.name : sort.key === 'phone' ? a.phone : a.birth_date) || ''
+    const vb = (sort.key === 'name' ? b.name : sort.key === 'phone' ? b.phone : b.birth_date) || ''
+    return va.localeCompare(vb) * sort.dir
+  }) : filtered
+
   // Só a página atual vira linhas na tabela — busca/filtro continuam
   // rodando sobre a lista inteira (`filtered`), só a renderização é limitada.
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
   const pageStart = (safePage - 1) * PAGE_SIZE
-  const paginated = filtered.slice(pageStart, pageStart + PAGE_SIZE)
+  const paginated = sorted.slice(pageStart, pageStart + PAGE_SIZE)
 
   // Lista de tags únicas já em uso, pro filtro — "Antigo"/"Novo" sempre
   // aparecem primeiro (são as tags do fluxo combinado com o Leonardo),
@@ -710,18 +722,30 @@ export default function Contacts() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className="px-5 py-3 w-8">
+                <th className="sticky left-0 z-10 bg-card px-5 py-3 w-8">
                   <button type="button" onClick={toggleSelectAllVisible} title="Selecionar todos da página" className="text-muted hover:text-accent transition-colors">
                     {paginated.length > 0 && paginated.every(c => selectedIds.has(c.id)) ? <CheckSquare size={16} className="text-accent" /> : <Square size={16} />}
                   </button>
                 </th>
-                <th className="text-left px-5 py-3 text-xs text-muted font-body">Nome</th>
-                <th className="text-left px-5 py-3 text-xs text-muted font-body">Telefone</th>
+                <th className="sticky left-8 z-10 bg-card text-left px-5 py-3 text-xs text-muted font-body">
+                  <button type="button" onClick={() => toggleSort('name')} className="flex items-center gap-1 hover:text-ink transition-colors">
+                    Nome {sort.key === 'name' && <ArrowUpDown size={11} className="text-accent" />}
+                  </button>
+                </th>
+                <th className="text-left px-5 py-3 text-xs text-muted font-body">
+                  <button type="button" onClick={() => toggleSort('phone')} className="flex items-center gap-1 hover:text-ink transition-colors">
+                    Telefone {sort.key === 'phone' && <ArrowUpDown size={11} className="text-accent" />}
+                  </button>
+                </th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Loja</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Tags</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Status</th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Estágio</th>
-                <th className="text-left px-5 py-3 text-xs text-muted font-body">Nascimento</th>
+                <th className="text-left px-5 py-3 text-xs text-muted font-body">
+                  <button type="button" onClick={() => toggleSort('birth_date')} className="flex items-center gap-1 hover:text-ink transition-colors">
+                    Nascimento {sort.key === 'birth_date' && <ArrowUpDown size={11} className="text-accent" />}
+                  </button>
+                </th>
                 <th className="text-left px-5 py-3 text-xs text-muted font-body">Importado em</th>
                 <th className="px-5 py-3" />
               </tr>
@@ -729,12 +753,12 @@ export default function Contacts() {
             <tbody>
               {paginated.map(c => (
                 <tr key={c.id} className={`border-b border-border/50 last:border-0 hover:bg-surface/30 transition-colors ${selectedIds.has(c.id) ? 'bg-accent/5' : ''}`}>
-                  <td className="px-5 py-3.5">
+                  <td className={`sticky left-0 z-10 px-5 py-3.5 ${selectedIds.has(c.id) ? 'bg-accent/5' : 'bg-card'}`}>
                     <button type="button" onClick={() => toggleSelect(c.id)} className="text-muted hover:text-accent transition-colors">
                       {selectedIds.has(c.id) ? <CheckSquare size={16} className="text-accent" /> : <Square size={16} />}
                     </button>
                   </td>
-                  <td className="px-5 py-3.5 text-sm text-white font-body font-medium">{c.name}</td>
+                  <td className={`sticky left-8 z-10 px-5 py-3.5 text-sm text-white font-body font-medium ${selectedIds.has(c.id) ? 'bg-accent/5' : 'bg-card'}`}>{c.name}</td>
                   <td className="px-5 py-3.5 text-sm text-muted font-body">{c.phone}</td>
                   <td className="px-5 py-3.5 text-sm text-muted font-body">{c.number?.label || '—'}</td>
                   <td className="px-5 py-3.5">
