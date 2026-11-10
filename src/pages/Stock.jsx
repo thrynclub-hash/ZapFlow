@@ -15,6 +15,37 @@ function money(val) {
   return `R$ ${Number(val || 0).toFixed(2).replace('.', ',')}`
 }
 
+// Ordena tamanho — numérico primeiro (36, 38, 40...), depois letra na
+// ordem de grade comum (PP, P, M, G, GG, XG, XGG).
+const SIZE_LETTER_ORDER = ['PP', 'P', 'M', 'G', 'GG', 'XG', 'XGG']
+function sizeSortKey(size) {
+  if (!size) return [999, 999]
+  const [maybeNum, maybeLetter] = size.includes('/') ? size.split('/') : [null, size]
+  const num = maybeNum ? Number(maybeNum) : null
+  const letterIdx = SIZE_LETTER_ORDER.indexOf((maybeLetter || '').toUpperCase())
+  return [num ?? 0, letterIdx === -1 ? 999 : letterIdx]
+}
+
+// Agrupa variações por cor — era 1 linha solta por combinação cor+tamanho
+// (podia passar de 50 linhas num produto só), vira 1 linha por cor com os
+// tamanhos lado a lado.
+function groupVariantsByColor(variants) {
+  const byColor = new Map()
+  for (const v of variants) {
+    const key = v.color || v.name
+    if (!byColor.has(key)) byColor.set(key, { color: key, image_url: v.image_url, sizes: [] })
+    byColor.get(key).sizes.push(v)
+  }
+  for (const group of byColor.values()) {
+    group.sizes.sort((a, b) => {
+      const [an, al] = sizeSortKey(a.size)
+      const [bn, bl] = sizeSortKey(b.size)
+      return an - bn || al - bl
+    })
+  }
+  return [...byColor.values()]
+}
+
 export default function Stock() {
   const { profile } = useAuth()
   const clientId = profile?.client_id
@@ -377,18 +408,24 @@ export default function Stock() {
                             )}
                           </div>
 
-                          {/* Chips de variações de tamanho — com foto quando a
-                              variação veio de importação (image_url preenchido) */}
+                          {/* Grade agrupada por cor — antes era 1 chip por
+                              combinação (50 linhas soltas pra um produto só),
+                              bagunçado demais de ler. Agrupa por cor, 1 linha
+                              de tamanhos por cor, foto 1x por grupo. */}
                           {hasVariants && (
-                            <div className="flex flex-wrap gap-1 max-w-xs">
-                              {p.product_variants.map(v => (
-                                <span
-                                  key={v.id}
-                                  className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-muted"
-                                >
-                                  {v.image_url && <img src={v.image_url} alt="" className="w-4 h-4 rounded-sm object-cover" />}
-                                  {v.color ? `${v.color}${v.size ? ' · ' + v.size : ''}` : v.name}: {v.stock_qty}
-                                </span>
+                            <div className="space-y-1 max-w-sm">
+                              {groupVariantsByColor(p.product_variants).map(group => (
+                                <div key={group.color} className="flex items-center gap-2">
+                                  {group.image_url && <img src={group.image_url} alt="" className="w-7 h-7 rounded object-cover border border-border shrink-0" />}
+                                  <span className="text-[11px] font-body font-medium text-ink shrink-0">{group.color}</span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {group.sizes.map(s => (
+                                      <span key={s.id} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-muted">
+                                        {s.size || '—'}: {s.stock_qty}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
                               ))}
                             </div>
                           )}
@@ -1223,7 +1260,12 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
               <div className="space-y-1.5 pt-1">
                 {variants.map((v, i) => (
                   <div key={v.id || i} className="flex items-center justify-between bg-card border border-border/80 px-3 py-2 rounded-xl text-xs font-body">
-                    <span className="font-medium text-ink">{v.name}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {v.image_url
+                        ? <img src={v.image_url} alt="" className="w-8 h-8 rounded-md object-cover shrink-0 border border-border" />
+                        : <div className="w-8 h-8 rounded-md bg-surface border border-border shrink-0" />}
+                      <span className="font-medium text-ink truncate">{v.name}</span>
+                    </div>
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-muted">{v.stock_qty} unidades</span>
                       <button type="button" onClick={() => removeVariant(i)} className="text-muted hover:text-red-500">
