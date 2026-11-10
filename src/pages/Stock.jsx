@@ -876,6 +876,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
   const [variants, setVariants] = useState(product.product_variants || [])
   const [varName, setVarName] = useState('')
   const [varStock, setVarStock] = useState('')
+  const [varImageUrl, setVarImageUrl] = useState('')
 
   const [saving, setSaving] = useState(false)
 
@@ -897,15 +898,21 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
         id: 'temp-' + Date.now(),
         name: varName.trim(),
         stock_qty: Number(varStock) || 0,
+        image_url: varImageUrl.trim() || null,
         active: true,
       }
     ])
     setVarName('')
     setVarStock('')
+    setVarImageUrl('')
   }
 
   function removeVariant(index) {
     setVariants(prev => prev.filter((_, i) => i !== index))
+  }
+
+  function setVariantImage(index, url) {
+    setVariants(prev => prev.map((v, i) => i === index ? { ...v, image_url: url || null } : v))
   }
 
   async function handleSave(e) {
@@ -983,6 +990,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
               client_id: clientId,
               name: v.name,
               stock_qty: Number(v.stock_qty) || 0,
+              image_url: v.image_url || null,
               unit_price: Number(unitPrice) || 0,
               promo_price: promoPrice ? Number(promoPrice) : null,
             })
@@ -990,6 +998,7 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
             await supabase.from('product_variants').update({
               name: v.name,
               stock_qty: Number(v.stock_qty) || 0,
+              image_url: v.image_url || null,
             }).eq('id', v.id)
           }
         }
@@ -1245,7 +1254,13 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
                 value={varStock}
                 onChange={e => setVarStock(e.target.value)}
                 placeholder="Qtd estoque"
-                className="w-28 bg-card border border-border rounded-xl px-3 py-2 text-xs text-ink font-mono focus:outline-none focus:border-accent"
+                className="w-24 bg-card border border-border rounded-xl px-3 py-2 text-xs text-ink font-mono focus:outline-none focus:border-accent"
+              />
+              <input
+                value={varImageUrl}
+                onChange={e => setVarImageUrl(e.target.value)}
+                placeholder="URL da foto (opcional)"
+                className="w-40 bg-card border border-border rounded-xl px-3 py-2 text-xs text-ink focus:outline-none focus:border-accent"
               />
               <button
                 type="button"
@@ -1261,9 +1276,16 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
                 {variants.map((v, i) => (
                   <div key={v.id || i} className="flex items-center justify-between bg-card border border-border/80 px-3 py-2 rounded-xl text-xs font-body">
                     <div className="flex items-center gap-2 min-w-0">
-                      {v.image_url
-                        ? <img src={v.image_url} alt="" className="w-8 h-8 rounded-md object-cover shrink-0 border border-border" />
-                        : <div className="w-8 h-8 rounded-md bg-surface border border-border shrink-0" />}
+                      <button
+                        type="button"
+                        title="Clique pra colar a URL da foto desta variação"
+                        onClick={() => setVariantImage(i, prompt('URL da foto desta variação:', v.image_url || '') ?? v.image_url)}
+                        className="shrink-0"
+                      >
+                        {v.image_url
+                          ? <img src={v.image_url} alt="" className="w-8 h-8 rounded-md object-cover border border-border" />
+                          : <div className="w-8 h-8 rounded-md bg-surface border border-border flex items-center justify-center"><ImageIcon size={12} className="text-muted" /></div>}
+                      </button>
                       <span className="font-medium text-ink truncate">{v.name}</span>
                     </div>
                     <div className="flex items-center gap-3">
@@ -1325,6 +1347,12 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
 // Componente: Modal de Ajuste de Saldo de Estoque com Kardex
 // -------------------------------------------------------------
 function StockAdjustModal({ product, clientId, onClose, onSaved, itemNoun = 'Produto' }) {
+  const hasVariants = (product.product_variants || []).length > 0
+  // Bug real achado ao vivo (2026-11-10): produto com grade (cor/tamanho)
+  // só deixava ajustar o ESTOQUE TOTAL, sem saber de qual variação é —
+  // ajuste virava número errado pra todo mundo. Agora exige escolher a
+  // variação primeiro quando o produto tem grade.
+  const [variantId, setVariantId] = useState(hasVariants ? product.product_variants[0].id : null)
   const [type, setType] = useState('add') // add | remove | set
   const [qty, setQty] = useState('')
   const [reason, setReason] = useState('Entrada de mercadoria')
@@ -1337,7 +1365,8 @@ function StockAdjustModal({ product, clientId, onClose, onSaved, itemNoun = 'Pro
     supabase.from('suppliers').select('id, name').eq('client_id', clientId).order('name').then(({ data }) => setSuppliers(data || []))
   }, [clientId])
 
-  const current = product.stock_qty || 0
+  const selectedVariant = hasVariants ? product.product_variants.find(v => v.id === variantId) : null
+  const current = hasVariants ? (selectedVariant?.stock_qty || 0) : (product.stock_qty || 0)
   const numQty = Number(qty) || 0
 
   const newStock = type === 'add'
@@ -1354,20 +1383,25 @@ function StockAdjustModal({ product, clientId, onClose, onSaved, itemNoun = 'Pro
     try {
       const diff = newStock - current
 
-      // 1. Atualiza produto
-      const { error: pErr } = await supabase
-        .from('products')
-        .update({ stock_qty: newStock })
-        .eq('id', product.id)
+      if (hasVariants) {
+        // Ajusta a variação, depois recalcula o total do produto como soma
+        // de todas as variações — nunca mexe no total direto com grade.
+        const { error: vErr } = await supabase.from('product_variants').update({ stock_qty: newStock }).eq('id', variantId)
+        if (vErr) throw vErr
+        const newTotal = product.product_variants.reduce((s, v) => s + (v.id === variantId ? newStock : (v.stock_qty || 0)), 0)
+        const { error: pErr } = await supabase.from('products').update({ stock_qty: newTotal }).eq('id', product.id)
+        if (pErr) throw pErr
+      } else {
+        const { error: pErr } = await supabase.from('products').update({ stock_qty: newStock }).eq('id', product.id)
+        if (pErr) throw pErr
+      }
 
-      if (pErr) throw pErr
-
-      // 2. Insere Kardex
+      // Kardex
       await supabase.from('stock_movements').insert({
         client_id: clientId,
         product_id: product.id,
         qty_change: diff,
-        reason: reason,
+        reason: hasVariants ? `${reason} (${selectedVariant?.color || selectedVariant?.name}${selectedVariant?.size ? ' · ' + selectedVariant.size : ''})` : reason,
         previous_stock: current,
         new_stock: newStock,
         notes: notes.trim() || null,
@@ -1391,10 +1425,28 @@ function StockAdjustModal({ product, clientId, onClose, onSaved, itemNoun = 'Pro
         </div>
 
         <p className="text-xs text-muted font-body">
-          {itemNoun}: <strong className="text-ink">{product.name}</strong> (Saldo atual: {current} un)
+          {itemNoun}: <strong className="text-ink">{product.name}</strong>
+          {!hasVariants && ` (Saldo atual: ${current} un)`}
         </p>
 
         <form onSubmit={handleAdjust} className="space-y-3.5">
+          {hasVariants && (
+            <div>
+              <label className="block text-xs font-body text-muted mb-1">Variação (cor / tamanho)</label>
+              <select
+                value={variantId}
+                onChange={e => setVariantId(e.target.value)}
+                className="w-full bg-surface border border-border rounded-xl px-3.5 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+              >
+                {product.product_variants.map(v => (
+                  <option key={v.id} value={v.id}>
+                    {v.color || v.name}{v.size ? ` · ${v.size}` : ''} — saldo atual: {v.stock_qty} un
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-2">
             {[
               ['add', '+ Entrada'],
