@@ -167,7 +167,7 @@ const PLANS = [
       'Whitelabel completo (sua marca e domínio)',
       'Painel de gestão de clientes e repasse',
       'Calculadora de margem e propostas',
-      'Atendente Grokbot personalizado por cliente',
+      'Atendente IA personalizado por cliente',
       'Acompanhamento e consultoria técnica VIP'
     ]
   }
@@ -237,14 +237,14 @@ export default function Landing() {
       {/* --------------------------------------------------------- */}
       {/* 0. FAIXA NO TOPO / ANNOUNCEMENT BAR                       */}
       {/* --------------------------------------------------------- */}
-      <div className="bg-[#0b101b] text-white/90 py-2.5 px-4 text-center font-body text-xs border-b border-white/10 relative z-50 flex items-center justify-center gap-2">
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-accent text-white font-mono text-[10px] uppercase font-bold tracking-wider">
+      <div className="bg-[#0b101b] text-white/90 py-2.5 px-4 text-center font-body text-xs border-b border-white/10 relative z-50 flex items-center justify-center gap-2 flex-wrap">
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-accent text-white font-mono text-[10px] uppercase font-bold tracking-wider shrink-0">
           Novo ZapFlow 2.4
         </span>
-        <span className="text-white/85">
+        <span className="text-white/85 hidden sm:inline">
           Terminal PDV em tempo real, catálogo com fotos reais e atendente de vendas no WhatsApp.
         </span>
-        <a href="#demo" className="text-accent hover:text-white underline underline-offset-4 font-semibold ml-1 transition-colors">
+        <a href="#demo" className="text-accent hover:text-white underline underline-offset-4 font-semibold sm:ml-1 transition-colors shrink-0">
           Ver demonstração ao vivo →
         </a>
       </div>
@@ -298,7 +298,7 @@ export default function Landing() {
       {/* --------------------------------------------------------- */}
       {/* 2. HERO SECTION (72px Desktop + Live Mockup CSS/JS)       */}
       {/* --------------------------------------------------------- */}
-      <section className="relative pt-12 pb-20 md:pt-20 md:pb-32 px-4 sm:px-6 overflow-hidden">
+      <section className="relative pt-12 pb-12 md:pt-20 md:pb-16 px-4 sm:px-6 overflow-hidden">
         {/* Glow sutil de fundo */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[350px] bg-accent/10 blur-[130px] rounded-full pointer-events-none" />
 
@@ -360,29 +360,29 @@ export default function Landing() {
           <div className="lg:col-span-5 relative">
             <div className="rounded-3xl border border-border bg-card shadow-2xl overflow-hidden">
               {/* Barra de Janela Técnica */}
-              <div className="bg-surface/70 px-4 py-3 border-b border-border flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                  <span className="ml-3 font-mono text-[10px] text-muted tracking-wide">zapflow.app/terminal</span>
+              <div className="bg-surface/70 px-3 py-3 border-b border-border flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-400 shrink-0" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
+                  <span className="ml-2 font-mono text-[10px] text-muted tracking-wide hidden sm:inline whitespace-nowrap">zapflow.app/terminal</span>
                 </div>
-                <div className="flex items-center gap-1 bg-card rounded-lg p-0.5 border border-border/60">
+                <div className="flex items-center gap-0.5 bg-card rounded-lg p-0.5 border border-border/60 shrink-0">
                   <button
                     onClick={() => setMockupTab('whatsapp')}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono ${mockupTab === 'whatsapp' ? 'bg-accent text-white font-bold' : 'text-muted'}`}
+                    className={`px-1.5 py-1 rounded text-[9px] font-mono whitespace-nowrap ${mockupTab === 'whatsapp' ? 'bg-accent text-white font-bold' : 'text-muted'}`}
                   >
-                    WhatsApp IA
+                    WhatsApp
                   </button>
                   <button
                     onClick={() => setMockupTab('pdv')}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono ${mockupTab === 'pdv' ? 'bg-accent text-white font-bold' : 'text-muted'}`}
+                    className={`px-1.5 py-1 rounded text-[9px] font-mono whitespace-nowrap ${mockupTab === 'pdv' ? 'bg-accent text-white font-bold' : 'text-muted'}`}
                   >
-                    PDV Balcão
+                    PDV
                   </button>
                   <button
                     onClick={() => setMockupTab('estoque')}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono ${mockupTab === 'estoque' ? 'bg-accent text-white font-bold' : 'text-muted'}`}
+                    className={`px-1.5 py-1 rounded text-[9px] font-mono whitespace-nowrap ${mockupTab === 'estoque' ? 'bg-accent text-white font-bold' : 'text-muted'}`}
                   >
                     Estoque
                   </button>
@@ -404,7 +404,7 @@ export default function Landing() {
                       </div>
                     </div>
 
-                    {/* Mensagem 2: Grokbot Atendente com Foto da Peça */}
+                    {/* Mensagem 2: Atendente IA com Foto da Peça */}
                     <div className="flex items-start gap-2 max-w-[88%] ml-auto flex-row-reverse animate-fadein">
                       <div className="w-7 h-7 rounded-full bg-accent flex items-center justify-center text-white shrink-0 shadow-xs">
                         <Zap size={13} className="fill-white" />
@@ -679,7 +679,7 @@ export default function Landing() {
                 </li>
                 <li className="flex items-start gap-2">
                   <Check size={15} className="text-emerald-600 shrink-0 mt-0.5" />
-                  <span>Uma assinatura única e acessível cobrindo WhatsApp, CRM, PDV, Estoque e Emissão Fiscal.</span>
+                  <span>Uma assinatura única e acessível cobrindo WhatsApp, CRM, PDV e Estoque — sem mensalidade extra de ERP.</span>
                 </li>
               </ul>
             </div>

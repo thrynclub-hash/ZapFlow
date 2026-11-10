@@ -7,7 +7,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
-// ZapFlow — Estúdio de Treinamento do Agente de IA (Grokbot)
+// ZapFlow — Estúdio de Treinamento do Agente de IA (ZapFlow IA)
 // Permite ao lojista configurar a persona da atendente, regras da loja, fotos,
 // frete e chave Pix, com um Simulador Sandbox em tempo real para testar antes de ir pro WhatsApp.
 
@@ -237,7 +237,7 @@ export default function AiAgentStudio() {
           <div className="flex items-center gap-2">
             <h1 className="font-display font-bold text-3xl text-ink">Estúdio do Agente de IA</h1>
             <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-accent/10 text-accent font-semibold flex items-center gap-1">
-              <Sparkles size={12} /> Motor Grokbot
+              <Sparkles size={12} /> Motor ZapFlow IA
             </span>
           </div>
           <p className="text-muted text-sm font-body mt-1">
