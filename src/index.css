@@ -73,6 +73,27 @@
   animation: shimmer 2s infinite;
 }
 
+/* Glass (2026-11-09) — usado só no Dashboard, pedido explícito do Leonardo
+   pelos visuais. backdrop-filter nativo, sem lib nova. */
+.glass-panel {
+  background: color-mix(in srgb, white 58%, transparent);
+  backdrop-filter: blur(20px) saturate(1.25);
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+  border: 1px solid color-mix(in srgb, white 60%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 70%, transparent), 0 16px 40px -22px rgba(20, 26, 23, 0.16);
+}
+.glass-backdrop {
+  position: absolute;
+  inset: -40px -20px auto -20px;
+  height: 420px;
+  z-index: -1;
+  background:
+    radial-gradient(640px 360px at 10% 0%, rgba(13, 91, 255, 0.14), transparent 65%),
+    radial-gradient(560px 420px at 95% 10%, rgba(201, 162, 39, 0.16), transparent 60%);
+  filter: blur(10px);
+  pointer-events: none;
+}
+
 @media print {
   body {
     background: white !important;

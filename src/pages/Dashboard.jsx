@@ -28,6 +28,7 @@ export default function Dashboard() {
   const [stockSummary, setStockSummary] = useState({ totalItems: 0, totalValue: 0, lowStockItems: [] })
   const [conversationsCount, setConversationsCount] = useState(0)
   const [recentSales, setRecentSales] = useState([])
+  const [paymentBreakdown, setPaymentBreakdown] = useState([]) // [{method, total}] — hoje, dados reais
 
   useEffect(() => {
     if (clientId) loadDashboardData()
@@ -67,6 +68,17 @@ export default function Dashboard() {
 
       setTodaySales({ total: sumToday, count: list.length })
       setRecentSales(list.slice(0, 5))
+
+      // Quebra por forma de pagamento (dados reais, mesma query acima —
+      // zero chamada extra ao banco).
+      const byMethod = {}
+      for (const o of opps || []) {
+        for (const p of (o.opportunity_payments || [])) {
+          const m = p.method || 'outro'
+          byMethod[m] = (byMethod[m] || 0) + Number(p.amount || 0)
+        }
+      }
+      setPaymentBreakdown(Object.entries(byMethod).map(([method, total]) => ({ method, total })).sort((a, b) => b.total - a.total))
 
       // 2. Caixa Aberto
       const { data: cash } = await supabase
@@ -129,7 +141,8 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      <div className="glass-backdrop" aria-hidden="true" />
       {/* Topo do Centro de Comando */}
       <div className="flex items-center justify-between flex-wrap gap-4 border-b border-border pb-4">
         <div>
@@ -163,10 +176,10 @@ export default function Dashboard() {
       {/* Grid de KPIs Principais (4 Colunas Desktop) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1: Vendas do Dia */}
-        <div className="bg-card border border-border rounded-2xl p-4.5 space-y-2 shadow-xs">
+        <div className="glass-panel rounded-2xl p-4.5 space-y-2 shadow-xs">
           <div className="flex items-center justify-between text-muted text-xs">
             <span className="font-mono uppercase tracking-wider">Vendas de Hoje</span>
-            <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600">
+            <span className="p-1.5 rounded-lg bg-gold/10 text-gold">
               <TrendingUp size={15} />
             </span>
           </div>
@@ -182,7 +195,7 @@ export default function Dashboard() {
         </div>
 
         {/* KPI 2: Caixa Aberto */}
-        <div className="bg-card border border-border rounded-2xl p-4.5 space-y-2 shadow-xs">
+        <div className="glass-panel rounded-2xl p-4.5 space-y-2 shadow-xs">
           <div className="flex items-center justify-between text-muted text-xs">
             <span className="font-mono uppercase tracking-wider">Gaveta do Caixa</span>
             <span className="p-1.5 rounded-lg bg-accent/10 text-accent">
@@ -203,7 +216,7 @@ export default function Dashboard() {
         </div>
 
         {/* KPI 3: Estoque Imobilizado */}
-        <div className="bg-card border border-border rounded-2xl p-4.5 space-y-2 shadow-xs">
+        <div className="glass-panel rounded-2xl p-4.5 space-y-2 shadow-xs">
           <div className="flex items-center justify-between text-muted text-xs">
             <span className="font-mono uppercase tracking-wider">Estoque Ativo</span>
             <span className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600">
@@ -222,7 +235,7 @@ export default function Dashboard() {
         </div>
 
         {/* KPI 4: Atendimentos WhatsApp */}
-        <div className="bg-card border border-border rounded-2xl p-4.5 space-y-2 shadow-xs">
+        <div className="glass-panel rounded-2xl p-4.5 space-y-2 shadow-xs">
           <div className="flex items-center justify-between text-muted text-xs">
             <span className="font-mono uppercase tracking-wider">Atendimento WhatsApp</span>
             <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600">
@@ -244,7 +257,7 @@ export default function Dashboard() {
       {/* Grid Central: Vendas Recentes x Alertas de Estoque */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Tabela de Vendas Recentes (7 cols) */}
-        <div className="lg:col-span-7 bg-card border border-border rounded-2xl p-5 space-y-4 shadow-xs">
+        <div className="lg:col-span-7 glass-panel rounded-2xl p-5 space-y-4 shadow-xs">
           <div className="flex items-center justify-between border-b border-border pb-3">
             <div className="flex items-center gap-2">
               <ShoppingCart size={17} className="text-accent" />
@@ -278,7 +291,7 @@ export default function Dashboard() {
         </div>
 
         {/* Alertas de Reposição de Estoque (5 cols) */}
-        <div className="lg:col-span-5 bg-card border border-border rounded-2xl p-5 space-y-4 shadow-xs">
+        <div className="lg:col-span-5 glass-panel rounded-2xl p-5 space-y-4 shadow-xs">
           <div className="flex items-center justify-between border-b border-border pb-3">
             <div className="flex items-center gap-2">
               <AlertTriangle size={17} className="text-amber-500" />
@@ -313,6 +326,31 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Quebra de Pagamentos de Hoje (dados reais, mesma query de vendas) */}
+      {paymentBreakdown.length > 0 && (
+        <div className="glass-panel rounded-2xl p-5 space-y-3 shadow-xs">
+          <h3 className="font-display font-bold text-sm text-ink">Pagamentos de Hoje por Forma</h3>
+          <div className="h-2.5 rounded-full overflow-hidden flex bg-surface/60">
+            {paymentBreakdown.map((p, i) => (
+              <div
+                key={p.method}
+                style={{ width: `${(p.total / todaySales.total * 100) || 0}%`, background: PAYMENT_COLORS[i % PAYMENT_COLORS.length] }}
+              />
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs font-mono">
+            {paymentBreakdown.map((p, i) => (
+              <span key={p.method} className="flex items-center gap-1.5 text-muted capitalize">
+                <span className="w-2 h-2 rounded-full" style={{ background: PAYMENT_COLORS[i % PAYMENT_COLORS.length] }} />
+                {p.method} <strong className="text-ink">{money(p.total)}</strong>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+const PAYMENT_COLORS = ['#0D5BFF', '#C9A227', '#10B981', '#8B5CF6']

@@ -22,6 +22,7 @@ export default {
         accent: '#0D5BFF',        // azul elétrico "Vocero" — cor de assinatura nova
         'accent-dim': '#0A4DE6',
         violet: '#8B5CF6',        // sem equivalente no vocero, mantido (uso raro/destaque)
+        gold: '#C9A227',          // destaque dourado (2026-11-09) — Dashboard glass, uso raro
         muted: '#5F6A65',
         surface: '#EEF4F0',       // --bg-subtle do vocero (verde-menta claro)
         ink: '#141A17',           // --text do vocero
