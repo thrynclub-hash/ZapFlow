@@ -21,8 +21,13 @@ async function hmac(value: string) {
   return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function redirect(status: "success" | "error", message?: string) {
-  const url = new URL(`${appUrl}/admin/clients`);
+// Bug real achado ao vivo (2026-11-10): sempre mandava pra /admin/clients,
+// mesmo quando foi o próprio cliente (self-service, via Settings) que
+// conectou — ele caía na área admin, que não é dele. Agora o destino
+// depende da origem gravada no state (ver ml-oauth-start).
+function redirect(origin: "self" | "admin", status: "success" | "error", message?: string) {
+  const path = origin === "admin" ? "/admin/clients" : "/settings";
+  const url = new URL(`${appUrl}${path}`);
   url.searchParams.set("ml", status);
   if (message) url.searchParams.set("msg", message);
   return new Response(null, { status: 302, headers: { Location: url.toString() } });
@@ -33,11 +38,12 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state") ?? "";
-    const [clientId, sig] = state.split(".");
+    const [clientId, origin, sig] = state.split(".");
+    const safeOrigin = origin === "admin" ? "admin" : "self"; // default seguro se state vier malformado
 
-    if (!code || !clientId || !sig) return redirect("error", "parametros_invalidos");
-    const expectedSig = await hmac(clientId);
-    if (sig !== expectedSig) return redirect("error", "state_invalido");
+    if (!code || !clientId || !origin || !sig) return redirect(safeOrigin, "error", "parametros_invalidos");
+    const expectedSig = await hmac(`${clientId}.${origin}`);
+    if (sig !== expectedSig) return redirect(safeOrigin, "error", "state_invalido");
 
     const tokenRes = await fetch("https://api.mercadolibre.com/oauth/token", {
       method: "POST",
@@ -45,7 +51,7 @@ Deno.serve(async (req: Request) => {
       body: `grant_type=authorization_code&client_id=${encodeURIComponent(mlClientId)}&client_secret=${encodeURIComponent(mlClientSecret)}&code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(redirectUri)}`,
     });
     const tokenData = await tokenRes.json().catch(() => ({}));
-    if (!tokenRes.ok || !tokenData?.access_token) return redirect("error", tokenData?.message || "token_falhou");
+    if (!tokenRes.ok || !tokenData?.access_token) return redirect(safeOrigin, "error", tokenData?.message || "token_falhou");
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const { data: existing } = await supabase.from("marketplace_channels").select("id").eq("client_id", clientId).eq("platform", "mercadolivre").maybeSingle();
@@ -61,8 +67,8 @@ Deno.serve(async (req: Request) => {
       await supabase.from("marketplace_channels").insert({ client_id: clientId, platform: "mercadolivre", credentials, active: true });
     }
 
-    return redirect("success");
+    return redirect(safeOrigin, "success");
   } catch (e) {
-    return redirect("error", String(e).slice(0, 100));
+    return redirect("self", "error", String(e).slice(0, 100));
   }
 });

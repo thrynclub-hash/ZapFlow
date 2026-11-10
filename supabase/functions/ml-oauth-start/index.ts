@@ -43,14 +43,21 @@ Deno.serve(async (req: Request) => {
 
     let targetClientId = profile?.client_id;
     const body = await req.json().catch(() => ({}));
+    // origem fica no state (assinada junto, pra não dar pra forjar) — o
+    // callback usa isso só pra saber pra ONDE mandar o navegador de volta
+    // (admin volta pra /admin/clients, self-service volta pra /settings).
+    // Bug real achado ao vivo: callback sempre mandava pra /admin/clients,
+    // mesmo quando quem conectou foi o próprio cliente (Lisa) via Settings.
+    let origin = "self";
     if (body?.client_id) {
       if (profile?.role !== "admin") return new Response(JSON.stringify({ ok: false, error: "Só admin pode conectar em nome de outro cliente." }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       targetClientId = body.client_id;
+      origin = "admin";
     }
     if (!targetClientId) return new Response(JSON.stringify({ ok: false, error: "Nenhum cliente informado." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    const sig = await hmac(targetClientId);
-    const state = `${targetClientId}.${sig}`;
+    const sig = await hmac(`${targetClientId}.${origin}`);
+    const state = `${targetClientId}.${origin}.${sig}`;
     const url = new URL("https://auth.mercadolivre.com.br/authorization");
     url.searchParams.set("response_type", "code");
     url.searchParams.set("client_id", mlClientId);
