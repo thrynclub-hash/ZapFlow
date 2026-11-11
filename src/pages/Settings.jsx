@@ -228,6 +228,13 @@ export default function Settings() {
       {modules.ia_agent && <AiAgentHoursCard clientId={profile.client_id} />}
       {modules.ia_agent && <KnowledgeBaseCard clientId={profile.client_id} />}
 
+      {/* Fluxo de agendamento por palavra-chave (reply_flows) — a tela de
+          Fluxos de Automação apontava pra cá dizendo "edite aqui", mas não
+          existia campo nenhum: só o horário do Agente de IA (acima, e só
+          visível com modules.ia_agent). Esse fluxo é o CONTRÁRIO — é o que
+          roda pra quem NÃO tem ia_agent (ex: Clínica Hassum), sempre visível. */}
+      <ScheduleFlowCard clientId={profile.client_id} />
+
       {/* Conexão self-service de marketplace (2026-11-10) — cliente conecta
           a PRÓPRIA conta Mercado Livre sem precisar de admin nem token:
           OAuth de verdade, loga direto no site do Mercado Livre. */}
@@ -418,6 +425,84 @@ function AiAgentHoursCard({ clientId }) {
       <button onClick={save} disabled={saving}
         className="flex items-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2.5 rounded-lg text-sm font-display font-bold transition-colors">
         {saving ? 'Salvando...' : saved ? 'Salvo!' : 'Salvar horário'}
+      </button>
+    </div>
+  )
+}
+
+function ScheduleFlowCard({ clientId }) {
+  const [enabled, setEnabled] = useState(false)
+  const [triggerKeyword, setTriggerKeyword] = useState('eu quero, quero, bora, quero sim, pode ser')
+  const [askPeriodMessage, setAskPeriodMessage] = useState('Que ótimo, {{nome}}! Você prefere atendimento pela manhã ou à tarde?')
+  const [confirmMessage, setConfirmMessage] = useState('Perfeito! Em breve nossa equipe entra em contato pra confirmar seu horário 📅')
+  const [notifyPhone, setNotifyPhone] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => { fetchConfig() }, [])
+
+  async function fetchConfig() {
+    const { data } = await supabase.from('reply_flows').select('enabled, trigger_keyword, ask_period_message, confirm_message, notify_phone').eq('client_id', clientId).maybeSingle()
+    setEnabled(data?.enabled ?? false)
+    if (data?.trigger_keyword) setTriggerKeyword(data.trigger_keyword)
+    if (data?.ask_period_message) setAskPeriodMessage(data.ask_period_message)
+    if (data?.confirm_message) setConfirmMessage(data.confirm_message)
+    setNotifyPhone(data?.notify_phone || '')
+    setLoading(false)
+  }
+
+  async function save() {
+    setSaving(true)
+    const { error } = await supabase.from('reply_flows').upsert({
+      client_id: clientId, enabled, trigger_keyword: triggerKeyword, ask_period_message: askPeriodMessage,
+      confirm_message: confirmMessage, notify_phone: notifyPhone || null,
+    }, { onConflict: 'client_id' })
+    setSaving(false)
+    if (error) { alert('Erro ao salvar: ' + error.message); return }
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  if (loading) return null
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display font-semibold text-white flex items-center gap-2"><Clock size={16} /> Fluxo de Agendamento via WhatsApp</h3>
+        <button onClick={() => setEnabled(e => !e)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-body font-bold transition-colors ${enabled ? 'bg-emerald-600 text-white' : 'bg-surface text-muted border border-border'}`}>
+          {enabled ? 'Ativo' : 'Pausado'}
+        </button>
+      </div>
+      <p className="text-muted text-xs font-body">
+        Quando o cliente escreve uma das palavras-gatilho, o sistema pergunta o turno (manhã/tarde) e confirma — sem precisar de atendente nem de IA.
+      </p>
+
+      <div>
+        <label className="block text-xs text-muted font-body mb-1.5">Palavras-gatilho (separe por vírgula)</label>
+        <input value={triggerKeyword} onChange={e => setTriggerKeyword(e.target.value)}
+          className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body focus:outline-none focus:border-accent" />
+      </div>
+      <div>
+        <label className="block text-xs text-muted font-body mb-1.5">Pergunta do turno (use {'{{nome}}'} pra personalizar)</label>
+        <textarea value={askPeriodMessage} onChange={e => setAskPeriodMessage(e.target.value)} rows={2}
+          className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body focus:outline-none focus:border-accent resize-none" />
+      </div>
+      <div>
+        <label className="block text-xs text-muted font-body mb-1.5">Mensagem de confirmação</label>
+        <textarea value={confirmMessage} onChange={e => setConfirmMessage(e.target.value)} rows={2}
+          className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body focus:outline-none focus:border-accent resize-none" />
+      </div>
+      <div>
+        <label className="block text-xs text-muted font-body mb-1.5">WhatsApp da equipe (recebe aviso de cada agendamento)</label>
+        <input value={notifyPhone} onChange={e => setNotifyPhone(e.target.value)} placeholder="5519999999999"
+          className="w-full bg-surface border border-border rounded-lg px-4 py-3 text-sm text-white font-body placeholder-muted/50 focus:outline-none focus:border-accent" />
+      </div>
+
+      <button onClick={save} disabled={saving}
+        className="flex items-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-50 text-bg px-4 py-2.5 rounded-lg text-sm font-display font-bold transition-colors">
+        {saving ? 'Salvando...' : saved ? 'Salvo!' : 'Salvar fluxo'}
       </button>
     </div>
   )
