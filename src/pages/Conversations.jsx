@@ -25,13 +25,15 @@ export default function Conversations() {
   const [conversations, setConversations] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('todas') // todas | ia | humano | pix
+  const [numberRow, setNumberRow] = useState(null) // número WhatsApp real do cliente (p/ enviar de verdade)
+  const [pixKey, setPixKey] = useState('')
+  const [pixKeyType, setPixKeyType] = useState('')
+  const [pixBeneficiary, setPixBeneficiary] = useState('')
 
   // Chat ativo
   const [messages, setMessages] = useState([])
   const [inputText, setInputText] = useState('')
   const [sending, setSending] = useState(false)
-  const [isAiHandling, setIsAiHandling] = useState(true)
 
   // Produtos para envio rápido de fotos no chat
   const [products, setProducts] = useState([])
@@ -52,42 +54,46 @@ export default function Conversations() {
   async function init() {
     setLoading(true)
     try {
-      // 1. Busca contatos com mensagens
+      // 1. Busca contatos
       const { data: contactsData } = await supabase
         .from('contacts')
         .select('*')
         .eq('client_id', clientId)
         .order('created_at', { ascending: false })
-        .limit(40)
+        .limit(200)
 
-      // 2. Busca mensagens recebidas recentes
+      // 2. Busca mensagens recebidas recentes (reais, via zapi-webhook)
       const { data: inbounds } = await supabase
         .from('inbound_messages')
         .select('*')
         .eq('client_id', clientId)
         .order('created_at', { ascending: false })
-        .limit(100)
+        .limit(300)
 
-      // Monta conversas unificadas
-      const list = (contactsData || []).map((c, i) => {
-        const contactMsgs = (inbounds || []).filter(m => m.contact_id === c.id || m.phone === c.phone)
-        const lastMsg = contactMsgs[0]?.message || 'Olá! Vi as peças no Instagram...'
-        const lastTime = contactMsgs[0]?.created_at || c.created_at
-
-        return {
-          id: c.id,
-          name: c.name || 'Cliente WhatsApp',
-          phone: c.phone,
-          lastMessage: lastMsg,
-          time: new Date(lastTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-          unread: i === 0,
-          aiActive: i % 2 === 0, // simulação de status
-          hasPix: i === 1,
-          tags: c.tags || ['Cliente'],
-          totalSpent: 180 + i * 90,
-          ordersCount: 1 + (i % 3),
-        }
-      })
+      // Bug real achado ao vivo (2026-11-10): a bandeja mostrava TODO
+      // contato cadastrado, mesmo quem nunca mandou mensagem — com texto
+      // de exemplo inventado ("Olá! Vi as peças no Instagram...") pra
+      // preencher o vazio. "Bandeja de Conversas" só faz sentido pra quem
+      // realmente conversou — filtra pra isso, mostra só mensagem real.
+      const list = (contactsData || [])
+        .map(c => {
+          const contactMsgs = (inbounds || []).filter(m => m.contact_id === c.id || m.phone === c.phone)
+          if (contactMsgs.length === 0) return null
+          const last = contactMsgs[0]
+          return {
+            id: c.id,
+            name: c.name || 'Cliente WhatsApp',
+            phone: c.phone,
+            lastMessage: last.message,
+            lastTimeRaw: last.created_at,
+            time: new Date(last.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            tags: c.tags || [],
+            lifecycleStage: c.lifecycle_stage,
+            status: c.status,
+          }
+        })
+        .filter(Boolean)
+        .sort((a, b) => new Date(b.lastTimeRaw) - new Date(a.lastTimeRaw))
 
       setConversations(list)
       if (list.length > 0 && !selectedId) {
@@ -95,7 +101,27 @@ export default function Conversations() {
         loadChatMessages(list[0])
       }
 
-      // 3. Catálogo para envio de fotos no chat
+      // 3. Número WhatsApp real do cliente (pra enviar de verdade)
+      const { data: number } = await supabase
+        .from('client_numbers')
+        .select('id, active')
+        .eq('client_id', clientId)
+        .eq('active', true)
+        .limit(1)
+        .maybeSingle()
+      setNumberRow(number || null)
+
+      // 3.5. Chave Pix real configurada em Estúdio da IA (ai_agent_settings)
+      const { data: aiSettings } = await supabase
+        .from('ai_agent_settings')
+        .select('pix_key, pix_key_type, pix_beneficiary')
+        .eq('client_id', clientId)
+        .maybeSingle()
+      setPixKey(aiSettings?.pix_key || '')
+      setPixKeyType(aiSettings?.pix_key_type || '')
+      setPixBeneficiary(aiSettings?.pix_beneficiary || '')
+
+      // 4. Catálogo para envio de fotos no chat
       const { data: prods } = await supabase
         .from('products')
         .select('id, name, unit_price, promo_price, is_promo, images')
@@ -111,36 +137,28 @@ export default function Conversations() {
     }
   }
 
-  function loadChatMessages(contact) {
-    setIsAiHandling(contact.aiActive)
-    setMessages([
-      {
-        id: 1,
-        sender: 'user',
-        text: 'Olá! Vocês ainda têm o vestido midi canelado no tamanho M?',
-        time: '14:20',
-      },
-      {
-        id: 2,
-        sender: 'ai',
-        text: 'Olá! Temos sim, temos 2 unidades no tamanho M pronta entrega! Ele está em oferta hoje por R$ 149,90. Olha a foto dele:',
-        time: '14:20',
-        photo: 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=400&q=80',
-      },
-      {
-        id: 3,
-        sender: 'user',
-        text: 'Que lindo! Consegue me mandar o Pix pra eu pagar agora e garantir?',
-        time: '14:22',
-      },
-      {
-        id: 4,
-        sender: 'ai',
-        text: 'Com certeza! Já reservei o seu pedido. Segue a chave Pix copia e cola da loja:',
-        time: '14:22',
-        pix: '00020126580014br.gov.bcb.pix0136loja-zapflow-pix-demo',
-      }
-    ])
+  // Bug real achado ao vivo (2026-11-10): o chat aberto sempre mostrava o
+  // MESMO script fixo (vestido/Pix de demonstração), pra qualquer cliente,
+  // qualquer contato — nunca puxava mensagem real nenhuma. Mostra as
+  // mensagens reais recebidas (inbound_messages); resposta enviada por
+  // aqui ainda não fica salva em nenhuma tabela (só o status sent/error em
+  // message_logs, sem o texto), então só entra no histórico local da
+  // sessão atual, não é reconstruída do banco ao reabrir a conversa.
+  async function loadChatMessages(contact) {
+    const { data } = await supabase
+      .from('inbound_messages')
+      .select('*')
+      .eq('client_id', clientId)
+      .or(`contact_id.eq.${contact.id},phone.eq.${contact.phone}`)
+      .order('created_at', { ascending: true })
+      .limit(100)
+
+    setMessages((data || []).map(m => ({
+      id: m.id,
+      sender: 'user',
+      text: m.message,
+      time: new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    })))
   }
 
   function handleSelectConversation(c) {
@@ -148,48 +166,63 @@ export default function Conversations() {
     loadChatMessages(c)
   }
 
+  // Envio real — chama a mesma function send-message usada no resto do
+  // sistema (Campaigns, Birthdays), que de fato manda pela Z-API.
+  async function sendReal(text, extra = {}) {
+    if (!numberRow) {
+      alert('Nenhum número de WhatsApp ativo configurado pra esta loja. Configure em Configurações antes de enviar.')
+      return false
+    }
+    const { error } = await supabase.functions.invoke('send-message', {
+      body: { number_id: numberRow.id, phone: selectedContact.phone, message: text, contact_id: selectedContact.id, ...extra },
+    })
+    if (error) {
+      alert('Erro ao enviar: ' + error.message)
+      return false
+    }
+    return true
+  }
+
   // Enviar mensagem manual pelo atendente humano
   async function handleSendMessage(e) {
     if (e) e.preventDefault()
-    if (!inputText.trim() || sending) return
+    if (!inputText.trim() || sending || !selectedContact) return
     setSending(true)
-
-    const newMsg = {
-      id: Date.now(),
-      sender: 'human',
-      text: inputText.trim(),
-      time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    const text = inputText.trim()
+    const ok = await sendReal(text)
+    if (ok) {
+      setMessages(prev => [...prev, { id: Date.now(), sender: 'human', text, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }])
+      setInputText('')
     }
-
-    setMessages(prev => [...prev, newMsg])
-    setInputText('')
     setSending(false)
   }
 
-  // Envio rápido de foto da peça do catálogo
-  function handleSendProductPhoto(p) {
-    if (!p.images || p.images.length === 0) return
-    const newMsg = {
-      id: Date.now(),
-      sender: 'human',
-      text: `Aqui está a foto de ${p.name}! ${p.is_promo && p.promo_price ? `Está em promoção por R$ ${p.promo_price}` : `Valor: R$ ${p.unit_price}`}.`,
-      time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-      photo: p.images[0],
+  // Envio rápido de foto do catálogo real
+  async function handleSendProductPhoto(p) {
+    if (!p.images || p.images.length === 0 || !selectedContact) return
+    const priceText = p.is_promo && p.promo_price ? `Está em promoção por R$ ${p.promo_price}` : `Valor: R$ ${p.unit_price}`
+    const text = `${p.name} — ${priceText}`
+    const ok = await sendReal(text, { image_url: p.images[0] })
+    if (ok) {
+      setMessages(prev => [...prev, { id: Date.now(), sender: 'human', text, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), photo: p.images[0] }])
+      setPhotoPickerOpen(false)
     }
-    setMessages(prev => [...prev, newMsg])
-    setPhotoPickerOpen(false)
   }
 
-  // Envio rápido de Pix da loja
-  function handleSendPixCode() {
-    const newMsg = {
-      id: Date.now(),
-      sender: 'human',
-      text: 'Segue a chave Pix da nossa loja para confirmação do pedido:',
-      time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-      pix: '00020126580014br.gov.bcb.pix0136loja-zapflow-oficial',
+  // Envio da chave Pix REAL da loja (configurada em Estúdio da IA > Pix) —
+  // antes mandava um código fixo de demonstração que não funciona de
+  // verdade; sem chave configurada, agora avisa em vez de inventar uma.
+  async function handleSendPixCode() {
+    if (!selectedContact) return
+    if (!pixKey) {
+      alert('Nenhuma chave Pix configurada ainda. Configure em Estúdio da IA (Sofia) > Pix.')
+      return
     }
-    setMessages(prev => [...prev, newMsg])
+    const text = `Segue nossa chave Pix${pixKeyType ? ` (${pixKeyType.toUpperCase()})` : ''}: ${pixKey}${pixBeneficiary ? ` — ${pixBeneficiary}` : ''}. Após pagar, me envia o comprovante por aqui pra eu confirmar :)`
+    const ok = await sendReal(text)
+    if (ok) {
+      setMessages(prev => [...prev, { id: Date.now(), sender: 'human', text, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }])
+    }
   }
 
   const selectedContact = conversations.find(c => c.id === selectedId) || conversations[0]
@@ -198,9 +231,6 @@ export default function Conversations() {
     if (search.trim() && !c.name.toLowerCase().includes(search.toLowerCase()) && !c.phone.includes(search)) {
       return false
     }
-    if (filter === 'ia' && !c.aiActive) return false
-    if (filter === 'humano' && c.aiActive) return false
-    if (filter === 'pix' && !c.hasPix) return false
     return true
   })
 
@@ -218,9 +248,15 @@ export default function Conversations() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h1 className="font-display font-bold text-2xl text-ink">Bandeja de Atendimento</h1>
-          <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 font-semibold flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Conectado ao WhatsApp
-          </span>
+          {numberRow ? (
+            <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 font-semibold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Conectado ao WhatsApp
+            </span>
+          ) : (
+            <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-600 font-semibold">
+              Nenhum número ativo
+            </span>
+          )}
         </div>
 
         <span className="text-xs text-muted font-mono">
@@ -246,27 +282,6 @@ export default function Conversations() {
               />
             </div>
 
-            {/* Filtros em Pílulas */}
-            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide text-[10px] font-mono">
-              {[
-                ['todas', 'Todas'],
-                ['ia', 'IA Ativa'],
-                ['humano', 'Humano'],
-                ['pix', 'Com Pix'],
-              ].map(([k, label]) => (
-                <button
-                  key={k}
-                  onClick={() => setFilter(k)}
-                  className={`px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap ${
-                    filter === k
-                      ? 'bg-accent text-white font-bold'
-                      : 'bg-card border border-border text-muted hover:text-ink'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Lista de Contatos com Scroll */}
@@ -301,23 +316,13 @@ export default function Conversations() {
                         {c.lastMessage}
                       </p>
 
-                      <div className="flex items-center gap-1.5 mt-2">
-                        {c.aiActive ? (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.2 rounded bg-accent/10 text-accent font-bold">
-                            <Bot size={10} /> IA Atendendo
-                          </span>
-                        ) : (
+                      {c.lifecycleStage && (
+                        <div className="flex items-center gap-1.5 mt-2">
                           <span className="inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.2 rounded bg-surface border border-border text-muted">
-                            <UserCheck size={10} /> Humano
+                            {c.lifecycleStage}
                           </span>
-                        )}
-
-                        {c.hasPix && (
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 font-bold">
-                            Pix Enviado
-                          </span>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </button>
                 )
@@ -343,27 +348,6 @@ export default function Conversations() {
                 </div>
               </div>
 
-              {/* Toggle IA vs Humano */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsAiHandling(!isAiHandling)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-body font-medium transition-colors border ${
-                    isAiHandling
-                      ? 'bg-accent/10 text-accent border-accent/40 font-bold'
-                      : 'bg-amber-500/10 text-amber-600 border-amber-500/30'
-                  }`}
-                >
-                  {isAiHandling ? (
-                    <>
-                      <Bot size={13} /> IA Atendendo
-                    </>
-                  ) : (
-                    <>
-                      <UserCheck size={13} /> Você Assumiu
-                    </>
-                  )}
-                </button>
-              </div>
             </div>
           )}
 
@@ -477,19 +461,20 @@ export default function Conversations() {
                 <p className="text-xs text-muted font-mono">{selectedContact.phone}</p>
               </div>
 
-              {/* Métricas do Cliente */}
+              {/* Dados reais do contato — sem venda por contato rastreada
+                  ainda (não existe tabela de pedidos ligada a contact_id),
+                  então mostra o que já existe de verdade: etapa do funil e
+                  status de envio, não número inventado. */}
               <div className="bg-card border border-border rounded-2xl p-3.5 space-y-2.5 font-mono text-xs">
                 <div className="flex justify-between items-center">
-                  <span className="text-muted">Total Comprado:</span>
-                  <span className="font-bold text-ink">{money(selectedContact.totalSpent)}</span>
+                  <span className="text-muted">Etapa:</span>
+                  <span className="font-bold text-ink">{selectedContact.lifecycleStage || 'Novo'}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-muted">Total de Pedidos:</span>
-                  <span className="font-bold text-ink">{selectedContact.ordersCount} compras</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-muted">Status:</span>
-                  <span className="text-emerald-600 font-bold">Cliente Ativa</span>
+                  <span className="text-muted">Status de envio:</span>
+                  <span className={`font-bold ${selectedContact.status === 'Inativo' ? 'text-red-500' : 'text-emerald-600'}`}>
+                    {selectedContact.status === 'Inativo' ? 'Descadastrado' : 'Ativo'}
+                  </span>
                 </div>
               </div>
 
@@ -508,15 +493,6 @@ export default function Conversations() {
                 </div>
               </div>
 
-              {/* Sugestão de Peça para Vender */}
-              <div className="bg-card border border-border rounded-2xl p-3 space-y-2">
-                <span className="text-[10px] font-mono uppercase text-muted font-bold block">
-                  Sugestão de Venda Cruzada:
-                </span>
-                <p className="text-xs text-ink font-body">
-                  Cliente comprou Vestido Midi recentemente. Sugira um Cinto ou Jaqueta Jeans para compor o look.
-                </p>
-              </div>
             </div>
           )}
 
