@@ -1350,16 +1350,14 @@ function ProductModal({ product, clientId, categories, onClose, onSaved, itemNou
                 {variants.map((v, i) => (
                   <div key={v.id || i} className="flex items-center justify-between bg-card border border-border/80 px-3 py-2 rounded-xl text-xs font-body">
                     <div className="flex items-center gap-2 min-w-0">
-                      <button
-                        type="button"
-                        title="Clique pra colar a URL da foto desta variação"
-                        onClick={() => setVariantImage(i, prompt('URL da foto desta variação:', v.image_url || '') ?? v.image_url)}
-                        className="shrink-0"
-                      >
-                        {v.image_url
+                      <label title="Clique pra trocar a foto desta variação" className="shrink-0 cursor-pointer relative">
+                        {uploadingVariantIdx === i
+                          ? <div className="w-8 h-8 rounded-md bg-surface border border-border flex items-center justify-center"><div className="w-3 h-3 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>
+                          : v.image_url
                           ? <img src={v.image_url} alt="" className="w-8 h-8 rounded-md object-cover border border-border" />
                           : <div className="w-8 h-8 rounded-md bg-surface border border-border flex items-center justify-center"><ImageIcon size={12} className="text-muted" /></div>}
-                      </button>
+                        <input type="file" accept="image/*" onChange={e => handleVariantImageFile(e, i)} disabled={uploadingVariantIdx === i} className="hidden" />
+                      </label>
                       <span className="font-medium text-ink truncate">{v.name}</span>
                     </div>
                     <div className="flex items-center gap-3">
