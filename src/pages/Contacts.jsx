@@ -192,6 +192,13 @@ export default function Contacts() {
   async function toggleVip(contact) {
     const current = contact.lifecycle_stage || 'Novo'
     const next = current === 'VIP' ? 'Ativo' : 'VIP'
+    // Bug real reportado ao vivo (2026-11-10): clique acidental mudava o
+    // estágio na hora, sem chance de desfazer — pedia confirmação só
+    // depois de já ter acontecido. Agora confirma antes.
+    const msg = next === 'VIP'
+      ? `Marcar "${contact.name || contact.phone}" como VIP?`
+      : `Remover "${contact.name || contact.phone}" de VIP (volta pra Ativo)?`
+    if (!window.confirm(msg)) return
     setContacts(cs => cs.map(x => x.id === contact.id ? { ...x, lifecycle_stage: next } : x))
     await supabase.from('contacts').update({ lifecycle_stage: next }).eq('id', contact.id)
     await supabase.from('contact_lifecycle_log').insert({
