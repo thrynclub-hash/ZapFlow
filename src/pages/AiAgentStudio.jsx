@@ -13,6 +13,10 @@ import { useAuth } from '../contexts/AuthContext'
 
 export default function AiAgentStudio() {
   const { profile } = useAuth()
+  // Nome do item configurável por cliente (Peça, Procedimento, Serviço...)
+  // — o simulador tinha "peça"/"vestidos, conjuntos, calçados" fixos, errado
+  // pra qualquer cliente que não vende roupa (ex: Clínica Hassum, odonto).
+  const itemNoun = (profile?.client?.item_noun || 'Produto').toLowerCase()
   const clientId = profile?.client_id
 
   const [loading, setLoading] = useState(true)
@@ -198,12 +202,12 @@ export default function AiAgentStudio() {
             ? ` Ela está em oferta hoje: de R$ ${matchedProduct.unit_price} por apenas R$ ${matchedProduct.promo_price}!`
             : ` O valor dela é R$ ${matchedProduct.unit_price}.`
 
-          replyText = `Temos sim a peça "${matchedProduct.name}" com pronta entrega em estoque!${promoInfo} Olha a foto dela na arara:`
+          replyText = `Temos sim ${itemNoun.endsWith('a') ? 'a' : 'o'} ${itemNoun} "${matchedProduct.name}" disponível!${promoInfo} Olha a foto:`
           if (settings.allow_send_photos && matchedProduct.images && matchedProduct.images.length > 0) {
             photoUrl = matchedProduct.images[0]
           }
         } else {
-          replyText = `Temos opções lindas no catálogo hoje! Você procura alguma peça em especial (vestidos, conjuntos, calçados) ou quer ver nossas promoções ativas?`
+          replyText = `Temos boas opções no catálogo hoje! Você procura algum ${itemNoun} em especial ou quer ver nossas promoções ativas?`
         }
       }
 
@@ -539,8 +543,8 @@ export default function AiAgentStudio() {
           {/* Atalhos de Teste Rápido */}
           <div className="py-2 flex items-center gap-1.5 overflow-x-auto scrollbar-hide text-[10px] font-mono border-b border-border/40">
             {[
-              'Tem vestido preto no M?',
-              'Manda foto da peça',
+              `Tem ${itemNoun} disponível?`,
+              `Manda foto d${itemNoun.endsWith('a') ? 'a' : 'o'} ${itemNoun}`,
               'Quanto custa o frete?',
               'Como funciona a troca?',
               'Quero pagar no Pix',
